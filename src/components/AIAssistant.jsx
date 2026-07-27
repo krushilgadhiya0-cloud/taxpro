@@ -17,6 +17,7 @@ export default function AIAssistant({ isOpen, onClose, onShowToast, onLogout }) 
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const recognitionRef = useRef(null);
+  const shouldListenRef = useRef(false);
   const [messages, setMessages] = useState([
     {
       sender: 'ai',
@@ -37,6 +38,7 @@ export default function AIAssistant({ isOpen, onClose, onShowToast, onLogout }) 
   // Clean up speech recognition on unmount
   useEffect(() => {
     return () => {
+      shouldListenRef.current = false;
       if (recognitionRef.current) {
         recognitionRef.current.abort();
       }
@@ -148,11 +150,12 @@ export default function AIAssistant({ isOpen, onClose, onShowToast, onLogout }) 
   };
 
   const handleVoiceCommandToggle = () => {
-    if (isVoiceActive) {
+    if (shouldListenRef.current) {
+      shouldListenRef.current = false;
+      setIsVoiceActive(false);
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
-      setIsVoiceActive(false);
       return;
     }
 
@@ -163,18 +166,20 @@ export default function AIAssistant({ isOpen, onClose, onShowToast, onLogout }) 
       return;
     }
 
+    shouldListenRef.current = true;
+    setIsVoiceActive(true);
+
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
-      setIsVoiceActive(true);
-      if (onShowToast) onShowToast('Listening for Voice Commands...', 'info');
+      // Silent on restart
     };
 
     recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
+      const transcript = event.results[event.results.length - 1][0].transcript;
       setMessages((prev) => [...prev, { 
         sender: 'user', 
         text: `🎤 "${transcript}"`, 
@@ -184,17 +189,33 @@ export default function AIAssistant({ isOpen, onClose, onShowToast, onLogout }) 
     };
 
     recognition.onerror = (event) => {
+      if (event.error === 'no-speech') return; // Ignore silence so it auto-restarts
       console.error('Speech recognition error', event.error);
-      setIsVoiceActive(false);
-      if (onShowToast) onShowToast(`Voice recognition failed: ${event.error}`, 'error');
+      if (event.error !== 'aborted') {
+         shouldListenRef.current = false;
+         setIsVoiceActive(false);
+         if (onShowToast) onShowToast(`Voice recognition failed: ${event.error}`, 'error');
+      }
     };
 
     recognition.onend = () => {
-      setIsVoiceActive(false);
+      if (shouldListenRef.current && recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch(e) {
+          shouldListenRef.current = false;
+          setIsVoiceActive(false);
+        }
+      } else {
+        setIsVoiceActive(false);
+      }
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    try {
+      recognition.start();
+      if (onShowToast) onShowToast('Continuous Voice AI Activated. Speak anywhere...', 'info');
+    } catch (e) {}
   };
 
   const handleFileUpload = (e) => {

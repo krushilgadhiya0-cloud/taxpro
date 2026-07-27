@@ -189,7 +189,7 @@ export default function ClientsView({ onShowToast }) {
           <p className="text-xs text-gray-500 mt-1">Manage firm client profiles, historical records, and file tracking.</p>
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+        <div className="flex items-center gap-3 self-start sm:self-auto print:hidden">
           <button 
             onClick={handleDownloadCSV}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-sm transition-colors"
@@ -478,7 +478,14 @@ export default function ClientsView({ onShowToast }) {
                 <div className="text-[10px] font-black text-indigo-400 tracking-widest uppercase mb-1">Client Related File</div>
                 <div className="text-sm font-bold text-gray-800 flex items-center gap-2">
                   <FileText className="w-4 h-4 text-indigo-500" /> 
-                  {activeClientStat.attachedDoc || "No secure files appended yet."}
+                  {activeClientStat.attachedDoc ? (
+                    <button 
+                      onClick={() => onShowToast && onShowToast(`Initializing secure download tunnel for ${activeClientStat.attachedDoc}...`, 'info')}
+                      className="text-indigo-600 hover:text-indigo-800 hover:underline text-left underline-offset-2 transition-colors cursor-pointer"
+                    >
+                      {activeClientStat.attachedDoc}
+                    </button>
+                  ) : "No secure files appended yet."}
                 </div>
               </div>
               <div>

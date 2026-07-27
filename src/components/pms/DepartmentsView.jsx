@@ -4,13 +4,21 @@ import { Building2, Plus, Bot, Users, HelpCircle, UserCog, CheckSquare, Edit, Tr
 export default function DepartmentsView({ onShowToast }) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [activeDeptStat, setActiveDeptStat] = useState(null);
-  const [newDeptForm, setNewDeptForm] = useState({ name: '', desc: '', manager: '' });
+  const [newDeptForm, setNewDeptForm] = useState({ name: 'Compliance', customName: '', isOther: false, desc: '', manager: '' });
   
   const [depts, setDepts] = useState(() => {
     try {
       const saved = localStorage.getItem('taxpro_departments');
       if (saved) return JSON.parse(saved) || [];
     } catch (e) {}
+    return [];
+  });
+
+  const [availableManagers] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_workload_team');
+      if (saved) return JSON.parse(saved) || [];
+    } catch(e) {}
     return [];
   });
 
@@ -22,15 +30,16 @@ export default function DepartmentsView({ onShowToast }) {
 
   const handleAddDept = (e) => {
     e.preventDefault();
-    if (!newDeptForm.name) return;
+    const finalName = newDeptForm.isOther ? newDeptForm.customName : newDeptForm.name;
+    if (!finalName) return;
     
-    const initials = newDeptForm.name.split(' ').map(n => n.charAt(0).toUpperCase()).slice(0,2).join('');
+    const initials = finalName.split(' ').map(n => n.charAt(0).toUpperCase()).slice(0,2).join('');
     
     setDepts(prev => [
       ...prev,
       {
         id: Date.now(),
-        name: newDeptForm.name,
+        name: finalName,
         members: 0,
         manager: newDeptForm.manager || 'Not assigned',
         initials: initials || 'D',
@@ -39,8 +48,8 @@ export default function DepartmentsView({ onShowToast }) {
     ]);
 
     setIsAddModalOpen(false);
-    setNewDeptForm({ name: '', desc: '', manager: '' });
-    if (onShowToast) onShowToast(`Department ${newDeptForm.name} created successfully!`, 'success');
+    setNewDeptForm({ name: 'Compliance', customName: '', isOther: false, desc: '', manager: '' });
+    if (onShowToast) onShowToast(`Department ${finalName} created successfully!`, 'success');
   };
 
   const handleDownloadCSV = () => {
@@ -223,14 +232,39 @@ export default function DepartmentsView({ onShowToast }) {
               <form onSubmit={handleAddDept} className="flex flex-col gap-4">
                 <div>
                   <label className="text-xs font-bold text-gray-600 uppercase tracking-widest block mb-1.5">Department Name</label>
-                  <input 
-                    required 
-                    type="text"
-                    value={newDeptForm.name}
-                    onChange={e => setNewDeptForm({...newDeptForm, name: e.target.value})}
-                    placeholder="e.g. Sales & Strategy"
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20 transition-all font-medium text-sm text-gray-900"
-                  />
+                  <select
+                    value={newDeptForm.isOther ? 'Other' : newDeptForm.name}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'Other') {
+                        setNewDeptForm({ ...newDeptForm, name: '', isOther: true });
+                      } else {
+                        setNewDeptForm({ ...newDeptForm, name: val, isOther: false });
+                      }
+                    }}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20 transition-all font-medium text-sm text-gray-900 cursor-pointer mb-2"
+                  >
+                    <option value="Compliance">Compliance</option>
+                    <option value="Tax & Audit">Tax & Audit</option>
+                    <option value="Accounting">Accounting</option>
+                    <option value="Legal & Advisory">Legal & Advisory</option>
+                    <option value="Outsourcing">Outsourcing</option>
+                    <option value="HR & Admin">HR & Admin</option>
+                    <option value="Sales & Marketing">Sales & Marketing</option>
+                    <option value="IT Support">IT Support</option>
+                    <option value="Other">Other (Custom)</option>
+                  </select>
+                  
+                  {newDeptForm.isOther && (
+                    <input 
+                      required 
+                      type="text"
+                      value={newDeptForm.customName}
+                      onChange={e => setNewDeptForm({...newDeptForm, customName: e.target.value})}
+                      placeholder="Enter custom department name..."
+                      className="w-full px-4 py-2.5 bg-white border border-emerald-300 rounded-xl outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20 transition-all font-medium text-sm text-gray-900 shadow-inner mt-1 animate-fade-in"
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="text-xs font-bold text-gray-600 uppercase tracking-widest block mb-1.5">Description</label>
@@ -253,9 +287,9 @@ export default function DepartmentsView({ onShowToast }) {
                       className="w-full px-4 py-2.5 pl-9 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20 transition-all font-medium text-sm text-gray-900 cursor-pointer appearance-none"
                     >
                       <option value="">Leave Unassigned</option>
-                      <option value="Krushil Gadhiya">Krushil Gadhiya</option>
-                      <option value="Priya Sharma">Priya Sharma</option>
-                      <option value="Alex Sterling">Alex Sterling</option>
+                      {availableManagers.map(m => (
+                        <option key={m.id} value={m.name}>{m.name}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

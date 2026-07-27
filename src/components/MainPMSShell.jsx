@@ -32,7 +32,8 @@ import {
   Activity,
   Zap,
   Megaphone,
-  RefreshCw
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 
 import DashboardView from './DashboardView';
@@ -61,14 +62,18 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
   const [activeItem, setActiveItem] = useState('Dashboard');
   const [liveClock, setLiveClock] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notificationTab, setNotificationTab] = useState('All');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChatUser, setActiveChatUser] = useState(null);
+  
+  const [activeGlobalAlert, setActiveGlobalAlert] = useState(null);
+  const [broadcastSubject, setBroadcastSubject] = useState('');
+  const [broadcastText, setBroadcastText] = useState('');
   
   const [userDepartment, setUserDepartment] = useState('');
 
@@ -123,22 +128,22 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
 
   const sidebarItems = [
     { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
+    { name: 'Clients', icon: Users, hasSub: true },
+    { name: 'Contact Person', icon: UserCheck, hasSub: true },
     { name: 'Projects', icon: FolderKanban, hasSub: false },
+    { name: 'Tasks', icon: CheckSquare, hasSub: true },
+    { name: 'To Do', icon: ListTodo, hasSub: true },
     { name: 'Workload', icon: Activity, hasSub: false },
     { name: 'Team Members', icon: Users2, hasSub: false },
     { name: 'Departments', icon: Building2, hasSub: false },
+    { name: 'Fees Tracking', icon: DollarSign, hasSub: true },
+    { name: 'Receipts & Payments', icon: Receipt, hasSub: true },
+    { name: 'Owner Payments', icon: DollarSign, hasSub: true },
     { name: 'Communication', icon: MessageSquare, hasSub: true },
     { name: 'Private Chat', icon: MessageSquare, hasSub: false },
-    { name: 'Ideas', icon: Lightbulb, hasSub: false },
-    { name: 'Tasks', icon: CheckSquare, hasSub: true },
-    { name: 'Owner Payments', icon: DollarSign, hasSub: true },
-    { name: 'Clients', icon: Users, hasSub: true },
-    { name: 'Contact Person', icon: UserCheck, hasSub: true },
-    { name: 'To Do', icon: ListTodo, hasSub: true },
-    { name: 'Receipts & Payments', icon: Receipt, hasSub: true },
-    { name: 'Fees Tracking', icon: DollarSign, hasSub: true },
-    { name: 'Integrations', icon: Zap, hasSub: false },
     { name: 'Reports', icon: FileText, hasSub: true },
+    { name: 'Ideas', icon: Lightbulb, hasSub: false },
+    { name: 'Integrations', icon: Zap, hasSub: false },
     { name: 'Support & Help', icon: LifeBuoy, hasSub: false },
     { name: 'Settings', icon: Settings, hasSub: true },
   ];
@@ -173,18 +178,17 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
 
         {/* Action Controls */}
         <div className="flex items-center gap-3">
-          {/* Live Clock Badge */}
+          {/* Live Date and Clock Badges */}
+          <div className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gray-100 border border-gray-200 text-xs font-mono font-bold text-gray-700">
+            <span className="text-[#5b52e0]">
+              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          </div>
+          
           <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-gray-100 border border-gray-200 text-xs font-mono font-bold text-gray-700">
             <Clock className="w-3.5 h-3.5 text-[#5b52e0]" />
             <span>{liveClock}</span>
           </div>
-
-          <button 
-            onClick={() => setIsWhatsNewOpen(true)}
-            className="px-3.5 py-1.5 rounded-xl bg-[#1e1e2d] hover:bg-black text-xs font-bold text-white shadow-sm transition-colors"
-          >
-            What's New
-          </button>
 
           {/* New Broadcast Icon */}
           <button 
@@ -195,34 +199,18 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
             <Megaphone className="w-4 h-4" />
           </button>
 
-          {/* Notifications Dropdown */}
-          <div className="relative">
-            <button 
-              onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-              className={`p-2 rounded-xl border transition-colors relative ${isNotificationsOpen ? 'bg-gray-200 border-gray-300' : 'bg-gray-100 hover:bg-gray-200 border-gray-200'}`}
-            >
-              <Bell className="w-4 h-4 text-gray-600" />
-              <span className="w-2 h-2 rounded-full bg-[#5b52e0] absolute top-1 right-1 animate-pulse"></span>
-            </button>
-            
-            {isNotificationsOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsNotificationsOpen(false)}></div>
-                <div className="absolute top-12 right-0 w-80 bg-white rounded-2xl shadow-xl border border-gray-200 p-3 z-50 animate-fade-in origin-top-right">
-                  <div className="flex items-center justify-between mb-3 px-1">
-                    <h4 className="text-sm font-extrabold text-gray-900 font-outfit">Notifications</h4>
-                    <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">0 New</span>
-                  </div>
-                  
-                  <div className="flex flex-col gap-2 p-3 text-center text-xs text-gray-500 font-bold bg-gray-50 rounded-xl my-2">
-                    No new notifications.
-                  </div>
-                  
-                  <button className="w-full text-center text-xs font-bold text-[#5b52e0] mt-3 py-1 hover:underline">Mark all as read</button>
-                </div>
-              </>
+          {/* Notifications Toggle */}
+          <button 
+            onClick={() => setIsNotificationsOpen(true)}
+            className={`p-2 rounded-xl border transition-colors relative ${isNotificationsOpen ? 'bg-gray-200 border-gray-300' : 'bg-gray-100 hover:bg-gray-200 border-gray-200'}`}
+          >
+            <Bell className="w-4 h-4 text-gray-600" />
+            {activeGlobalAlert && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center shadow-sm animate-pulse">
+                1
+              </span>
             )}
-          </div>
+          </button>
 
           {/* User Profile Badge & Popover */}
           <div className="relative pl-2 border-l border-gray-200">
@@ -396,6 +384,92 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
         </main>
       </div>
 
+      {/* COMPREHENSIVE NOTIFICATIONS SLIDE-OVER DRAWER */}
+      {isNotificationsOpen && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsNotificationsOpen(false)}></div>
+          <div className="fixed top-0 right-0 h-full w-full max-w-sm bg-white shadow-2xl z-50 flex flex-col transform transition-transform animate-slide-in-right border-l border-gray-200">
+            
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-white z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-gray-900 text-lg font-outfit leading-tight">Notifications</h3>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Activities & Alerts</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors uppercase tracking-wider">
+                  Mark all read
+                </button>
+                <button onClick={() => setIsNotificationsOpen(false)} className="p-2 text-gray-400 hover:text-gray-900 bg-gray-50 hover:bg-gray-100 rounded-full transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Notification Tabs */}
+            <div className="flex p-2 bg-gray-50/50 border-b border-gray-100 gap-1">
+               {['All', 'Unread', 'Mentions', 'System'].map(t => (
+                 <button 
+                   key={t}
+                   onClick={() => setNotificationTab(t)}
+                   className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                     notificationTab === t ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                   }`}
+                 >
+                   {t}
+                 </button>
+               ))}
+            </div>
+
+            {/* Notifications Feed */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/30">
+              
+              {/* Special Global Alert in Feed */}
+              {activeGlobalAlert && (notificationTab === 'All' || notificationTab === 'System') && (
+                <div className="p-0.5 rounded-2xl bg-gradient-to-r from-red-500 via-orange-500 to-red-500 shadow-md">
+                  <div className="p-4 bg-white rounded-xl shadow-sm relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-red-600"></div>
+                    <div className="flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-red-600 shrink-0 flex items-center justify-center text-white font-bold shadow-md shadow-red-500/30">
+                        <Megaphone className="w-5 h-5 animate-bounce" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900 font-black uppercase tracking-wide truncate">
+                          {activeGlobalAlert.subject}
+                        </p>
+                        <p className="text-xs text-red-600 font-bold mt-1 line-clamp-2">
+                          {activeGlobalAlert.message}
+                        </p>
+                        <p className="text-[10px] text-gray-400 font-semibold mt-2">{activeGlobalAlert.time}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!activeGlobalAlert && (
+                 <div className="p-8 mt-4 text-center bg-transparent border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center opacity-70">
+                   <Bell className="w-8 h-8 text-gray-300 mb-2" />
+                   <h4 className="text-sm font-extrabold text-gray-800">You're all caught up!</h4>
+                   <p className="text-xs text-gray-500 font-semibold mt-1">No recent notifications matching this filter.</p>
+                 </div>
+              )}
+              
+              <div className="pt-4 text-center">
+                <button className="text-[10px] font-bold text-gray-400 uppercase tracking-widest hover:text-indigo-600 transition-colors">
+                  View Older Notifications
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </>
+      )}
+
       {/* SEARCH MODAL (Ctrl + K) */}
       {isSearchOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/50 backdrop-blur-xs">
@@ -420,31 +494,6 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
             <div className="flex flex-col gap-1 text-xs">
               <div className="p-4 text-center text-gray-400 italic font-medium">Empty records</div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* WHAT'S NEW RELEASE NOTES MODAL */}
-      {isWhatsNewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full border border-gray-200 shadow-2xl relative">
-            <button onClick={() => setIsWhatsNewOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-2 text-[#5b52e0] font-bold text-sm mb-2">
-              <Sparkles className="w-4 h-4" /> TaxPro PMS v3.4 Update Release
-            </div>
-            <h3 className="text-xl font-extrabold font-outfit text-gray-900 mb-2">What's New in TaxPro PMS</h3>
-            <ul className="text-xs text-gray-600 flex flex-col gap-2 list-disc pl-4 mb-4">
-              <li>Instant 1-Click GST 3B Data Auto-Reconciliation</li>
-              <li>WhatsApp & SMS Bulk Reminders Dispatcher</li>
-              <li>Biometric Staff & Visitor In/Out Register Integration</li>
-              <li>Live Time Tracking stopwatch for client billable hours</li>
-            </ul>
-            <button onClick={() => setIsWhatsNewOpen(false)} className="w-full py-2 bg-[#5b52e0] text-white font-bold text-xs rounded-xl">
-              Got it!
-            </button>
           </div>
         </div>
       )}
@@ -532,11 +581,23 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
             <div className="flex flex-col gap-4 mt-6">
                <div>
                  <label className="text-xs font-bold text-gray-700 mb-1 block">Alert Subject</label>
-                 <input type="text" placeholder="e.g., URGENT: Server Maintenance at 5 PM" className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-500 text-sm" />
+                 <input 
+                   type="text" 
+                   value={broadcastSubject}
+                   onChange={(e) => setBroadcastSubject(e.target.value)}
+                   placeholder="e.g., URGENT: Server Maintenance at 5 PM" 
+                   className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-500 text-sm" 
+                 />
                </div>
                <div>
                  <label className="text-xs font-bold text-gray-700 mb-1 block">Alert Message</label>
-                 <textarea rows="3" placeholder="Type your broadcast message..." className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-500 text-sm resize-none"></textarea>
+                 <textarea 
+                   rows="3" 
+                   value={broadcastText}
+                   onChange={(e) => setBroadcastText(e.target.value)}
+                   placeholder="Type your broadcast message..." 
+                   className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-500 text-sm resize-none"
+                 ></textarea>
                </div>
 
                <div className="p-4 rounded-xl border border-gray-200 bg-gray-50 space-y-3">
@@ -570,9 +631,16 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                  setIsBroadcasting(true);
                  if(onShowToast) onShowToast('Compiling global alert payload...', 'info');
                  setTimeout(() => {
+                    setActiveGlobalAlert({
+                      subject: broadcastSubject || 'URGENT: General Firm Alert',
+                      message: broadcastText || 'Please check with administration for further details.',
+                      time: 'Just now'
+                    });
                     if(onShowToast) onShowToast('✓ Alert successfully broadcasted via App, Email, and WhatsApp!', 'success');
                     setIsBroadcasting(false);
                     setIsBroadcastModalOpen(false);
+                    setBroadcastSubject('');
+                    setBroadcastText('');
                  }, 2000);
               }}
               disabled={isBroadcasting}
@@ -581,6 +649,40 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                {isBroadcasting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Megaphone className="w-4 h-4" />}
                {isBroadcasting ? 'Dispatching Signals...' : 'Confirm & Dispatch URGENT Alert'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* FULL-SCREEN GLOBAL ALERT INTRUSIVE POPUP */}
+      {activeGlobalAlert && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-red-600 rounded-3xl max-w-lg w-full shadow-2xl relative overflow-hidden flex flex-col animate-shake">
+            <div className="absolute -top-20 -right-20 w-40 h-40 bg-red-500 rounded-full blur-3xl opacity-50"></div>
+            <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-yellow-500 rounded-full blur-3xl opacity-30"></div>
+            
+            <div className="relative z-10 p-8 flex flex-col items-center text-center text-white">
+              <div className="w-20 h-20 rounded-full bg-white/20 flex items-center justify-center mb-6 shadow-inner border border-white/30 backdrop-blur-sm">
+                <Megaphone className="w-10 h-10 text-white animate-pulse" />
+              </div>
+              
+              <h2 className="text-3xl font-black font-outfit uppercase tracking-widest mb-2 shadow-sm px-4">
+                {activeGlobalAlert.subject}
+              </h2>
+              
+              <p className="text-sm font-medium text-red-50 mb-8 max-w-sm">
+                {activeGlobalAlert.message}
+              </p>
+              
+              <button 
+                onClick={() => {
+                  setActiveGlobalAlert(null);
+                  if (onShowToast) onShowToast('Alert acknowledged.', 'info');
+                }}
+                className="w-full py-4 bg-white text-red-600 font-extrabold uppercase tracking-widest text-sm rounded-2xl hover:bg-red-50 transition-colors shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
+              >
+                I have read this alert
+              </button>
+            </div>
           </div>
         </div>
       )}

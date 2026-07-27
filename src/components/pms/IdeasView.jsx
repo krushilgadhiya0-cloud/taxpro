@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lightbulb, Plus, Filter, ThumbsUp, ThumbsDown, MessageSquare, Paperclip, Lock, Globe, RefreshCcw, User, Tag, X } from 'lucide-react';
+import { Lightbulb, Plus, Filter, ThumbsUp, ThumbsDown, MessageSquare, Paperclip, Lock, Globe, RefreshCcw, User, Tag, X, Trash2 } from 'lucide-react';
 
 export default function IdeasView({ onShowToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,7 +30,16 @@ export default function IdeasView({ onShowToast }) {
     tags: '',
     autoConvert: 'Manual',
     assignDepartment: 'All',
-    visibility: 'Public' // Public or Private
+    visibility: 'Public', // Public or Private
+    attachment: ''
+  });
+
+  const [conversionModal, setConversionModal] = useState({ isOpen: false, type: null, targetIdea: null });
+  const [conversionData, setConversionData] = useState({
+    title: '',
+    assignee: 'Unassigned',
+    priority: 'Medium',
+    dueDate: ''
   });
 
   const handleAddIdea = (e) => {
@@ -48,6 +57,7 @@ export default function IdeasView({ onShowToast }) {
         status: 'New',
         tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
         visibility: formData.visibility,
+        attachment: formData.attachment,
         comments: 0,
         commentList: []
       },
@@ -55,11 +65,29 @@ export default function IdeasView({ onShowToast }) {
     ]);
     
     setIsModalOpen(false);
-    setFormData({ content: '', tags: '', autoConvert: 'Manual', assignDepartment: 'All', visibility: 'Public' });
+    setFormData({ content: '', tags: '', autoConvert: 'Manual', assignDepartment: 'All', visibility: 'Public', attachment: '' });
     if (onShowToast) onShowToast('Idea dropped successfully to the board.', 'success');
   };
 
   const handleAction = (id, actionType) => {
+    if (actionType === 'convert_task' || actionType === 'convert_project') {
+      const idea = ideas.find(i => i.id === id);
+      if (idea) {
+        setConversionData({
+          title: idea.content.length > 60 ? idea.content.slice(0, 60) + '...' : idea.content,
+          assignee: 'Unassigned',
+          priority: 'Medium',
+          dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0]
+        });
+        setConversionModal({
+          isOpen: true,
+          type: actionType === 'convert_task' ? 'task' : 'project',
+          targetIdea: idea
+        });
+      }
+      return;
+    }
+
     setIdeas(prev => {
       const mapped = prev.map(idea => {
         if (idea.id === id) {
@@ -69,48 +97,56 @@ export default function IdeasView({ onShowToast }) {
              setActiveIdeaView(idea);
              return idea;
           }
-          if (actionType === 'implement') {
-             if (onShowToast) onShowToast('Idea marked as Implemented.', 'success');
-             return { ...idea, status: 'Implemented' };
-          }
-          if (actionType === 'convert_task') {
-            const existingTasks = JSON.parse(localStorage.getItem('taxpro_global_tasks') || '[]');
-            existingTasks.unshift({
-                id: `TSK-${Math.floor(100 + Math.random() * 900)}`,
-                title: idea.content.slice(0, 50) + (idea.content.length > 50 ? '...' : ''),
-                client: 'Internal Firm',
-                category: idea.assignDepartment !== 'All' ? idea.assignDepartment : 'General',
-                dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0],
-                status: 'Pending',
-                priority: 'Medium',
-                assignee: 'Unassigned',
-                project: 'None'
-            });
-            localStorage.setItem('taxpro_global_tasks', JSON.stringify(existingTasks));
-            if (onShowToast) onShowToast('Idea successfully converted into an active Task!', 'success');
-            return null;
-          }
-          if (actionType === 'convert_project') {
-            const existingProjects = JSON.parse(localStorage.getItem('taxpro_projects') || '[]');
-            existingProjects.unshift({
-                id: Date.now(),
-                name: idea.content.slice(0, 30) + (idea.content.length > 30 ? '...' : ''),
-                description: idea.content,
-                startDate: new Date().toISOString().split('T')[0],
-                dueDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-                priority: 'Medium',
-                status: 'Active',
-                tasks: []
-            });
-            localStorage.setItem('taxpro_projects', JSON.stringify(existingProjects));
-            if (onShowToast) onShowToast('Idea structured into a new Project footprint!', 'success');
-            return null;
+          if (actionType === 'delete') {
+             if (onShowToast) onShowToast('Idea deleted successfully.', 'info');
+             return null;
           }
         }
         return idea;
       });
       return mapped.filter(Boolean);
     });
+  };
+
+  const submitConversion = (e) => {
+    e.preventDefault();
+    if (!conversionModal.targetIdea) return;
+    
+    if (conversionModal.type === 'task') {
+       const existingTasks = JSON.parse(localStorage.getItem('taxpro_global_tasks') || '[]');
+       existingTasks.unshift({
+           id: `TSK-${Math.floor(100 + Math.random() * 900)}`,
+           title: conversionData.title,
+           client: 'Internal Firm',
+           category: conversionModal.targetIdea.assignDepartment !== 'All' ? conversionModal.targetIdea.assignDepartment : 'General',
+           dueDate: conversionData.dueDate,
+           status: 'Pending',
+           priority: conversionData.priority,
+           assignee: conversionData.assignee,
+           project: 'None'
+       });
+       localStorage.setItem('taxpro_global_tasks', JSON.stringify(existingTasks));
+       if (onShowToast) onShowToast('Idea successfully structured into a precise Task!', 'success');
+    } else {
+       const existingProjects = JSON.parse(localStorage.getItem('taxpro_projects') || '[]');
+       existingProjects.unshift({
+           id: Date.now(),
+           name: conversionData.title,
+           description: conversionModal.targetIdea.content,
+           startDate: new Date().toISOString().split('T')[0],
+           dueDate: conversionData.dueDate,
+           priority: conversionData.priority,
+           status: 'Active',
+           tasks: []
+       });
+       localStorage.setItem('taxpro_projects', JSON.stringify(existingProjects));
+       if (onShowToast) onShowToast('Idea expanded into a fully structured Project!', 'success');
+    }
+    window.dispatchEvent(new Event('storage'));
+    
+    setIdeas(prev => prev.filter(i => i.id !== conversionModal.targetIdea.id));
+    
+    setConversionModal({ isOpen: false, type: null, targetIdea: null });
   };
 
   const submitComment = (e) => {
@@ -175,17 +211,27 @@ export default function IdeasView({ onShowToast }) {
                     {idea.author}
                   </h3>
                   <div className="text-sm text-gray-800 leading-relaxed font-medium">"{idea.content}"</div>
+                  {idea.attachment && (
+                    <div className="mt-2 text-xs font-bold text-indigo-600 flex items-center gap-1 bg-indigo-50/50 p-1.5 px-2.5 rounded-lg border border-indigo-100 max-w-fit cursor-pointer hover:bg-indigo-100 transition-colors" onClick={() => onShowToast && onShowToast(`Initializing secure download tunnel for ${idea.attachment}`, 'info')}>
+                      <Paperclip className="w-3.5 h-3.5" /> {idea.attachment}
+                    </div>
+                  )}
                </div>
                
-               <span className={`text-[10px] uppercase tracking-widest font-extrabold px-2.5 py-1 rounded-md border ${
-                 idea.status === 'New' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
-                 idea.status === 'Under Review' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                 idea.status === 'Implemented' ? 'bg-teal-50 text-teal-700 border-teal-200' :
-                 (idea.status.includes('Converted')) ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                 'bg-emerald-50 text-emerald-700 border-emerald-100'
-               }`}>
-                 {idea.status}
-               </span>
+               <div className="flex flex-col items-end gap-2">
+                 <span className={`text-[10px] uppercase tracking-widest font-extrabold px-2.5 py-1 rounded-md border ${
+                   idea.status === 'New' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' :
+                   idea.status === 'Under Review' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                   idea.status === 'Implemented' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                   (idea.status.includes('Converted')) ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                   'bg-emerald-50 text-emerald-700 border-emerald-100'
+                 }`}>
+                   {idea.status}
+                 </span>
+                 <button onClick={() => handleAction(idea.id, 'delete')} className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50">
+                   <Trash2 className="w-4 h-4" />
+                 </button>
+               </div>
              </div>
              
              {/* Tags Output */}
@@ -231,13 +277,6 @@ export default function IdeasView({ onShowToast }) {
               
               {/* Conversion Actions Row */}
               <div className="mt-3 pt-3 border-t border-gray-50 flex flex-wrap gap-2">
-                 <button 
-                   onClick={() => handleAction(idea.id, 'implement')}
-                   disabled={idea.status === 'Implemented'}
-                   className="flex-1 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] uppercase tracking-wider font-extrabold rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                 >
-                   Implement
-                 </button>
                  <button 
                    onClick={() => handleAction(idea.id, 'convert_task')}
                    disabled={idea.status.includes('Converted')}
@@ -353,10 +392,21 @@ export default function IdeasView({ onShowToast }) {
             {/* Actions Footer */}
             <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
                
-               {/* Attachments Trigger mock */}
-               <button type="button" onClick={() => onShowToast && onShowToast('Select attachment from device...', 'info')} className="flex items-center gap-1.5 px-4 py-2 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors">
-                  <Paperclip className="w-4 h-4" /> <span className="text-xs font-bold hidden sm:inline">Attach Files</span>
-               </button>
+               {/* Attachments */}
+               <label className="flex items-center gap-1.5 px-4 py-2 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors cursor-pointer">
+                  <Paperclip className="w-4 h-4" /> 
+                  <span className="text-xs font-bold sm:inline truncate max-w-[150px]">
+                    {formData.attachment ? formData.attachment : 'Attach Files'}
+                  </span>
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    onChange={e => {
+                       const file = e.target.files[0];
+                       if (file) setFormData({...formData, attachment: file.name});
+                    }}
+                  />
+               </label>
 
                <button 
                  form="idea-engine" 
@@ -434,6 +484,106 @@ export default function IdeasView({ onShowToast }) {
                  </button>
                </form>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* CONVERSION MODAL */}
+      {conversionModal.isOpen && conversionModal.targetIdea && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl flex flex-col relative overflow-hidden animate-slide-up">
+            
+            <div className={`p-6 border-b border-gray-100 flex items-center gap-3 ${conversionModal.type === 'task' ? 'bg-indigo-50/50' : 'bg-purple-50/50'}`}>
+               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${conversionModal.type === 'task' ? 'bg-indigo-100 text-indigo-600' : 'bg-purple-100 text-purple-600'}`}>
+                 <Lightbulb className="w-5 h-5" />
+               </div>
+               <div className="flex-1">
+                 <h2 className="text-xl font-black text-gray-900 leading-tight">
+                   Convert to {conversionModal.type === 'task' ? 'Task' : 'Project'}
+                 </h2>
+                 <p className="text-xs font-bold text-gray-500">
+                   Specify details to extract this idea into your workflow.
+                 </p>
+               </div>
+               <button onClick={() => setConversionModal({isOpen:false, type:null, targetIdea:null})} className="p-1.5 bg-white text-gray-400 hover:text-gray-900 rounded-full transition-colors shadow-sm self-start">
+                 <X className="w-5 h-5" />
+               </button>
+            </div>
+
+            <form onSubmit={submitConversion} className="p-6 flex flex-col gap-5 bg-white">
+               
+               <div>
+                 <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider mb-2">
+                   {conversionModal.type === 'task' ? 'Title' : 'Project Name'}
+                 </label>
+                 <input 
+                   type="text" 
+                   required
+                   value={conversionData.title}
+                   onChange={e => setConversionData({...conversionData, title: e.target.value})}
+                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-bold text-sm text-gray-900"
+                 />
+               </div>
+
+               <div className="grid grid-cols-2 gap-4">
+                 <div>
+                   <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider mb-2">Assignee / Owner</label>
+                   <select 
+                     value={conversionData.assignee}
+                     onChange={e => setConversionData({...conversionData, assignee: e.target.value})}
+                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-bold text-sm text-gray-700"
+                   >
+                     <option value="Unassigned">Unassigned</option>
+                     <option value="Krushil Gadhiya">Krushil Gadhiya</option>
+                     <option value="Alex Sterling">Alex Sterling</option>
+                   </select>
+                 </div>
+                 <div>
+                   <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider mb-2">Due Date</label>
+                   <input 
+                     type="date"
+                     required
+                     value={conversionData.dueDate}
+                     onChange={e => setConversionData({...conversionData, dueDate: e.target.value})}
+                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-bold text-sm text-gray-700"
+                   />
+                 </div>
+               </div>
+
+               <div>
+                 <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider mb-2">Priority</label>
+                 <div className="flex gap-2">
+                   {['Low', 'Medium', 'High'].map(p => (
+                     <button
+                       key={p} type="button"
+                       onClick={() => setConversionData({...conversionData, priority: p})}
+                       className={`flex-1 py-2.5 rounded-lg text-xs font-bold border transition-colors ${
+                         conversionData.priority === p ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                       }`}
+                     >
+                       {p}
+                     </button>
+                   ))}
+                 </div>
+               </div>
+
+               <div className="mt-4 pt-4 border-t border-gray-100 flex justify-end gap-3">
+                 <button 
+                   type="button" 
+                   onClick={() => setConversionModal({isOpen:false, type:null, targetIdea:null})}
+                   className="px-6 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 font-bold text-sm hover:bg-gray-50"
+                 >
+                   Cancel
+                 </button>
+                 <button 
+                   type="submit" 
+                   className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-600/30"
+                 >
+                   Execute
+                 </button>
+               </div>
+            </form>
 
           </div>
         </div>

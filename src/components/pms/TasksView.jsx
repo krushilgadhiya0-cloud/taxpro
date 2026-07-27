@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Calendar, CheckCircle2, Clock, AlertCircle, User, MoreVertical, X } from 'lucide-react';
+import { Plus, Search, Filter, Calendar, CheckCircle2, Clock, AlertCircle, User, MoreVertical, X, Paperclip } from 'lucide-react';
 
 export default function TasksView({ onShowToast }) {
   const [activeFilter, setActiveFilter] = useState('All');
@@ -21,6 +21,22 @@ export default function TasksView({ onShowToast }) {
 
   useEffect(() => {
     localStorage.setItem('taxpro_global_tasks', JSON.stringify(tasks));
+  }, [tasks]);
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      try {
+        const saved = localStorage.getItem('taxpro_global_tasks');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && JSON.stringify(parsed) !== JSON.stringify(tasks)) {
+             setTasks(parsed);
+          }
+        }
+      } catch (e) {}
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, [tasks]);
 
   const [clients] = useState(() => {
@@ -54,7 +70,8 @@ export default function TasksView({ onShowToast }) {
       status: 'Pending',
       priority: newTask.priority,
       assignee: newTask.assignee || 'Krushil Gadhiya',
-      project: newTask.project || 'None'
+      project: newTask.project || 'None',
+      attachment: newTask.attachment || null
     };
 
     setTasks([taskObj, ...tasks]);
@@ -166,6 +183,11 @@ export default function TasksView({ onShowToast }) {
                       <div className="flex flex-col">
                         <span>{t.title}</span>
                         <span className="text-[10px] text-gray-400 font-mono">{t.id} • {t.priority} Priority</span>
+                        {t.attachment && (
+                          <div className="mt-1 flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 max-w-fit cursor-pointer hover:bg-indigo-100" onClick={() => onShowToast && onShowToast(`Initializing secure download for ${t.attachment}...`, 'info')}>
+                            <Paperclip className="w-3 h-3" /> <span className="truncate max-w-[120px] font-bold">{t.attachment}</span>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="p-4 text-gray-600 font-medium">{t.client}</td>
@@ -304,9 +326,28 @@ export default function TasksView({ onShowToast }) {
                 </div>
               </div>
 
-              <button type="submit" className="mt-2 py-2.5 bg-[#5b52e0] text-white font-bold rounded-xl hover:bg-[#4c44cf] shadow-md">
-                Save Task to Finexo PMS
-              </button>
+              <div className="pt-3 border-t border-gray-100">
+                <label className="flex items-center gap-1.5 px-4 py-2 hover:bg-gray-100 border border-dashed border-gray-300 rounded-xl text-gray-600 transition-colors cursor-pointer justify-center">
+                  <Paperclip className="w-4 h-4" /> 
+                  <span className="text-xs font-bold truncate max-w-[200px]">
+                    {newTask.attachment ? newTask.attachment : 'Attach File (Optional)'}
+                  </span>
+                  <input 
+                    type="file" 
+                    className="hidden" 
+                    onChange={e => {
+                       const file = e.target.files[0];
+                       if (file) setNewTask({...newTask, attachment: file.name});
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div className="mt-2 text-right">
+                <button type="submit" className="px-6 py-2.5 rounded-xl bg-[#5b52e0] hover:bg-[#4c44cf] text-white font-bold text-sm shadow-md transition-colors w-full">
+                  Save New Task
+                </button>
+              </div>
             </form>
           </div>
         </div>

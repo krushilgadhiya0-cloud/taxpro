@@ -27,16 +27,44 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
   const [activeSidebarItem, setActiveSidebarItem] = useState('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState('Tasks');
   const [activeCategory, setActiveCategory] = useState('All');
-  const [currentTime, setCurrentTime] = useState('25 Jul 2026, 12:34:10 pm');
+  const [currentTime, setCurrentTime] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [taskDetailType, setTaskDetailType] = useState(null);
   const [userDepartment, setUserDepartment] = useState('');
+  const [tasks, setTasks] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [departmentsList, setDepartmentsList] = useState([]);
 
   React.useEffect(() => {
     const dept = localStorage.getItem('taxpro_user_department');
     if (dept) setUserDepartment(dept);
+
+    try {
+      const savedTasks = localStorage.getItem('taxpro_global_tasks');
+      if (savedTasks) {
+        const parsed = JSON.parse(savedTasks);
+        if (Array.isArray(parsed)) setTasks(parsed);
+      }
+      
+      const savedMembers = localStorage.getItem('taxpro_team_members');
+      if (savedMembers) {
+        const parsed = JSON.parse(savedMembers);
+        if (Array.isArray(parsed)) setTeamMembers(parsed);
+      }
+      
+      const savedDepts = localStorage.getItem('taxpro_departments');
+      if (savedDepts) {
+        const parsed = JSON.parse(savedDepts);
+        if (Array.isArray(parsed)) setDepartmentsList(parsed);
+      }
+    } catch (e) {}
+
+    // Initialize clock
+    setCurrentTime(new Date().toLocaleString());
   }, []);
 
+  // Update clock periodically (optional, manual refresh sets it too)
+  
   // Interactive Task Counts (matching PMS dashboard schema)
   const [taskMetrics, setTaskMetrics] = useState({
     dueToday: 0,
@@ -49,6 +77,63 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
     overdueMoreThan7Days: 0,
     dueTotal: 0
   });
+
+  React.useEffect(() => {
+    const now = new Date();
+    // Reset time part to midnight for accurate day diffs
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    let dToday = 0, dTomorrow = 0, d7 = 0, dAfter7 = 0, dto30 = 0, dAfter30 = 0, ov7 = 0, ovMore7 = 0, dTotal = 0;
+    
+    tasks.forEach(t => {
+       if (t.status === 'Completed') return;    
+       
+       if (t.dueDate) {
+         const dDate = new Date(t.dueDate);
+         const targetDate = new Date(dDate.getFullYear(), dDate.getMonth(), dDate.getDate());
+         const diffTime = targetDate.getTime() - today.getTime();
+         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+         
+         if (diffDays === 0) dToday++;
+         else if (diffDays === 1) dTomorrow++;
+         else if (diffDays > 1 && diffDays <= 7) d7++;
+         else if (diffDays > 7 && diffDays <= 30) dto30++;
+         else if (diffDays > 30) dAfter30++;
+         else if (diffDays < 0 && diffDays >= -7) ov7++;
+         else if (diffDays < -7) ovMore7++;
+         dTotal++;
+       }
+    });
+
+    setTaskMetrics({
+      dueToday: dToday,
+      dueTomorrow: dTomorrow,
+      dueIn7Days: d7,
+      dueAfter7Days: d7 + dto30 + dAfter30, // Assuming "after 7 days" includes anything > 7
+      dueIn30Days: dto30,
+      dueAfter30Days: dAfter30,
+      overdueUpTo7Days: ov7,
+      overdueMoreThan7Days: ovMore7,
+      dueTotal: dTotal
+    });
+  }, [tasks]);
+
+  const unassignedTasks = tasks.filter(t => !t.assignee || t.assignee === 'None' || t.assignee === 'Unassigned').length;
+  const totalTasks = tasks.length;
+  const assignedTasks = totalTasks - unassignedTasks;
+  
+  const userWiseSummary = {};
+  tasks.forEach(t => {
+     const assignee = t.assignee || 'Unassigned';
+     if (!userWiseSummary[assignee]) userWiseSummary[assignee] = 0;
+     userWiseSummary[assignee]++;
+  });
+
+  const recentTasks = [...tasks].sort((a,b) => {
+     const da = new Date(a.dueDate || 0);
+     const db = new Date(b.dueDate || 0);
+     return db - da; // Sort descending, assuming higher priority for recent... Wait, maybe closest due date?
+  }).slice(0, 4);
 
   const sidebarItems = [
     { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
@@ -136,7 +221,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                 </svg>
               </div>
               <div className="flex flex-col">
-                <span className="text-xl font-bold text-sky-500 leading-none">2</span>
+                <span className="text-xl font-bold text-sky-500 leading-none">{departmentsList.length}</span>
                 <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Departments</span>
               </div>
             </div>
@@ -152,7 +237,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                 </svg>
               </div>
               <div className="flex flex-col">
-                <span className="text-xl font-bold text-emerald-500 leading-none">0</span>
+                <span className="text-xl font-bold text-emerald-500 leading-none">{teamMembers.length}</span>
                 <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Members</span>
               </div>
             </div>
@@ -168,7 +253,9 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                 </svg>
               </div>
               <div className="flex flex-col">
-                <span className="text-xl font-bold text-amber-500 leading-none">0</span>
+                <span className="text-xl font-bold text-amber-500 leading-none">
+                  {teamMembers.filter(m => m.role === 'Manager' || m.role === 'Administrator' || m.role?.toLowerCase().includes('manager')).length}
+                </span>
                 <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Managers</span>
               </div>
             </div>
@@ -331,13 +418,21 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                   <span>USER</span>
                   <span className="text-right">TOTAL TASKS</span>
                 </div>
-                <div className="grid grid-cols-2 p-3 text-xs font-bold text-gray-800 border-b border-gray-100 bg-white items-center">
-                  <span>Unassigned</span>
-                  <span className="text-right text-gray-500 font-semibold">-</span>
+                <div className="overflow-y-auto flex-1">
+                  {Object.entries(userWiseSummary).length === 0 ? (
+                    <div className="p-4 text-xs font-bold text-gray-500 text-center">No tasks assigned yet.</div>
+                  ) : (
+                    Object.entries(userWiseSummary).map(([user, count]) => (
+                      <div key={user} className="grid grid-cols-2 p-3 text-xs font-bold text-gray-800 border-b border-gray-100 bg-white items-center">
+                        <span>{user}</span>
+                        <span className="text-right text-[#5b52e0] font-black">{count}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
-                <div className="grid grid-cols-2 p-3 text-xs font-bold text-gray-800 bg-white items-center">
+                <div className="grid grid-cols-2 p-3 text-xs font-bold text-gray-800 bg-gray-50 items-center border-t border-gray-100 mt-auto">
                   <span>Total</span>
-                  <span className="text-right text-gray-500 font-semibold">-</span>
+                  <span className="text-right text-[#5b52e0] font-black tracking-wide">{totalTasks}</span>
                 </div>
               </div>
             </div>
@@ -349,7 +444,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                 onClick={() => setTaskDetailType('Unassigned')}
                 className="bg-red-50/60 hover:bg-red-100/80 border border-red-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98]"
               >
-                <span className="text-4xl font-black text-red-600 mb-1 font-outfit">0</span>
+                <span className="text-4xl font-black text-red-600 mb-1 font-outfit">{unassignedTasks}</span>
                 <span className="text-xs font-bold text-gray-600">Unassigned Tasks</span>
               </button>
               
@@ -358,7 +453,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                 onClick={() => setTaskDetailType('Assigned')}
                 className="bg-green-50/60 hover:bg-green-100/80 border border-green-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98]"
               >
-                <span className="text-4xl font-black text-green-600 mb-1 font-outfit">0</span>
+                <span className="text-4xl font-black text-green-600 mb-1 font-outfit">{assignedTasks}</span>
                 <span className="text-xs font-bold text-gray-600">Assigned Tasks</span>
               </button>
 
@@ -367,7 +462,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                 onClick={() => setTaskDetailType('Total')}
                 className="bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98]"
               >
-                <span className="text-4xl font-black text-indigo-600 mb-1 font-outfit">0</span>
+                <span className="text-4xl font-black text-indigo-600 mb-1 font-outfit">{totalTasks}</span>
                 <span className="text-xs font-bold text-gray-600">Total Tasks</span>
               </button>
             </div>
@@ -383,14 +478,30 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
               </div>
 
               {/* Table */}
-              <div className="w-full border border-gray-200 rounded-xl overflow-hidden mt-2">
-                <div className="grid grid-cols-2 bg-gray-50 p-3 text-xs font-extrabold text-gray-500 border-b border-gray-200">
+              <div className="w-full border border-gray-200 rounded-xl overflow-hidden mt-2 flex flex-col">
+                <div className="grid grid-cols-[1fr,auto] bg-gray-50 p-3 text-xs font-extrabold text-gray-500 border-b border-gray-200 uppercase">
                   <span>TASK NAME</span>
                   <span className="text-right">DUE DATE</span>
                 </div>
-                <div className="p-8 text-center text-xs text-gray-700 font-bold bg-white">
-                  No Recent Tasks
-                </div>
+                {recentTasks.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-gray-700 font-bold bg-white">
+                    No Recent Tasks
+                  </div>
+                ) : (
+                  <div className="flex flex-col bg-white">
+                    {recentTasks.map((t, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr,auto] p-3 border-b last:border-b-0 border-gray-100 hover:bg-gray-50 transition-colors">
+                        <div className="flex flex-col min-w-0 pr-4">
+                          <span className="text-xs font-bold text-gray-800 truncate">{t.title}</span>
+                          <span className="text-[10px] font-semibold text-gray-500 truncate">{t.client}</span>
+                        </div>
+                        <div className="text-xs font-bold text-gray-700 flex items-center">
+                          {t.dueDate || 'N/A'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -444,14 +555,40 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
               </button>
             </div>
             
-            <div className="p-10 flex flex-col items-center justify-center min-h-[250px] text-center">
-              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                <Search className="w-6 h-6 text-gray-300" />
-              </div>
-              <h4 className="text-base font-bold text-gray-700 mb-1">No {taskDetailType} Tasks Found</h4>
-              <p className="text-sm text-gray-400 font-semibold max-w-xs mx-auto">
-                Once there are tasks that match this category, they will appear here.
-              </p>
+            <div className="p-10 flex flex-col items-center justify-center min-h-[250px] text-center max-h-[60vh] overflow-y-auto">
+              {tasks.filter(t => {
+                if (taskDetailType === 'Unassigned') return !t.assignee || t.assignee === 'None' || t.assignee === 'Unassigned';
+                if (taskDetailType === 'Assigned') return t.assignee && t.assignee !== 'None' && t.assignee !== 'Unassigned';
+                return true; 
+              }).length === 0 ? (
+                <>
+                  <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                    <Search className="w-6 h-6 text-gray-300" />
+                  </div>
+                  <h4 className="text-base font-bold text-gray-700 mb-1">No {taskDetailType} Tasks Found</h4>
+                  <p className="text-sm text-gray-400 font-semibold max-w-xs mx-auto">
+                    Once there are tasks that match this category, they will appear here.
+                  </p>
+                </>
+              ) : (
+                <div className="w-full flex flex-col gap-2">
+                  {tasks.filter(t => {
+                    if (taskDetailType === 'Unassigned') return !t.assignee || t.assignee === 'None' || t.assignee === 'Unassigned';
+                    if (taskDetailType === 'Assigned') return t.assignee && t.assignee !== 'None' && t.assignee !== 'Unassigned';
+                    return true;
+                  }).map((t, idx) => (
+                    <div key={idx} className="w-full text-left p-3 border border-gray-100 rounded-xl flex justify-between items-center bg-white shadow-xs">
+                      <div>
+                        <div className="text-xs font-bold text-gray-800">{t.title}</div>
+                        <div className="text-[10px] text-gray-500 font-medium">{t.client} • {t.dueDate || 'No Due Date'}</div>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${t.status === 'Completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-600'}`}>
+                        {t.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">

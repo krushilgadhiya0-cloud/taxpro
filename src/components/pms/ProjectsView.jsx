@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check, Printer } from 'lucide-react';
+import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check, Printer, Paperclip } from 'lucide-react';
 
 export default function ProjectsView({ onShowToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -19,6 +19,22 @@ export default function ProjectsView({ onShowToast }) {
   useEffect(() => {
     localStorage.setItem('taxpro_projects', JSON.stringify(projectsList));
   }, [projectsList]);
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      try {
+        const saved = localStorage.getItem('taxpro_projects');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && JSON.stringify(parsed) !== JSON.stringify(projectsList)) {
+             setProjectsList(parsed);
+          }
+        }
+      } catch (e) {}
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [projectsList]);
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [openProject, setOpenProject] = useState(null);
@@ -32,7 +48,8 @@ export default function ProjectsView({ onShowToast }) {
     description: '',
     startDate: '',
     dueDate: '',
-    priority: 'Medium'
+    priority: 'Medium',
+    attachment: ''
   });
 
   const handleCreateProject = (e) => {
@@ -44,13 +61,14 @@ export default function ProjectsView({ onShowToast }) {
         id: Date.now(), 
         ...formData, 
         status: 'Active',
-        tasks: []
+        tasks: [],
+        attachment: formData.attachment || null
       },
       ...projectsList
     ]);
     
     setIsModalOpen(false);
-    setFormData({name:'', description:'', startDate:'', dueDate:'', priority:'Medium'});
+    setFormData({name:'', description:'', startDate:'', dueDate:'', priority:'Medium', attachment: ''});
     if (onShowToast) onShowToast(`✓ Project "${formData.name}" initialized successfully!`, 'success');
   };
 
@@ -302,8 +320,14 @@ export default function ProjectsView({ onShowToast }) {
                       <div className="bg-emerald-500 h-full rounded-full transition-all duration-300" style={{ width: `${progressPct}%` }} />
                     </div>
 
-                    {/* Footer pills */}
-                    <div className="flex items-center gap-2">
+                  {/* Footer pills & Attachments */}
+                  <div>
+                    {p.attachment && (
+                      <div className="mb-3 flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg p-1.5 px-2.5 max-w-fit cursor-pointer hover:bg-emerald-100 text-[10px] font-bold" onClick={(e) => { e.stopPropagation(); onShowToast && onShowToast(`Initializing secure download tunnel for ${p.attachment}`, 'info'); }}>
+                        <Paperclip className="w-3.5 h-3.5" /> <span className="truncate max-w-[120px]">{p.attachment}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 mt-auto">
                       <div className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-50 rounded-lg border border-gray-100 text-[10px] font-bold text-gray-600">
                         <Users className="w-3.5 h-3.5" /> 0 members
                       </div>
@@ -312,6 +336,7 @@ export default function ProjectsView({ onShowToast }) {
                         {p.startDate ? (p.startDate.slice(5).replace('-','/') + " \u2192 " + (p.dueDate ? p.dueDate.slice(5).replace('-','/') : 'Indefinite')) : 'No dates'}
                       </div>
                     </div>
+                  </div>
                   </div>
                 </div>
               );
@@ -417,6 +442,23 @@ export default function ProjectsView({ onShowToast }) {
                       </button>
                     ))}
                   </div>
+                </div>
+                
+                <div className="pt-2 border-t border-gray-100">
+                  <label className="flex items-center gap-1.5 px-4 py-3 hover:bg-gray-100 border border-dashed border-gray-300 rounded-xl text-gray-600 transition-colors cursor-pointer justify-center">
+                    <Paperclip className="w-4 h-4" /> 
+                    <span className="text-xs font-bold truncate max-w-[200px]">
+                      {formData.attachment ? formData.attachment : 'Attach Project Brief (Optional)'}
+                    </span>
+                    <input 
+                      type="file" 
+                      className="hidden" 
+                      onChange={e => {
+                         const file = e.target.files[0];
+                         if (file) setFormData({...formData, attachment: file.name});
+                      }}
+                    />
+                  </label>
                 </div>
 
               </form>

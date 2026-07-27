@@ -55,6 +55,14 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         </div>
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
+          {entries.length > 0 && (
+            <button 
+              onClick={() => { if(window.confirm('Are you sure you want to completely wipe the ledger?')) { setEntries([]); if(onShowToast) onShowToast('Ledger cleared entirely.', 'info'); } }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-bold transition-all shadow-sm"
+            >
+              Clear Ledger
+            </button>
+          )}
           <button 
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1e1e2d] hover:bg-black text-white text-xs font-bold shadow-xs transition-all"
