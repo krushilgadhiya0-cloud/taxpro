@@ -1,4 +1,5 @@
 import express from 'express';
+import Razorpay from 'razorpay';
 const router = express.Router();
 
 let transactions = [
@@ -49,30 +50,42 @@ router.post('/send', (req, res) => {
 });
 
 // POST /api/payments/razorpay/create-order
-router.post('/razorpay/create-order', (req, res) => {
+router.post('/razorpay/create-order', async (req, res) => {
   const { amount, currency, notes } = req.body;
   const targetAmount = amount ? parseInt(amount, 10) : 199900; // Default ₹1,999.00 INR (199900 paise)
 
-  const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  console.log(`[TaxPro Razorpay Engine] Initializing Razorpay Instance`);
+  
+  try {
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+       console.error(`[Error] Missing RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET in .env`);
+       return res.status(500).json({ success: false, error: 'Server payment configuration missing.' });
+    }
 
-  console.log(`[TaxPro Razorpay Engine] Generated Order ${orderId} for ₹${targetAmount / 100} INR`);
+    const instance = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
 
-  res.json({
-    success: true,
-    order: {
-      id: orderId,
-      entity: 'order',
+    const options = {
       amount: targetAmount,
-      amount_paid: 0,
-      amount_due: targetAmount,
       currency: currency || 'INR',
       receipt: `rcpt_${Date.now()}`,
-      status: 'created',
-      attempts: 0,
       notes: notes || { plan: 'TaxPro Enterprise Professional', email: 'krushilgadhiya0@gmail.com' }
-    },
-    key_id: 'rzp_test_TaxPro2026'
-  });
+    };
+
+    const order = await instance.orders.create(options);
+    console.log(`[TaxPro Razorpay Engine] Generated Live Order ${order.id} for ₹${targetAmount / 100} INR`);
+
+    res.json({
+      success: true,
+      order: order,
+      key_id: process.env.RAZORPAY_KEY_ID
+    });
+  } catch (error) {
+    console.error(`[TaxPro Razorpay Engine] API Error:`, error);
+    res.status(500).json({ success: false, error: error.message || 'Razorpay order creation failed.' });
+  }
 });
 
 // Mail Engine Helper: Send Payment Receipt Email
