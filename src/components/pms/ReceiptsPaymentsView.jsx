@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, ArrowUpRight, ArrowDownRight, Plus, X } from 'lucide-react';
+import { DollarSign, ArrowUpRight, ArrowDownRight, Plus, X, Trash2 } from 'lucide-react';
 
 export default function ReceiptsPaymentsView({ onShowToast }) {
   const [entries, setEntries] = useState(() => {
@@ -39,6 +39,19 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
     onShowToast && onShowToast(`✓ ${entryData.type} recorded successfully!`, 'success');
   };
 
+  const handleDelete = (id) => {
+    setEntries(entries.filter(e => e.id !== id));
+    onShowToast && onShowToast('Entry removed from ledger.', 'info');
+  };
+
+  const handleClearAll = () => {
+    if (window.confirm("Are you sure you want to completely clear all financial records?")) {
+       setEntries([]);
+       localStorage.removeItem('taxpro_fin_entries');
+       onShowToast && onShowToast('All ledger entries permanently cleared.', 'success');
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-[#f3f4f6] min-h-screen text-gray-800">
       
@@ -50,6 +63,15 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         </div>
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
+          {entries.length > 0 && (
+             <button 
+               onClick={handleClearAll}
+               className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100 text-xs font-bold transition-all"
+             >
+               <Trash2 className="w-4 h-4" />
+               <span>Clear All</span>
+             </button>
+          )}
           <button 
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1e1e2d] hover:bg-black text-white text-xs font-bold shadow-xs transition-all"
@@ -98,6 +120,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
               <th className="p-4">Payment Mode</th>
               <th className="p-4">Date</th>
               <th className="p-4 text-right">Amount</th>
+              <th className="p-4 text-center w-12"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 font-medium">
@@ -116,6 +139,11 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                 <td className="p-4 text-gray-500 font-mono">{e.date}</td>
                 <td className={`p-4 text-right font-black font-mono text-sm ${e.type === 'Receipt' ? 'text-emerald-600' : 'text-rose-600'}`}>
                   {e.amount}
+                </td>
+                <td className="p-4 text-center">
+                  <button onClick={() => handleDelete(e.id)} className="p-2 text-rose-200 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </td>
               </tr>
             ))}
