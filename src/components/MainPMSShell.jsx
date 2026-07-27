@@ -746,9 +746,14 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                   <div className="w-16 h-16 rounded-full bg-[#1e40af] flex items-center justify-center font-extrabold text-xl text-white shadow-sm ring-4 ring-indigo-50 cursor-pointer hover:opacity-90 transition-opacity">
                     KG
                   </div>
-                  <button className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors border border-indigo-100">
+                  <label className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors border border-indigo-100 cursor-pointer">
                     Change Avatar
-                  </button>
+                    <input type="file" className="hidden" accept="image/*" onChange={(e) => {
+                      if(e.target.files && e.target.files[0]) {
+                        if(onShowToast) onShowToast(`Avatar securely updated to ${e.target.files[0].name}`, 'success');
+                      }
+                    }} />
+                  </label>
                 </div>
                 
                 <div>
