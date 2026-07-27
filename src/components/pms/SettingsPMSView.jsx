@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabaseClient';
 
 export default function SettingsPMSView({ onShowToast }) {
   const [theme, setTheme] = useState('light');
-  const [activeLang, setActiveLang] = useState('English');
+  const [activeLang, setActiveLang] = useState('en');
   const [resetting, setResetting] = useState(false);
 
   const handleResetPassword = () => {
@@ -130,15 +130,25 @@ export default function SettingsPMSView({ onShowToast }) {
             <label className={`font-semibold block mb-3 text-xs ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>System Language</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { id: 'English', lbl: 'English', sub: 'USA' },
-                { id: 'Hindi', lbl: 'हिंदी', sub: 'Hindi' },
-                { id: 'Gujarati', lbl: 'ગુજરાતી', sub: 'Gujarati' },
-                { id: 'Spanish', lbl: 'Español', sub: 'Spanish' }
+                { id: 'en', lbl: 'English', sub: 'Global' },
+                { id: 'hi', lbl: 'हिंदी', sub: 'Hindi' },
+                { id: 'gu', lbl: 'ગુજરાતી', sub: 'Gujarati' },
+                { id: 'es', lbl: 'Español', sub: 'Spanish' }
               ].map(lang => (
                 <button
                   key={lang.id}
                   onClick={() => {
                      setActiveLang(lang.id);
+                     
+                     // Programmatically trigger the hidden Google Translate script
+                     setTimeout(() => {
+                       const combo = document.querySelector('.goog-te-combo');
+                       if (combo) {
+                         combo.value = lang.id;
+                         combo.dispatchEvent(new Event('change'));
+                       }
+                     }, 50);
+
                      if (onShowToast) onShowToast(`Platform language set to ${lang.lbl}`, 'success');
                   }}
                   className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${
