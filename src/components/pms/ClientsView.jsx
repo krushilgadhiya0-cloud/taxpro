@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Users, Mail, Phone, FileText, CheckCircle, X, Download, Trash2, Printer, History, Archive, MapPin } from 'lucide-react';
+import { Plus, Search, Users, Mail, Phone, FileText, CheckCircle, X, Download, Trash2, Printer, History, Archive, MapPin, Edit2, Save } from 'lucide-react';
 
 export default function ClientsView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Active');
@@ -8,6 +8,8 @@ export default function ClientsView({ onShowToast }) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [activeClientStat, setActiveClientStat] = useState(null);
   const [undoInfo, setUndoInfo] = useState(null);
+  const [isEditingClient, setIsEditingClient] = useState(false);
+  const [clientEditForm, setClientEditForm] = useState(null);
 
   const [clients, setClients] = useState(() => {
     try {
@@ -108,6 +110,18 @@ export default function ClientsView({ onShowToast }) {
       return c;
     }));
     if (onShowToast) onShowToast('Client related file properly updated and linked.', 'success');
+  };
+
+  const startEditClient = () => {
+    setClientEditForm(activeClientStat);
+    setIsEditingClient(true);
+  };
+
+  const saveEditClient = () => {
+    setClients(clients.map(c => c.id === clientEditForm.id ? { ...c, ...clientEditForm } : c));
+    setActiveClientStat(clientEditForm);
+    setIsEditingClient(false);
+    if(onShowToast) onShowToast('Client profile updated successfully!', 'success');
   };
 
   const triggerPrint = () => {
@@ -357,7 +371,7 @@ export default function ClientsView({ onShowToast }) {
       {activeClientStat && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs print:bg-white print:static print:p-0">
           <div className="bg-white rounded-3xl p-6 md:p-8 max-w-2xl w-full border border-gray-200 shadow-2xl relative print:border-none print:shadow-none print:max-w-full">
-            <button onClick={() => setActiveClientStat(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 print:hidden hidden sm:block">
+            <button onClick={() => { setActiveClientStat(null); setIsEditingClient(false); }} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 print:hidden hidden sm:block">
               <X className="w-5 h-5" />
             </button>
             
@@ -367,10 +381,19 @@ export default function ClientsView({ onShowToast }) {
                 <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
                    <Users className="w-3.5 h-3.5" /> Client Master Account
                 </div>
-                <h3 className="text-2xl font-extrabold text-[#1e1e2d] font-outfit leading-tight mb-1">
-                  {activeClientStat.name}
-                </h3>
-                <div className="text-sm font-bold text-gray-500 mb-2">T/A: {activeClientStat.tradeName}</div>
+                {isEditingClient ? (
+                  <div className="space-y-2 mb-2 w-full max-w-xs">
+                    <input type="text" value={clientEditForm.name} onChange={e => setClientEditForm({...clientEditForm, name: e.target.value})} className="text-2xl font-extrabold text-[#1e1e2d] font-outfit leading-tight w-full outline-none border-b-2 border-indigo-500 bg-gray-50 px-1 py-0.5 rounded-t" placeholder="Client Name" />
+                    <input type="text" value={clientEditForm.tradeName} onChange={e => setClientEditForm({...clientEditForm, tradeName: e.target.value})} className="text-sm font-bold text-gray-500 w-full outline-none border-b-2 border-indigo-500 bg-gray-50 px-1 py-0.5 rounded-t" placeholder="Trade Name" />
+                  </div>
+                ) : (
+                  <>
+                    <h3 className="text-2xl font-extrabold text-[#1e1e2d] font-outfit leading-tight mb-1">
+                      {activeClientStat.name}
+                    </h3>
+                    <div className="text-sm font-bold text-gray-500 mb-2">T/A: {activeClientStat.tradeName}</div>
+                  </>
+                )}
                 <span className={`px-2.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ${
                   activeClientStat.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
                 }`}>
@@ -379,6 +402,21 @@ export default function ClientsView({ onShowToast }) {
               </div>
               
               <div className="flex flex-wrap gap-2 print:hidden items-start">
+                 {isEditingClient ? (
+                   <button 
+                     onClick={saveEditClient}
+                     className="px-3 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl hover:bg-indigo-100 flex items-center gap-1.5 transition-colors"
+                   >
+                     <Save className="w-4 h-4" /> Save Details
+                   </button>
+                 ) : (
+                   <button 
+                     onClick={startEditClient}
+                     className="px-3 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl hover:bg-indigo-100 flex items-center gap-1.5 transition-colors"
+                   >
+                     <Edit2 className="w-4 h-4" /> Edit Profile
+                   </button>
+                 )}
                  <button 
                    onClick={triggerPrint}
                    className="px-3 py-2 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-200 flex items-center gap-1.5 transition-colors"
@@ -404,16 +442,33 @@ export default function ClientsView({ onShowToast }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
                <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl">
                  <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1">Physical File No</div>
-                 <div className="font-mono font-bold text-indigo-700">{activeClientStat.fileNo}</div>
+                 {isEditingClient ? (
+                   <input type="text" value={clientEditForm.fileNo} onChange={e => setClientEditForm({...clientEditForm, fileNo: e.target.value})} className="font-mono font-bold text-indigo-700 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" />
+                 ) : (
+                   <div className="font-mono font-bold text-indigo-700">{activeClientStat.fileNo}</div>
+                 )}
                </div>
                <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl">
                  <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1">PAN Detail</div>
-                 <div className="font-mono font-bold text-gray-900">{activeClientStat.pan}</div>
+                 {isEditingClient ? (
+                   <input type="text" value={clientEditForm.pan} onChange={e => setClientEditForm({...clientEditForm, pan: e.target.value})} className="font-mono font-bold text-gray-900 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" />
+                 ) : (
+                   <div className="font-mono font-bold text-gray-900">{activeClientStat.pan}</div>
+                 )}
                </div>
                <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl col-span-2">
                  <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1">Contact Reference</div>
-                 <div className="text-xs font-bold text-gray-800">{activeClientStat.phone}</div>
-                 <div className="text-xs font-bold text-gray-600">{activeClientStat.email}</div>
+                 {isEditingClient ? (
+                   <div className="space-y-2">
+                     <input type="text" value={clientEditForm.phone} onChange={e => setClientEditForm({...clientEditForm, phone: e.target.value})} className="text-xs font-bold text-gray-800 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" placeholder="Phone" />
+                     <input type="email" value={clientEditForm.email} onChange={e => setClientEditForm({...clientEditForm, email: e.target.value})} className="text-xs font-bold text-gray-600 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" placeholder="Email" />
+                   </div>
+                 ) : (
+                   <>
+                     <div className="text-xs font-bold text-gray-800">{activeClientStat.phone}</div>
+                     <div className="text-xs font-bold text-gray-600">{activeClientStat.email}</div>
+                   </>
+                 )}
                </div>
             </div>
 
