@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check } from 'lucide-react';
+import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check, Printer } from 'lucide-react';
 
 export default function ProjectsView({ onShowToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -7,6 +7,10 @@ export default function ProjectsView({ onShowToast }) {
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [openProject, setOpenProject] = useState(null);
+  
+  // Custom Project Task logic
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskAssignee, setNewTaskAssignee] = useState('Unassigned');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -25,11 +29,7 @@ export default function ProjectsView({ onShowToast }) {
         id: Date.now(), 
         ...formData, 
         status: 'Active',
-        tasks: [
-          { id: Date.now() + 1, title: 'Analyze requirements', completed: false },
-          { id: Date.now() + 2, title: 'Setup workspace', completed: false },
-          { id: Date.now() + 3, title: 'Final deployment', completed: false }
-        ]
+        tasks: []
       },
       ...projectsList
     ]);
@@ -55,6 +55,34 @@ export default function ProjectsView({ onShowToast }) {
         tasks: prev.tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t)
       }));
     }
+  };
+
+  const handleCreateProjectTask = (e) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim() || !openProject) return;
+
+    const newTask = {
+      id: Date.now(),
+      title: newTaskTitle,
+      assignee: newTaskAssignee,
+      createdAt: new Date().toLocaleDateString(),
+      completed: false
+    };
+
+    setProjectsList(prevList => prevList.map(p => {
+      if (p.id === openProject.id) {
+        return { ...p, tasks: [...p.tasks, newTask] };
+      }
+      return p;
+    }));
+
+    setOpenProject(prev => ({
+      ...prev,
+      tasks: [...prev.tasks, newTask]
+    }));
+
+    setNewTaskTitle('');
+    if (onShowToast) onShowToast(`Added task to ${openProject.name}`, 'success');
   };
 
   const getFilteredProjects = () => {
@@ -414,12 +442,20 @@ export default function ProjectsView({ onShowToast }) {
                   <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-100/50 px-2 py-0.5 rounded-sm">{openProject.status} PROJECT</span>
                 </div>
               </div>
-              <button 
-                onClick={() => setOpenProject(null)} 
-                className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-white rounded-full transition-colors shadow-sm"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => window.print()}
+                  className="p-1.5 text-gray-500 hover:text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors shadow-sm bg-white border border-emerald-100 flex items-center gap-1 px-3 text-xs font-bold"
+                >
+                  <Printer className="w-4 h-4" /> Print
+                </button>
+                <button 
+                  onClick={() => setOpenProject(null)} 
+                  className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-white rounded-full transition-colors shadow-sm"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 bg-gray-50 flex flex-col gap-8">
@@ -448,6 +484,30 @@ export default function ProjectsView({ onShowToast }) {
                     </div>
                   )}
                 </div>
+                
+                {/* Dynamically Add Task inline form */}
+                <form onSubmit={handleCreateProjectTask} className="mt-4 flex gap-2 w-full bg-white p-2 rounded-xl border border-gray-200 shadow-xs">
+                  <input 
+                    type="text" 
+                    value={newTaskTitle}
+                    onChange={e => setNewTaskTitle(e.target.value)}
+                    placeholder="Enter new task..."
+                    className="flex-1 px-3 py-2 text-sm outline-none bg-transparent font-medium"
+                  />
+                  <select 
+                    value={newTaskAssignee}
+                    onChange={e => setNewTaskAssignee(e.target.value)}
+                    className="px-2 py-2 text-xs border border-gray-200 rounded-lg outline-none bg-gray-50 text-gray-700 font-bold"
+                  >
+                    <option value="Unassigned">Unassigned</option>
+                    <option value="Krushil Gadhiya">Krushil</option>
+                    <option value="Sarah Jenkins">Sarah</option>
+                    <option value="Alex Sterling">Alex</option>
+                  </select>
+                  <button type="submit" disabled={!newTaskTitle.trim()} className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+                    Add
+                  </button>
+                </form>
               </div>
 
               <div>
@@ -480,6 +540,65 @@ export default function ProjectsView({ onShowToast }) {
           </div>
         </div>
       )}
+
+      {/* --- HIDDEN PRINT TEMPLATE --- */}
+      {openProject && (
+        <div id="project-print-view" className="hidden">
+          <div className="p-8 font-sans text-black bg-white w-full">
+            <div className="border-b-2 border-black pb-4 mb-6">
+              <h1 className="text-3xl font-black">{openProject.name} (Project Report)</h1>
+              <p className="text-sm font-bold mt-2">Status: {openProject.status.toUpperCase()} | Start: {openProject.startDate || 'N/A'} | Due: {openProject.dueDate || 'Indefinite'}</p>
+            </div>
+            
+            <h2 className="text-xl font-bold mb-4">Project Tasks</h2>
+            <table className="w-full text-left text-sm border-collapse border border-gray-400">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="border border-gray-400 p-2 font-bold w-2/4">Task Description</th>
+                  <th className="border border-gray-400 p-2 font-bold w-1/4">Assignee</th>
+                  <th className="border border-gray-400 p-2 font-bold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {openProject.tasks.length === 0 ? (
+                  <tr><td colSpan="3" className="border border-gray-400 p-4 text-center italic">No tasks created yet.</td></tr>
+                ) : (
+                  openProject.tasks.map(t => (
+                    <tr key={t.id}>
+                      <td className="border border-gray-400 p-2">{t.title}</td>
+                      <td className="border border-gray-400 p-2">{t.assignee}</td>
+                      <td className="border border-gray-400 p-2">{t.completed ? 'Completed' : 'Pending'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            
+            <div className="mt-8 text-xs text-gray-500">
+              Generated by TaxPro PMS on {new Date().toLocaleString()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style dangerouslySetInnerHTML={{__html: `
+        @media print {
+          body * { visibility: hidden; }
+          #project-print-view, #project-print-view * { visibility: visible; }
+          #project-print-view { 
+            display: block !important;
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            width: 100vw;
+            min-height: 100vh;
+            background: white;
+          }
+          /* Hide scrollbars and reset margin for paper */
+          @page { margin: 1cm; size: auto; }
+          html, body { overflow: visible; background-color: white !important; }
+        }
+      `}} />
 
     </div>
   );

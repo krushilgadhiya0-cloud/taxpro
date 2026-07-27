@@ -20,7 +20,8 @@ export default function TasksView({ onShowToast }) {
     category: 'GST',
     dueDate: '',
     priority: 'Medium',
-    assignee: 'Krushil Gadhiya'
+    assignee: 'Krushil Gadhiya',
+    project: ''
   });
 
   const handleAddTask = (e) => {
@@ -35,12 +36,13 @@ export default function TasksView({ onShowToast }) {
       dueDate: newTask.dueDate || '2026-08-15',
       status: 'Pending',
       priority: newTask.priority,
-      assignee: newTask.assignee || 'Krushil Gadhiya'
+      assignee: newTask.assignee || 'Krushil Gadhiya',
+      project: newTask.project || 'None'
     };
 
     setTasks([taskObj, ...tasks]);
     setIsAddModalOpen(false);
-    setNewTask({ title: '', client: '', category: 'GST', dueDate: '', priority: 'Medium', assignee: 'Krushil Gadhiya' });
+    setNewTask({ title: '', client: '', category: 'GST', dueDate: '', priority: 'Medium', assignee: 'Krushil Gadhiya', project: '' });
     onShowToast && onShowToast('✓ New task created successfully in Finexo PMS!', 'success');
   };
 
@@ -216,8 +218,22 @@ export default function TasksView({ onShowToast }) {
                   value={newTask.client}
                   onChange={e => setNewTask({...newTask, client: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500"
-                  required
                 />
+              </div>
+
+              <div>
+                <label className="font-semibold text-gray-700 block mb-1">Assign to Project (Optional)</label>
+                <select 
+                  value={newTask.project}
+                  onChange={e => setNewTask({...newTask, project: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 bg-white"
+                >
+                  <option value="">-- No Project (Standalone) --</option>
+                  <option value="Q1 Marketing rollout">Q1 Marketing rollout</option>
+                  <option value="GST Audit 2026-27">GST Audit 2026-27</option>
+                  <option value="Compliance Catchup">Compliance Catchup</option>
+                  <option value="Client Onboarding">Client Onboarding</option>
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
