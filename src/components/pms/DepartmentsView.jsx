@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Plus, Bot, Users, HelpCircle, UserCog, CheckSquare, Edit, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Building2, Plus, Bot, Users, HelpCircle, UserCog, CheckSquare, Edit, Trash2, ChevronLeft, ChevronRight, X, Download } from 'lucide-react';
 
 export default function DepartmentsView({ onShowToast }) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
