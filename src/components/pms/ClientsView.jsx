@@ -7,6 +7,7 @@ export default function ClientsView({ onShowToast }) {
   
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [activeClientStat, setActiveClientStat] = useState(null);
+  const [undoInfo, setUndoInfo] = useState(null);
 
   const [clients, setClients] = useState(() => {
     try {
@@ -46,10 +47,26 @@ export default function ClientsView({ onShowToast }) {
       paymentHistory: []
     };
 
-    setClients([clientObj, ...clients]);
+    setClients(prev => [clientObj, ...prev]);
     setIsAddModalOpen(false);
     setNewClient({ name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '' });
-    onShowToast && onShowToast('Client registered successfully in Finexo PMS!', 'success');
+    
+    if (undoInfo) clearTimeout(undoInfo.timer);
+    
+    const timerId = setTimeout(() => {
+       setUndoInfo(null);
+    }, 5000);
+    
+    setUndoInfo({ id: clientObj.id, name: clientObj.name, timer: timerId });
+  };
+
+  const handleUndoAdd = () => {
+     if (undoInfo) {
+        clearTimeout(undoInfo.timer);
+        setClients(prev => prev.filter(c => c.id !== undoInfo.id));
+        setUndoInfo(null);
+        if (onShowToast) onShowToast('Client addition undone successfully.', 'info');
+     }
   };
 
   const deleteClient = (e, id) => {
@@ -261,6 +278,17 @@ export default function ClientsView({ onShowToast }) {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-gray-700 block mb-1">Mobile Number</label>
+                  <input type="text" placeholder="+91 98000 00000" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 font-mono" />
+                </div>
+                <div>
+                  <label className="text-gray-700 block mb-1">File No / ID</label>
+                  <input type="text" placeholder="FN-100" value={newClient.fileNo} onChange={e => setNewClient({...newClient, fileNo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 font-mono" />
+                </div>
+              </div>
+
               <div>
                 <label className="text-gray-700 block mb-1">Email Address</label>
                 <input type="email" placeholder="client@acme.com" value={newClient.email} onChange={e => setNewClient({...newClient, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500" />
@@ -377,6 +405,21 @@ export default function ClientsView({ onShowToast }) {
           </div>
         </div>
       )}
+
+    {/* Undo Toast Action Timer */}
+    {undoInfo && (
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-gray-900 border border-gray-700 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-4 animate-fade-in shadow-indigo-900/20">
+         <div className="relative w-4 h-4 mr-1">
+            <svg className="w-4 h-4 transform -rotate-90 animate-[spin_5s_linear_1]" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#4f46e5" strokeWidth="4" fill="none" strokeDasharray="63" strokeDashoffset="0"></circle></svg>
+         </div>
+         <span className="text-sm font-semibold tracking-wide flex items-center gap-2">Added <span className="text-indigo-400 font-black">{undoInfo.name}</span></span>
+         <div className="w-px h-4 bg-gray-700"></div>
+         <button onClick={handleUndoAdd} className="text-white hover:bg-gray-800 bg-gray-700/50 px-3 py-1.5 rounded-lg font-extrabold text-xs transition-colors flex items-center gap-1.5">
+           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+           UNDO
+         </button>
+      </div>
+    )}
 
     </div>
   );
