@@ -97,6 +97,19 @@ export default function ClientsView({ onShowToast }) {
     }));
   };
 
+  const updateClientDoc = (id, fileName) => {
+    setClients(clients.map(c => {
+      if (c.id === id) {
+        if(activeClientStat && activeClientStat.id === id) {
+           setActiveClientStat({ ...c, attachedDoc: fileName });
+        }
+        return { ...c, attachedDoc: fileName };
+      }
+      return c;
+    }));
+    if (onShowToast) onShowToast('Client related file properly updated and linked.', 'success');
+  };
+
   const triggerPrint = () => {
     if (onShowToast) onShowToast('Generating printable client ledger...', 'info');
     setTimeout(() => {
@@ -328,7 +341,7 @@ export default function ClientsView({ onShowToast }) {
               </div>
 
               <div>
-                <label className="text-gray-700 block mb-1">Client Verification File (Optional)</label>
+                <label className="text-gray-700 block mb-1">Client Related File (Optional)</label>
                 <input type="file" onChange={e => setNewClient({...newClient, attachedDocName: e.target.files[0]?.name || ''})} className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-gray-300 rounded-xl px-2 py-1.5 focus:border-indigo-500 transition-colors" />
               </div>
 
@@ -402,6 +415,26 @@ export default function ClientsView({ onShowToast }) {
                  <div className="text-xs font-bold text-gray-800">{activeClientStat.phone}</div>
                  <div className="text-xs font-bold text-gray-600">{activeClientStat.email}</div>
                </div>
+            </div>
+
+            {/* Attached Record Segment */}
+            <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 mb-8 print:hidden flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-black text-indigo-400 tracking-widest uppercase mb-1">Client Related File</div>
+                <div className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-indigo-500" /> 
+                  {activeClientStat.attachedDoc || "No secure files appended yet."}
+                </div>
+              </div>
+              <div>
+                <label className="cursor-pointer px-4 py-2 bg-white border border-gray-200 text-xs font-bold text-gray-700 rounded-xl shadow-sm hover:bg-gray-50 flex items-center gap-2 transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> {activeClientStat.attachedDoc ? "Replace File" : "Upload File"}
+                  <input type="file" className="hidden" onChange={e => {
+                     const file = e.target.files[0];
+                     if (file) updateClientDoc(activeClientStat.id, file.name);
+                  }} />
+                </label>
+              </div>
             </div>
 
             {/* Historical Records */}
