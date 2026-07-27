@@ -263,7 +263,7 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                   <div className="h-px bg-gray-100 my-2"></div>
 
                   <div className="flex flex-col gap-1">
-                    <button className="flex items-center gap-3 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+                    <button onClick={() => { setIsProfileOpen(false); setActiveItem('Settings'); }} className="flex items-center gap-3 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
                       <Edit className="w-4 h-4 text-gray-400" />
                       <span>Edit Profile</span>
                     </button>
@@ -681,6 +681,45 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                 className="w-full py-4 bg-white text-red-600 font-extrabold uppercase tracking-widest text-sm rounded-2xl hover:bg-red-50 transition-colors shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
               >
                 I have read this alert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WORKSPACE SWITCHER MODAL */}
+      {isWorkspaceModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-slide-up border border-gray-100">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Repeat className="w-5 h-5 text-indigo-600" /> Switch Workspace
+              </h2>
+              <button onClick={() => setIsWorkspaceModalOpen(false)} className="text-gray-400 hover:text-gray-900 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-2 bg-gray-50/50">
+              <button 
+                onClick={() => { setIsWorkspaceModalOpen(false); if(onShowToast) onShowToast('You are already connected to TaxPro HQ.', 'info'); }}
+                className="w-full text-left flex items-center justify-between p-4 rounded-2xl border-2 border-indigo-500 bg-indigo-50 shadow-sm hover:bg-indigo-100 transition-colors"
+              >
+                <div>
+                  <div className="font-extrabold text-sm text-indigo-900">TaxPro HQ (Default)</div>
+                  <div className="text-[10px] font-bold text-indigo-600 mt-0.5">Admin Level Access</div>
+                </div>
+                <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></div>
+              </button>
+
+              <button 
+                onClick={() => { setIsWorkspaceModalOpen(false); if(onShowToast) onShowToast('Your role does not have clearance for the Payroll workspace.', 'error'); }}
+                className="w-full text-left flex items-center justify-between p-4 rounded-2xl border border-gray-200 bg-white hover:border-red-300 transition-colors group"
+              >
+                <div>
+                  <div className="font-extrabold text-sm text-gray-700 group-hover:text-red-700 transition-colors">Payroll Sandbox</div>
+                  <div className="text-[10px] font-bold text-gray-400 mt-0.5">External Firm Portal</div>
+                </div>
+                <Lock className="w-4 h-4 text-gray-300 group-hover:text-red-400" />
               </button>
             </div>
           </div>
