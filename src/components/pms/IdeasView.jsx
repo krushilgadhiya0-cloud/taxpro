@@ -11,6 +11,14 @@ export default function IdeasView({ onShowToast }) {
     return [];
   });
 
+  const [availableDepts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_departments');
+      if (saved) return JSON.parse(saved) || [];
+    } catch(e) {}
+    return [];
+  });
+
   React.useEffect(() => {
     localStorage.setItem('taxpro_ideas', JSON.stringify(ideas));
   }, [ideas]);
@@ -255,10 +263,10 @@ export default function IdeasView({ onShowToast }) {
                            onChange={e => setFormData({...formData, assignDepartment: e.target.value})}
                            className="bg-gray-100 border-none rounded-lg px-3 py-2 text-xs font-bold text-gray-700 outline-none cursor-pointer"
                          >
-                           <option>All</option>
-                           <option>Engineering</option>
-                           <option>Design</option>
-                           <option>Sales</option>
+                           <option value="All">All</option>
+                           {availableDepts.map(d => (
+                             <option key={d.id} value={d.name}>{d.name}</option>
+                           ))}
                          </select>
                        </div>
                        
