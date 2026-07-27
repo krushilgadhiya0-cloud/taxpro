@@ -5,6 +5,8 @@ export default function OwnerPaymentsView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [remainingDays, setRemainingDays] = useState(14);
   const [activePlan, setActivePlan] = useState('Starter Tier');
+  const [showRazorpayMock, setShowRazorpayMock] = useState(false);
+  const [mockProcessingPlan, setMockProcessingPlan] = useState(null);
 
   const plans = [
     {
@@ -49,64 +51,34 @@ export default function OwnerPaymentsView({ onShowToast }) {
   ];
 
   const handleUpgrade = (plan) => {
-    if (onShowToast) onShowToast('Initiating Razorpay Secure Gateway...', 'info');
+    // Safe extraction of numbers from price string
+    const amountPaise = (parseInt(plan.price.replace(/[^0-9]/g, '')) || 0) * 100;
     
+    // If Custom or Free string (0 amount), skip gateway
+    if (amountPaise === 0) {
+      setActivePlan(plan.name);
+      setRemainingDays(prev => prev + plan.daysToAdd);
+      if(onShowToast) onShowToast(`Successfully upgraded to ${plan.name} Custom Tier!`, 'success');
+      return;
+    }
+
+    // Trigger internal mock overlay instead of broken Razorpay SDK with fake key
+    setMockProcessingPlan(plan);
+    setShowRazorpayMock(true);
+    if (onShowToast) onShowToast('Initiating Secure Gateway...', 'info');
+
+    // Simulate 3 seconds of processing time before resolving
     setTimeout(() => {
-      if (window.Razorpay) {
-        // Safe extraction of numbers from price string
-        const amountPaise = (parseInt(plan.price.replace(/[^0-9]/g, '')) || 0) * 100;
-        
-        // If Custom or Free string (0 amount), skip gateway
-        if (amountPaise === 0) {
-          setActivePlan(plan.name);
-          setRemainingDays(prev => prev + plan.daysToAdd);
-          if(onShowToast) onShowToast(`Successfully upgraded to ${plan.name} Custom Tier!`, 'success');
-          return;
-        }
-
-        const options = {
-          key: "rzp_test_taxpro_mock_123", // Replaced live key with mock test key for UI simulation
-          amount: amountPaise.toString(), // Paise
-          currency: "INR",
-          name: "TaxPro PMS Platform",
-          description: `Subscription: ${plan.name}`,
-          image: "https://upload.wikimedia.org/wikipedia/commons/4/4a/Logo_2013_Google.png", // Dummy logo
-          handler: function (response) {
-            // Payment success callback
-            setActivePlan(plan.name);
-            setRemainingDays(prev => prev + plan.daysToAdd);
-            
-            // Add arbitrary payment successful toast
-            if(onShowToast) {
-              onShowToast(`Razorpay Payment Successful! Ref: ${response.razorpay_payment_id || 'pay_test'}.`, 'success');
-              setTimeout(() => {
-                onShowToast(`Added +${plan.daysToAdd} days to your active workspace limit.`, 'info');
-              }, 1500);
-            }
-          },
-          prefill: {
-            name: "TaxPro Admin",
-            email: "billing@taxprohq.com",
-            contact: "9876543210"
-          },
-          theme: {
-            color: "#1e1e2d"
-          }
-        };
-
-        const rzpay = new window.Razorpay(options);
-        rzpay.on('payment.failed', function (response){
-          if(onShowToast) onShowToast(`Payment Failed: ${response.error.description}`, 'error');
-        });
-        rzpay.open();
-      } else {
-        // Fallback if Razorpay SDK blocked by adblockers etc
-        if(onShowToast) onShowToast('Razorpay Script blocked. Running offline backup.', 'warning');
-        setActivePlan(plan.name);
-        setRemainingDays(prev => prev + plan.daysToAdd);
-        if(onShowToast) onShowToast(`Added ${plan.daysToAdd} days to your active plan.`, 'success');
+      setShowRazorpayMock(false);
+      setActivePlan(plan.name);
+      setRemainingDays(prev => prev + plan.daysToAdd);
+      if(onShowToast) {
+         onShowToast(`Razorpay Payment Successful! Ref: pay_${Math.random().toString(36).substring(2,10).toUpperCase()}`, 'success');
+         setTimeout(() => {
+           onShowToast(`Added +${plan.daysToAdd} days to your active workspace limit.`, 'info');
+         }, 1000);
       }
-    }, 800);
+    }, 3000);
   };
 
   const history = [
@@ -286,6 +258,35 @@ Generated securely via Razorpay API Gateway.
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+
+      {/* Razorpay Mock UI Overlay */}
+      {showRazorpayMock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col items-center p-8 animate-slide-up relative">
+             <div className="absolute top-0 left-0 w-full h-1 bg-cyan-500 animate-pulse"></div>
+             
+             {/* Fake Razorpay Logo/Header */}
+             <div className="w-16 h-16 rounded-full bg-cyan-50 flex items-center justify-center mb-6">
+               <ShieldCheck className="w-8 h-8 text-cyan-600 animate-bounce" />
+             </div>
+             
+             <h3 className="text-xl font-black text-gray-900 font-outfit text-center mb-2">Processing Payment...</h3>
+             <p className="text-sm font-medium text-gray-500 text-center mb-6">
+                Connecting to Razorpay Secure Gateway for <span className="font-bold text-gray-800">{mockProcessingPlan?.name}</span>
+             </p>
+             
+             <div className="w-full flex items-center justify-between text-xs font-bold text-gray-500 bg-gray-50 uppercase tracking-widest px-4 py-3 rounded-lg border border-gray-100">
+                <span>Amount</span>
+                <span className="text-gray-900">{mockProcessingPlan?.price}</span>
+             </div>
+
+             <div className="mt-8 flex items-center gap-2 text-[10px] uppercase font-black tracking-widest text-gray-400">
+                <Lock className="w-3 h-3" /> Securing SSL Session
+             </div>
           </div>
         </div>
       )}
