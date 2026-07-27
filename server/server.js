@@ -9,6 +9,7 @@ import workersRoutes from './routes/workers.js';
 import attendanceRoutes from './routes/attendance.js';
 import aiRoutes from './routes/ai.js';
 import reportsRoutes from './routes/reports.js';
+import integrationsRoutes from './routes/integrations.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -26,6 +27,7 @@ app.use('/api/workers', workersRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/integrations', integrationsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
