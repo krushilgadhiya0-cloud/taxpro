@@ -5,28 +5,20 @@ export default function WorkloadView({ onShowToast, onNavigateToPrivateChat }) {
   const [search, setSearch] = useState('');
   
   // Real Local Component State
-  const [team, setTeam] = useState([
-    {
-      id: 1,
-      name: 'krushil gadhiya',
-      role: 'Admin',
-      initials: 'KG',
-      status: 'Free',
-      metrics: { active: 0, pending: 0, inProg: 0, overdue: 4, high: 0 },
-      done: 0,
-      total: 4
-    },
-    {
-      id: 2,
-      name: 'Priya Sharma',
-      role: 'Tax Associate',
-      initials: 'PS',
-      status: 'Busy',
-      metrics: { active: 12, pending: 4, inProg: 5, overdue: 0, high: 2 },
-      done: 10,
-      total: 22
-    }
-  ]);
+  const [team, setTeam] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_workload_team');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch(e) {}
+    return [];
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('taxpro_workload_team', JSON.stringify(team));
+  }, [team]);
 
   const filteredTeam = useMemo(() => {
     if (!search) return team;
@@ -37,16 +29,32 @@ export default function WorkloadView({ onShowToast, onNavigateToPrivateChat }) {
     const assignee = window.prompt("Who are you assigning a task to? (Type name)");
     if (!assignee) return;
 
-    setTeam(prev => prev.map(member => {
-      if (member.name.toLowerCase() === assignee.toLowerCase()) {
-        const newTotal = member.total + 1;
-        const metrics = { ...member.metrics, pending: member.metrics.pending + 1 };
-        return { ...member, total: newTotal, metrics };
+    setTeam(prev => {
+      const exists = prev.find(member => member.name.toLowerCase() === assignee.toLowerCase());
+      if (exists) {
+        return prev.map(member => {
+          if (member.name.toLowerCase() === assignee.toLowerCase()) {
+            const newTotal = member.total + 1;
+            const metrics = { ...member.metrics, pending: member.metrics.pending + 1, active: member.metrics.active + 1 };
+            return { ...member, total: newTotal, metrics };
+          }
+          return member;
+        });
+      } else {
+        return [...prev, {
+          id: Date.now(),
+          name: assignee,
+          role: 'Team Member',
+          initials: assignee.substring(0,2).toUpperCase(),
+          status: 'Balanced',
+          metrics: { active: 1, pending: 1, inProg: 0, overdue: 0, high: 0 },
+          done: 0,
+          total: 1
+        }];
       }
-      return member;
-    }));
+    });
     
-    if (onShowToast) onShowToast(`Task assigned to ${assignee}. Matrix updated!`, 'success');
+    if (onShowToast) onShowToast(`Task allocated. Workload matrix for ${assignee} updated!`, 'success');
   };
 
   const getStatusColor = (status) => {

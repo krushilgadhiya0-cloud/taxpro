@@ -60,29 +60,57 @@ export default function IdeasView({ onShowToast }) {
   };
 
   const handleAction = (id, actionType) => {
-    setIdeas(prev => prev.map(idea => {
-      if (idea.id === id) {
-        if (actionType === 'upvote') return { ...idea, upvotes: idea.upvotes + 1 };
-        if (actionType === 'downvote') return { ...idea, downvotes: idea.downvotes + 1 };
-        if (actionType === 'comment') {
-           setActiveIdeaView(idea);
-           return idea;
+    setIdeas(prev => {
+      const mapped = prev.map(idea => {
+        if (idea.id === id) {
+          if (actionType === 'upvote') return { ...idea, upvotes: idea.upvotes + 1 };
+          if (actionType === 'downvote') return { ...idea, downvotes: idea.downvotes + 1 };
+          if (actionType === 'comment') {
+             setActiveIdeaView(idea);
+             return idea;
+          }
+          if (actionType === 'implement') {
+             if (onShowToast) onShowToast('Idea marked as Implemented.', 'success');
+             return { ...idea, status: 'Implemented' };
+          }
+          if (actionType === 'convert_task') {
+            const existingTasks = JSON.parse(localStorage.getItem('taxpro_global_tasks') || '[]');
+            existingTasks.unshift({
+                id: `TSK-${Math.floor(100 + Math.random() * 900)}`,
+                title: idea.content.slice(0, 50) + (idea.content.length > 50 ? '...' : ''),
+                client: 'Internal Firm',
+                category: idea.assignDepartment !== 'All' ? idea.assignDepartment : 'General',
+                dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0],
+                status: 'Pending',
+                priority: 'Medium',
+                assignee: 'Unassigned',
+                project: 'None'
+            });
+            localStorage.setItem('taxpro_global_tasks', JSON.stringify(existingTasks));
+            if (onShowToast) onShowToast('Idea successfully converted into an active Task!', 'success');
+            return null;
+          }
+          if (actionType === 'convert_project') {
+            const existingProjects = JSON.parse(localStorage.getItem('taxpro_projects') || '[]');
+            existingProjects.unshift({
+                id: Date.now(),
+                name: idea.content.slice(0, 30) + (idea.content.length > 30 ? '...' : ''),
+                description: idea.content,
+                startDate: new Date().toISOString().split('T')[0],
+                dueDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+                priority: 'Medium',
+                status: 'Active',
+                tasks: []
+            });
+            localStorage.setItem('taxpro_projects', JSON.stringify(existingProjects));
+            if (onShowToast) onShowToast('Idea structured into a new Project footprint!', 'success');
+            return null;
+          }
         }
-        if (actionType === 'implement') {
-           if (onShowToast) onShowToast('Idea marked as Implemented.', 'success');
-           return { ...idea, status: 'Implemented' };
-        }
-        if (actionType === 'convert_task') {
-           if (onShowToast) onShowToast('Idea successfully converted into an active Task.', 'success');
-           return { ...idea, status: 'Converted to Task' };
-        }
-        if (actionType === 'convert_project') {
-           if (onShowToast) onShowToast('Idea structured into a new Project footprint.', 'success');
-           return { ...idea, status: 'Converted to Project' };
-        }
-      }
-      return idea;
-    }));
+        return idea;
+      });
+      return mapped.filter(Boolean);
+    });
   };
 
   const submitComment = (e) => {
