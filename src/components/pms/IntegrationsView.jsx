@@ -187,102 +187,179 @@ export default function IntegrationsView({ onShowToast }) {
 
       {/* Configuration Modals */}
       {activeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-2xl relative animate-fade-in max-h-[90vh] overflow-y-auto">
-            <button onClick={() => setActiveModal(null)} className="absolute top-4 right-4 text-gray-400 hover:text-black">
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className="text-xl font-extrabold font-outfit mb-4">
-               {activeModal === 'smtp' && 'SMTP Configuration'}
-               {activeModal === 'whatsapp' && 'Meta Graph Config'}
-               {activeModal === 'google' && 'Google OAuth Credentials'}
-            </h3>
-            
-            <div className="flex flex-col gap-4 text-sm mt-6">
-              
-              {/* SMTP FORM */}
-              {activeModal === 'smtp' && (
-                <>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">SMTP Host</label>
-                     <input value={smtpConfig.host} onChange={e => setSmtpConfig({...smtpConfig, host: e.target.value})} type="text" className="w-full border rounded-xl px-3 py-2 outline-none" placeholder="smtp.gmail.com" />
-                   </div>
-                   <div className="grid grid-cols-2 gap-4">
-                     <div>
-                       <label className="text-xs font-bold text-gray-500 mb-1 block">Port</label>
-                       <input value={smtpConfig.port} onChange={e => setSmtpConfig({...smtpConfig, port: e.target.value})} type="text" className="w-full border rounded-xl px-3 py-2 outline-none" placeholder="587" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          
+          {/* SMTP Custom Modal */}
+          {activeModal === 'smtp' && (
+            <div className="bg-white border-[2.5px] border-[#44b595] rounded-3xl p-6 w-full max-w-xl shadow-2xl relative animate-fade-in">
+               
+               <div className="flex justify-between items-start mb-6">
+                  <div className="flex gap-4 items-center">
+                     <div className="w-14 h-14 rounded-2xl bg-[#da3733] flex items-center justify-center flex-shrink-0 shadow-sm">
+                        <Mail className="w-7 h-7 text-white" />
                      </div>
                      <div>
-                       <label className="text-xs font-bold text-gray-500 mb-1 block">Username</label>
-                       <input value={smtpConfig.user} onChange={e => setSmtpConfig({...smtpConfig, user: e.target.value})} type="text" className="w-full border rounded-xl px-3 py-2 outline-none" />
+                        <h3 className="font-extrabold text-[#202124] text-xl">Email (SMTP)</h3>
+                        <p className="text-[#80868b] text-sm mt-0.5">Send task alerts via your own email server</p>
+                     </div>
+                  </div>
+                  <div className="px-3 py-1 bg-[#e6f4ea] text-[#137333] rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                     <Check className="w-3.5 h-3.5" /> Custom
+                  </div>
+               </div>
+
+               <div className="flex flex-col gap-5 mt-2">
+                 <div className="flex gap-4">
+                   <div className="flex-1">
+                     <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">SMTP Host</label>
+                     <input value={smtpConfig.host} onChange={e => setSmtpConfig({...smtpConfig, host: e.target.value})} type="text" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" placeholder="smtp.gmail.com" />
+                   </div>
+                   <div className="w-28">
+                     <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">Port</label>
+                     <input value={smtpConfig.port} onChange={e => setSmtpConfig({...smtpConfig, port: e.target.value})} type="text" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" placeholder="587" />
+                   </div>
+                 </div>
+
+                 <div>
+                   <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">SMTP Username / Email</label>
+                   <input value={smtpConfig.user} onChange={e => setSmtpConfig({...smtpConfig, user: e.target.value})} type="text" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" placeholder="you@domain.com" />
+                 </div>
+
+                 <div>
+                   <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">SMTP Password</label>
+                   <div className="relative">
+                     <input value={smtpConfig.pass} onChange={e => setSmtpConfig({...smtpConfig, pass: e.target.value})} type="password" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors pr-10" placeholder="App password" />
+                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 cursor-pointer hover:text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
                      </div>
                    </div>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">App Password / Secret</label>
-                     <input value={smtpConfig.pass} onChange={e => setSmtpConfig({...smtpConfig, pass: e.target.value})} type="password" className="w-full border rounded-xl px-3 py-2 outline-none" />
-                   </div>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">Sender Email (From)</label>
-                     <input value={smtpConfig.sender_email} onChange={e => setSmtpConfig({...smtpConfig, sender_email: e.target.value})} type="text" className="w-full border rounded-xl px-3 py-2 outline-none" placeholder="hello@firm.com" />
-                   </div>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">Test Email Address (To)</label>
-                     <input value={smtpConfig.target_email} onChange={e => setSmtpConfig({...smtpConfig, target_email: e.target.value})} type="text" className="w-full border rounded-xl px-3 py-2 outline-none" />
-                   </div>
-                </>
-              )}
+                 </div>
 
-              {/* WHATSAPP FORM */}
-              {activeModal === 'whatsapp' && (
-                <>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">Meta Graph Permanent Access Token</label>
-                     <textarea value={whatsappConfig.block_token} onChange={e => setWhatsappConfig({...whatsappConfig, block_token: e.target.value})} rows={3} className="w-full border rounded-xl px-3 py-2 outline-none font-mono text-xs" />
+                 <div className="flex gap-4 items-end">
+                   <div className="flex-1">
+                     <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">From Address</label>
+                     <input value={smtpConfig.sender_email} onChange={e => setSmtpConfig({...smtpConfig, sender_email: e.target.value})} type="text" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" placeholder="noreply@yourdomain.com" />
                    </div>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">Business Phone Number ID</label>
-                     <input value={whatsappConfig.phone_id} onChange={e => setWhatsappConfig({...whatsappConfig, phone_id: e.target.value})} type="text" className="w-full border rounded-xl px-3 py-2 outline-none font-mono" />
+                   <div className="flex items-center gap-2 mb-3 px-2">
+                     <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-[#44b595] focus:ring-[#44b595]" />
+                     <label className="text-sm font-bold text-[#3c4043]">SSL</label>
                    </div>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">Test Recipient Phone (+Code)</label>
-                     <input value={whatsappConfig.target_phone} onChange={e => setWhatsappConfig({...whatsappConfig, target_phone: e.target.value})} type="text" className="w-full border rounded-xl px-3 py-2 outline-none font-mono" placeholder="919876543210" />
-                   </div>
-                   <p className="text-[10px] text-emerald-600 bg-emerald-50 p-2 rounded-lg mt-2">
-                     Testing the connection will dispatch a live WhatsApp template ping directly to the recipient phone you provide above. Standard Meta messaging charges may strictly apply natively!
-                   </p>
-                </>
-              )}
+                 </div>
+               </div>
 
-              {/* GOOGLE CALENDAR FORM */}
-              {activeModal === 'google' && (
-                <>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">GCP OAuth Client ID</label>
-                     <input value={googleConfig.client_id} onChange={e => setGoogleConfig({...googleConfig, client_id: e.target.value})} type="text" className="w-full border rounded-xl px-3 py-2 outline-none font-mono" />
-                   </div>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">GCP Client Secret</label>
-                     <input value={googleConfig.client_secret} onChange={e => setGoogleConfig({...googleConfig, client_secret: e.target.value})} type="password" className="w-full border rounded-xl px-3 py-2 outline-none font-mono" />
-                   </div>
-                   <div>
-                     <label className="text-xs font-bold text-gray-500 mb-1 block">Authorized Refresh Token</label>
-                     <input value={googleConfig.refresh_token} onChange={e => setGoogleConfig({...googleConfig, refresh_token: e.target.value})} type="password" className="w-full border rounded-xl px-3 py-2 outline-none font-mono" />
-                   </div>
-                   <p className="text-[10px] text-yellow-600 bg-yellow-50 p-2 rounded-lg mt-2">
-                     Acquire these credentials via the Google Cloud Developer Console. Testing the connection will silently place a 1-hour dummy event block on the system calendar linked to this token.
-                   </p>
-                </>
-              )}
-
-              <button 
-                onClick={() => handleTestAndSave(activeModal)}
-                disabled={isTesting}
-                className="mt-2 w-full py-3 bg-[#5b52e0] hover:bg-indigo-600 text-white font-bold text-sm rounded-xl flex items-center justify-center shadow-lg transition-all"
-              >
-                {isTesting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Save & Send Test Request'}
-              </button>
+               <div className="flex items-center gap-3 mt-8">
+                 <button onClick={() => handleTestAndSave('smtp')} disabled={isTesting} className="flex-1 bg-[#6ba392] hover:bg-[#5a8c7b] text-white font-bold py-3 px-4 rounded-xl flex justify-center items-center gap-2 transition-colors">
+                   {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save</>}
+                 </button>
+                 <button className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg> Verify
+                 </button>
+                 <button onClick={() => setActiveModal(null)} className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl hover:bg-gray-50 transition-colors">
+                   Cancel
+                 </button>
+               </div>
             </div>
-          </div>
+          )}
+
+          {/* WhatsApp Custom Modal */}
+          {activeModal === 'whatsapp' && (
+            <div className="bg-white border-[2.5px] border-[#44b595] rounded-3xl p-6 w-full max-w-xl shadow-2xl relative animate-fade-in max-h-[90vh] overflow-y-auto">
+               
+               <div className="flex justify-between items-start mb-6 w-full pr-6">
+                  <div className="flex gap-4 items-center">
+                     <div className="w-14 h-14 rounded-2xl bg-[#25d366] flex items-center justify-center flex-shrink-0 shadow-xs">
+                        <MessageCircle className="w-7 h-7 text-white" />
+                     </div>
+                     <div>
+                        <h3 className="font-extrabold text-[#202124] text-xl">WhatsApp Business</h3>
+                        <p className="text-[#80868b] text-sm mt-0.5">Send task alerts via your own WhatsApp channel</p>
+                     </div>
+                  </div>
+                  <div className="px-3 py-1 bg-[#e6f4ea] text-[#137333] rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm absolute right-6 top-6">
+                     <Check className="w-3.5 h-3.5" /> Default
+                  </div>
+               </div>
+
+               <div className="flex flex-col gap-5 mt-2">
+                 <div>
+                   <label className="text-sm font-bold text-[#3c4043] mb-1.5 flex items-center gap-2">
+                     Channel Name 
+                     <span className="text-[10px] font-bold text-[#5f6368] bg-[#f1f3f4] px-2 py-0.5 rounded-full flex items-center gap-1"><Info className="w-3 h-3" /> Verify first</span>
+                   </label>
+                   <input type="text" readOnly className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#80868b] bg-[#f8f9fa]" placeholder="Auto-filled from Meta after verification" />
+                 </div>
+
+                 <div>
+                   <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">Phone Number ID</label>
+                   <input value={whatsappConfig.phone_id} onChange={e => setWhatsappConfig({...whatsappConfig, phone_id: e.target.value})} type="text" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" placeholder="From Meta Business Suite" />
+                 </div>
+
+                 <div>
+                   <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">WABA ID</label>
+                   <input type="text" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" placeholder="WhatsApp Business Account ID" />
+                 </div>
+
+                 <div>
+                   <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">Access Token</label>
+                   <div className="relative">
+                     <input value={whatsappConfig.block_token} onChange={e => setWhatsappConfig({...whatsappConfig, block_token: e.target.value})} type="password" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors pr-10" placeholder="Permanent access token" />
+                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 cursor-pointer hover:text-gray-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                     </div>
+                   </div>
+                 </div>
+
+                 <div>
+                   <label className="text-sm font-bold text-[#3c4043] mb-1.5 flex items-center gap-1">API Host <span className="text-gray-400 font-medium">(optional)</span></label>
+                   <input type="text" defaultValue="https://graph.facebook.com" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" />
+                   <p className="text-xs text-[#80868b] font-medium mt-1.5 leading-relaxed">Leave blank to use Meta directly. Only change this if you have your own custom API endpoint.</p>
+                 </div>
+
+                 <div>
+                   <label className="text-sm font-bold text-[#3c4043] mb-1.5 flex items-center gap-1">Meta API Version <span className="text-gray-400 font-medium">(optional)</span></label>
+                   <input type="text" defaultValue="v21.0" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" />
+                 </div>
+               </div>
+
+               <div className="flex items-center gap-3 mt-8">
+                 <button onClick={() => handleTestAndSave('whatsapp')} disabled={isTesting} className="flex-1 bg-[#6ba392] hover:bg-[#5a8c7b] text-white font-bold py-3 px-4 rounded-xl flex justify-center items-center gap-2 transition-colors">
+                   {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Connect</>}
+                 </button>
+                 <button className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg> Verify
+                 </button>
+                 <button onClick={() => setActiveModal(null)} className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl hover:bg-gray-50 transition-colors">
+                   Cancel
+                 </button>
+               </div>
+            </div>
+          )}
+
+          {/* Google Calendar Fallback Modal */}
+          {activeModal === 'google' && (
+             <div className="bg-white border-[2.5px] border-[#44b595] rounded-3xl p-6 w-full max-w-xl shadow-2xl relative animate-fade-in">
+                <button onClick={() => setActiveModal(null)} className="absolute top-4 right-4 text-gray-400 hover:text-black">
+                   <X className="w-5 h-5" />
+                </button>
+                <div className="flex gap-4 items-center mb-6">
+                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                      <Calendar className="w-7 h-7 text-white" />
+                   </div>
+                   <div>
+                      <h3 className="font-extrabold text-[#202124] text-xl">Google Calendar OAuth</h3>
+                      <p className="text-[#80868b] text-sm mt-0.5">Acquire tokens from GCP Console.</p>
+                   </div>
+                </div>
+                <div className="space-y-4">
+                   <input value={googleConfig.client_id} onChange={e => setGoogleConfig({...googleConfig, client_id: e.target.value})} type="text" className="w-full border rounded-xl px-4 py-3 outline-none font-mono" placeholder="GCP Client ID" />
+                   <input value={googleConfig.client_secret} onChange={e => setGoogleConfig({...googleConfig, client_secret: e.target.value})} type="password" className="w-full border rounded-xl px-4 py-3 outline-none font-mono" placeholder="GCP Client Secret" />
+                   <input value={googleConfig.refresh_token} onChange={e => setGoogleConfig({...googleConfig, refresh_token: e.target.value})} type="password" className="w-full border rounded-xl px-4 py-3 outline-none font-mono" placeholder="Authorized Refresh Token" />
+                </div>
+                <button onClick={() => handleTestAndSave('google')} className="mt-6 w-full py-3 bg-[#6ba392] hover:bg-[#5a8c7b] text-white font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center">
+                   {isTesting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Connect Google Cloud'}
+                </button>
+             </div>
+          )}
         </div>
       )}
     </div>
