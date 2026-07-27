@@ -93,6 +93,27 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Neural Voice AI Command Listeners
+  useEffect(() => {
+    const handleVoiceNav = (e) => {
+      setActiveItem(e.detail);
+      if (onShowToast) onShowToast(`Voice Command: Navigating to ${e.detail}`, 'success');
+    };
+    const handleVoiceSearch = (e) => {
+      setIsSearchOpen(true);
+      setSearchQuery(e.detail);
+      if (onShowToast) onShowToast(`Voice Command: Searching for ${e.detail}`, 'success');
+    };
+    
+    window.addEventListener('ai_navigate', handleVoiceNav);
+    window.addEventListener('ai_search', handleVoiceSearch);
+    
+    return () => {
+      window.removeEventListener('ai_navigate', handleVoiceNav);
+      window.removeEventListener('ai_search', handleVoiceSearch);
+    };
+  }, [onShowToast]);
+
   const sidebarItems = [
     { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
     { name: 'Projects', icon: FolderKanban, hasSub: false },

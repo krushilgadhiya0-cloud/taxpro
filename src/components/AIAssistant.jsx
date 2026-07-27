@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Sparkles, 
   X, 
@@ -12,10 +12,11 @@ import {
   CheckCircle2
 } from 'lucide-react';
 
-export default function AIAssistant({ isOpen, onClose, onShowToast }) {
+export default function AIAssistant({ isOpen, onClose, onShowToast, onLogout }) {
   const [inputMsg, setInputMsg] = useState('');
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const recognitionRef = useRef(null);
   const [messages, setMessages] = useState([
     {
       sender: 'ai',
@@ -32,6 +33,15 @@ export default function AIAssistant({ isOpen, onClose, onShowToast }) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Clean up speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -69,25 +79,122 @@ export default function AIAssistant({ isOpen, onClose, onShowToast }) {
     }, 800);
   };
 
-  const handleVoiceCommandToggle = () => {
-    setIsVoiceActive(!isVoiceActive);
-    if (!isVoiceActive) {
-      if (onShowToast) onShowToast('Listening for Level 7 Voice Commands...', 'info');
-      // Mock finishing recording after 3 seconds
-      setTimeout(() => {
-        setIsVoiceActive(false);
-        const voiceText = "Generate report and pay Rahul ₹50,000";
-        setMessages((prev) => [...prev, { sender: 'user', text: `🎤 "${voiceText}"`, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
-        
-        setTimeout(() => {
-          setMessages((prev) => [...prev, { 
-            sender: 'ai', 
-            text: `Executing Voice Directives.\n✓ Generated August Compliance Report\n✓ Dispatched ₹50,000 to Rahul's primary account.`, 
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-          }]);
-        }, 1500);
-      }, 3000);
+  const executeIntent = (transcript) => {
+    const text = transcript.toLowerCase();
+    let handled = false;
+    let aiResponse = '';
+
+    // 1. NAVIGATION INTENT
+    if (text.includes('open') || text.includes('go to') || text.includes('show')) {
+      const match = text.match(/(?:open|go to|show)\s+(.+)/);
+      if (match && match[1]) {
+        // Capitalize each word for the exact tab name (e.g. "team members" -> "Team Members")
+        const target = match[1].replace(/\b\w/g, c => c.toUpperCase()).trim();
+        window.dispatchEvent(new CustomEvent('ai_navigate', { detail: target }));
+        aiResponse = `Navigating to ${target} module now.`;
+        handled = true;
+      }
     }
+    
+    // 2. PRINT INTENT
+    if (!handled && (text.includes('print this') || text.includes('print page') || text.includes('print report') || text === 'print')) {
+      aiResponse = 'Initializing printer spooler for the current view...';
+      setTimeout(() => window.print(), 1000);
+      handled = true;
+    }
+
+    // 3. SEARCH INTENT
+    if (!handled && (text.includes('search for') || text.includes('find'))) {
+      const match = text.match(/(?:search for|find)\s+(.+)/);
+      if (match && match[1]) {
+        const query = match[1].trim();
+        window.dispatchEvent(new CustomEvent('ai_search', { detail: query }));
+        aiResponse = `Initiating global search for "${query}"...`;
+        handled = true;
+      }
+    }
+
+    // 4. LOGOUT INTENT
+    if (!handled && (text.includes('sign out') || text.includes('log out'))) {
+      aiResponse = 'Signing off. Goodbye!';
+      setTimeout(() => {
+        if (onLogout) onLogout();
+        if (onClose) onClose();
+      }, 1500);
+      handled = true;
+    }
+
+    // Fallback if not specifically handled by Voice UI system
+    if (!handled) {
+      if (text.includes('generate report')) {
+        aiResponse = 'Report Engine: Generated draft compliance report #SOC2-2026. Ready for PDF download in Reports section.';
+      } else if (text.includes('show attendance')) {
+        aiResponse = 'Attendance System parsed: 12 members currently clocked in. 2 on leave. Opening Dashboard metrics now.';
+      } else if (text.includes('pay rahul')) {
+        aiResponse = 'Finance Execute: Dispatched ₹50,000 to Rahul\'s primary account verified across 2FA. Waiting on bank clearance.';
+      } else {
+        aiResponse = `Command recognized: "${transcript}". Based on historical cashflows, operating expenses are projected to decline by 12.4% next month while payroll remains stabilized at $65.2k.`;
+      }
+    }
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        sender: 'ai',
+        text: aiResponse,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+    ]);
+  };
+
+  const handleVoiceCommandToggle = () => {
+    if (isVoiceActive) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsVoiceActive(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      if (onShowToast) onShowToast('Voice AI is unsupported in this browser.', 'error');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsVoiceActive(true);
+      if (onShowToast) onShowToast('Listening for Voice Commands...', 'info');
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setMessages((prev) => [...prev, { 
+        sender: 'user', 
+        text: `🎤 "${transcript}"`, 
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+      }]);
+      executeIntent(transcript);
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error', event.error);
+      setIsVoiceActive(false);
+      if (onShowToast) onShowToast(`Voice recognition failed: ${event.error}`, 'error');
+    };
+
+    recognition.onend = () => {
+      setIsVoiceActive(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
   };
 
   const handleFileUpload = (e) => {

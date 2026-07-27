@@ -152,6 +152,7 @@ export default function App() {
           isOpen={isAIAssistantOpen}
           onClose={() => setIsAIAssistantOpen(false)}
           onShowToast={showToast}
+          onLogout={handleLogout}
         />
       </div>
     );
@@ -287,6 +288,7 @@ export default function App() {
         isOpen={isAIAssistantOpen}
         onClose={() => setIsAIAssistantOpen(false)}
         onShowToast={showToast}
+        onLogout={handleLogout}
       />
 
       {/* PWA INSTALLATION MODAL */}
