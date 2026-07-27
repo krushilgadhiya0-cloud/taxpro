@@ -33,7 +33,8 @@ import {
   Zap,
   Megaphone,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Plus
 } from 'lucide-react';
 
 import DashboardView from './DashboardView';
