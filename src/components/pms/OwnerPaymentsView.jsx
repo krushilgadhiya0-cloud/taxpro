@@ -49,9 +49,64 @@ export default function OwnerPaymentsView({ onShowToast }) {
   ];
 
   const handleUpgrade = (plan) => {
-    setActivePlan(plan.name);
-    setRemainingDays(prev => prev + plan.daysToAdd);
-    if(onShowToast) onShowToast(`Successfully upgraded to ${plan.name}! Added ${plan.daysToAdd} days to your active plan.`, 'success');
+    if (onShowToast) onShowToast('Initiating Razorpay Secure Gateway...', 'info');
+    
+    setTimeout(() => {
+      if (window.Razorpay) {
+        // Safe extraction of numbers from price string
+        const amountPaise = (parseInt(plan.price.replace(/[^0-9]/g, '')) || 0) * 100;
+        
+        // If Custom or Free string (0 amount), skip gateway
+        if (amountPaise === 0) {
+          setActivePlan(plan.name);
+          setRemainingDays(prev => prev + plan.daysToAdd);
+          if(onShowToast) onShowToast(`Successfully upgraded to ${plan.name} Custom Tier!`, 'success');
+          return;
+        }
+
+        const options = {
+          key: "rzp_test_taxpro_mock_123", // Replaced live key with mock test key for UI simulation
+          amount: amountPaise.toString(), // Paise
+          currency: "INR",
+          name: "TaxPro PMS Platform",
+          description: `Subscription: ${plan.name}`,
+          image: "https://upload.wikimedia.org/wikipedia/commons/4/4a/Logo_2013_Google.png", // Dummy logo
+          handler: function (response) {
+            // Payment success callback
+            setActivePlan(plan.name);
+            setRemainingDays(prev => prev + plan.daysToAdd);
+            
+            // Add arbitrary payment successful toast
+            if(onShowToast) {
+              onShowToast(`Razorpay Payment Successful! Ref: ${response.razorpay_payment_id || 'pay_test'}.`, 'success');
+              setTimeout(() => {
+                onShowToast(`Added +${plan.daysToAdd} days to your active workspace limit.`, 'info');
+              }, 1500);
+            }
+          },
+          prefill: {
+            name: "TaxPro Admin",
+            email: "billing@taxprohq.com",
+            contact: "9876543210"
+          },
+          theme: {
+            color: "#1e1e2d"
+          }
+        };
+
+        const rzpay = new window.Razorpay(options);
+        rzpay.on('payment.failed', function (response){
+          if(onShowToast) onShowToast(`Payment Failed: ${response.error.description}`, 'error');
+        });
+        rzpay.open();
+      } else {
+        // Fallback if Razorpay SDK blocked by adblockers etc
+        if(onShowToast) onShowToast('Razorpay Script blocked. Running offline backup.', 'warning');
+        setActivePlan(plan.name);
+        setRemainingDays(prev => prev + plan.daysToAdd);
+        if(onShowToast) onShowToast(`Added ${plan.daysToAdd} days to your active plan.`, 'success');
+      }
+    }, 800);
   };
 
   const history = [
