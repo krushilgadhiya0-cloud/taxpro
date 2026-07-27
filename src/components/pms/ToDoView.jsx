@@ -65,14 +65,6 @@ export default function ToDoView({ onShowToast }) {
     onShowToast && onShowToast('Task shredded.', 'info');
   };
 
-  const clearAllTodos = () => {
-    if (window.confirm("Are you sure you want to permanently erase ALL records in your Todo checklist?")) {
-      setTodos([]);
-      localStorage.removeItem('taxpro_todos');
-      onShowToast && onShowToast('Ledger completely cleared.', 'success');
-    }
-  };
-
   // Filter Logic Based on 2026-07-27 standard test date logic
   const filteredTodos = todos.filter(t => {
     // Search bypass
@@ -99,11 +91,6 @@ export default function ToDoView({ onShowToast }) {
         </div>
 
         <div className="flex items-center gap-3">
-          {todos.length > 0 && (
-             <button onClick={clearAllTodos} className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100 text-xs font-bold transition-all whitespace-nowrap">
-               <Trash2 className="w-4 h-4" /> Clear All Tasks
-             </button>
-          )}
           <div className="relative w-full max-w-sm">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input 
@@ -111,7 +98,7 @@ export default function ToDoView({ onShowToast }) {
               placeholder="Search checklists..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 outline-none focus:border-indigo-500 shadow-sm transition-all"
+              className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 outline-none focus:border-indigo-500 shadow-sm transition-all"
             />
           </div>
         </div>

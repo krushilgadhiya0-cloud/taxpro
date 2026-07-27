@@ -44,14 +44,6 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
     onShowToast && onShowToast('Entry removed from ledger.', 'info');
   };
 
-  const handleClearAll = () => {
-    if (window.confirm("Are you sure you want to completely clear all financial records?")) {
-       setEntries([]);
-       localStorage.removeItem('taxpro_fin_entries');
-       onShowToast && onShowToast('All ledger entries permanently cleared.', 'success');
-    }
-  };
-
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-[#f3f4f6] min-h-screen text-gray-800">
       
@@ -63,15 +55,6 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         </div>
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
-          {entries.length > 0 && (
-             <button 
-               onClick={handleClearAll}
-               className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100 text-xs font-bold transition-all"
-             >
-               <Trash2 className="w-4 h-4" />
-               <span>Clear All</span>
-             </button>
-          )}
           <button 
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1e1e2d] hover:bg-black text-white text-xs font-bold shadow-xs transition-all"
