@@ -3,6 +3,8 @@ import { Lightbulb, Plus, Filter, ThumbsUp, ThumbsDown, MessageSquare, Paperclip
 
 export default function IdeasView({ onShowToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeIdeaView, setActiveIdeaView] = useState(null);
+  const [commentInput, setCommentInput] = useState('');
   const [ideas, setIdeas] = useState(() => {
     try {
       const saved = localStorage.getItem('taxpro_ideas');
@@ -46,7 +48,8 @@ export default function IdeasView({ onShowToast }) {
         status: 'New',
         tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
         visibility: formData.visibility,
-        comments: 0
+        comments: 0,
+        commentList: []
       },
       ...prev
     ]);
@@ -62,11 +65,7 @@ export default function IdeasView({ onShowToast }) {
         if (actionType === 'upvote') return { ...idea, upvotes: idea.upvotes + 1 };
         if (actionType === 'downvote') return { ...idea, downvotes: idea.downvotes + 1 };
         if (actionType === 'comment') {
-           const newComment = window.prompt("Type your comment:");
-           if (newComment && newComment.trim()) {
-             if (onShowToast) onShowToast('Comment added successfully!', 'success');
-             return { ...idea, comments: idea.comments + 1 };
-           }
+           setActiveIdeaView(idea);
            return idea;
         }
         if (actionType === 'implement') {
@@ -84,6 +83,27 @@ export default function IdeasView({ onShowToast }) {
       }
       return idea;
     }));
+  };
+
+  const submitComment = (e) => {
+    e.preventDefault();
+    if (!commentInput.trim() || !activeIdeaView) return;
+    
+    setIdeas(prev => prev.map(idea => {
+       if (idea.id === activeIdeaView.id) {
+          const list = idea.commentList || [];
+          const updated = { 
+            ...idea, 
+            commentList: [...list, { id: Date.now(), text: commentInput, date: new Date().toLocaleDateString(), author: 'Current User' }],
+            comments: (idea.comments || 0) + 1 
+          };
+          setActiveIdeaView(updated);
+          return updated;
+       }
+       return idea;
+    }));
+    setCommentInput('');
+    if(onShowToast) onShowToast('Discussion comment posted successfully!', 'success');
   };
 
   const sortedIdeas = [...ideas].sort((a,b) => b.upvotes - a.upvotes);
@@ -317,6 +337,74 @@ export default function IdeasView({ onShowToast }) {
                >
                  Post Idea
                </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* IDEA COMMENTS & DETAILS MODAL */}
+      {activeIdeaView && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col relative overflow-hidden">
+            
+            {/* Header */}
+            <div className="p-6 border-b border-gray-100 flex items-start justify-between bg-gray-50/50">
+               <div className="flex gap-4 w-full">
+                 <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                    <Lightbulb className="w-5 h-5 text-amber-600" />
+                 </div>
+                 <div className="flex-1 pr-6">
+                   <h2 className="text-lg font-black text-gray-900 leading-tight mb-1">{activeIdeaView.content}</h2>
+                   <div className="text-xs font-bold text-gray-400">By {activeIdeaView.author} · {activeIdeaView.assignDepartment} Dept</div>
+                 </div>
+               </div>
+               <button onClick={() => {setActiveIdeaView(null); setCommentInput('');}} className="p-1.5 bg-gray-100 text-gray-500 hover:bg-gray-900 rounded-full transition-colors shrink-0 absolute top-6 right-6">
+                 <X className="w-5 h-5" />
+               </button>
+            </div>
+
+            {/* Comments Area */}
+            <div className="flex-1 overflow-y-auto p-6 bg-gray-50/30">
+               <h3 className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4 flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5" /> Discussion Thread ({activeIdeaView.comments || 0})
+               </h3>
+               
+               <div className="space-y-4">
+                 {activeIdeaView.commentList && activeIdeaView.commentList.length > 0 ? (
+                   activeIdeaView.commentList.map((c) => (
+                      <div key={c.id} className="bg-white border border-gray-100 p-4 rounded-xl shadow-xs">
+                        <div className="flex items-center justify-between mb-2">
+                           <span className="text-xs font-extrabold text-gray-900">{c.author}</span>
+                           <span className="text-[10px] font-bold text-gray-400">{c.date}</span>
+                        </div>
+                        <p className="text-sm font-medium text-gray-700">{c.text}</p>
+                      </div>
+                   ))
+                 ) : (
+                   <div className="text-center py-8 text-xs text-gray-400 font-bold border border-dashed border-gray-200 rounded-xl bg-gray-50">
+                     No comments yet. Start the discussion!
+                   </div>
+                 )}
+               </div>
+            </div>
+
+            {/* Post Comment Input */}
+            <div className="p-4 border-t border-gray-100 bg-white">
+               <form onSubmit={submitComment} className="flex gap-2">
+                 <input 
+                   type="text" 
+                   required
+                   autoFocus
+                   placeholder="Write a comment..." 
+                   value={commentInput}
+                   onChange={e => setCommentInput(e.target.value)}
+                   className="flex-1 bg-gray-100 border-none rounded-xl px-4 py-2.5 text-sm font-medium text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                 />
+                 <button type="submit" className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl transition-colors shadow-md flex items-center gap-2">
+                   Post
+                 </button>
+               </form>
             </div>
 
           </div>
