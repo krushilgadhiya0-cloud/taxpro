@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabaseClient';
 export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
   const [profession, setProfession] = useState('');
   const [otherProfession, setOtherProfession] = useState('');
+  const [department, setDepartment] = useState('');
   const [language, setLanguage] = useState('');
   const [mobile, setMobile] = useState('');
 
@@ -14,6 +15,11 @@ export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
     e.preventDefault();
     if (!profession) {
       alert("Please select a profession.");
+      return;
+    }
+    
+    if (!department) {
+      alert("Please select a department.");
       return;
     }
 
@@ -35,14 +41,16 @@ export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
     }
 
     localStorage.setItem('taxpro_profile_completed', 'true');
+    localStorage.setItem('taxpro_user_department', department);
     
     // Save to Supabase User Metadata to prevent asking on other devices
     supabase.auth.updateUser({
-      data: { profile_completed: true, profession: profession === 'Other' ? otherProfession : profession, language, mobile: purePhone }
+      data: { profile_completed: true, profession: profession === 'Other' ? otherProfession : profession, department, language, mobile: purePhone }
     });
 
     if (onComplete) onComplete({
       profession: profession === 'Other' ? otherProfession : profession,
+      department,
       language,
       mobile: purePhone
     });
@@ -108,6 +116,29 @@ export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
               />
             </div>
           )}
+
+          <div>
+            <label className="text-xs font-semibold text-gray-300 block mb-1">Department / Division</label>
+            <div className="relative">
+              <Briefcase className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-400" />
+              <select
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="w-full glass-input pl-10 pr-4 py-2.5 text-xs text-white appearance-none bg-black/50"
+                required
+              >
+                <option value="" disabled className="text-gray-500 bg-gray-900">Select department...</option>
+                <option value="Tax & Compliance" className="text-gray-200 bg-gray-900">Tax & Compliance</option>
+                <option value="Audit & Assurance" className="text-gray-200 bg-gray-900">Audit & Assurance</option>
+                <option value="Accounting & Bookkeeping" className="text-gray-200 bg-gray-900">Accounting & Bookkeeping</option>
+                <option value="Legal & Advisory" className="text-gray-200 bg-gray-900">Legal & Advisory</option>
+                <option value="IT & Tech Support" className="text-gray-200 bg-gray-900">IT & Tech Support</option>
+                <option value="HR & Operations" className="text-gray-200 bg-gray-900">HR & Operations</option>
+                <option value="Management / Partners" className="text-gray-200 bg-gray-900">Management / Partners</option>
+                <option value="Other" className="text-gray-200 bg-gray-900">Other / Independent</option>
+              </select>
+            </div>
+          </div>
 
           <div>
             <label className="text-xs font-semibold text-gray-300 block mb-1">Preferred Language</label>

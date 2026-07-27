@@ -1,9 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check, Printer } from 'lucide-react';
 
 export default function ProjectsView({ onShowToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [projectsList, setProjectsList] = useState([]);
+  const [projectsList, setProjectsList] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_projects');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (err) {
+      console.error("Local storage error in Projects:", err);
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('taxpro_projects', JSON.stringify(projectsList));
+  }, [projectsList]);
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [openProject, setOpenProject] = useState(null);

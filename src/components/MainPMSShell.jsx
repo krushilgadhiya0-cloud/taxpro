@@ -69,6 +69,13 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChatUser, setActiveChatUser] = useState(null);
+  
+  const [userDepartment, setUserDepartment] = useState('');
+
+  useEffect(() => {
+    const dept = localStorage.getItem('taxpro_user_department');
+    if (dept) setUserDepartment(dept);
+  }, []);
 
   // Live Digital Clock
   useEffect(() => {
@@ -137,7 +144,7 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
   ];
 
   return (
-    <div className="min-h-screen bg-[#f3f4f6] text-gray-800 flex flex-col font-sans selection:bg-[#5b52e0] selection:text-white">
+    <div className="h-screen overflow-hidden bg-[#f3f4f6] text-gray-800 flex flex-col font-sans selection:bg-[#5b52e0] selection:text-white">
       
       {/* PMS WHITE TOP HEADER */}
       <header className="bg-white border-b border-gray-200 py-2.5 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40 shadow-xs">
@@ -204,29 +211,11 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                 <div className="absolute top-12 right-0 w-80 bg-white rounded-2xl shadow-xl border border-gray-200 p-3 z-50 animate-fade-in origin-top-right">
                   <div className="flex items-center justify-between mb-3 px-1">
                     <h4 className="text-sm font-extrabold text-gray-900 font-outfit">Notifications</h4>
-                    <span className="text-[10px] font-bold bg-[#5b52e0]/10 text-[#5b52e0] px-2 py-0.5 rounded-full">3 New</span>
+                    <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">0 New</span>
                   </div>
                   
-                  <div className="flex flex-col gap-2">
-                    <div className="p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer border border-transparent hover:border-gray-200">
-                      <div className="text-xs font-bold text-gray-900 mb-1">GST 3B Return Pending</div>
-                      <div className="text-[10px] text-gray-500">Acme Advisory Corp's Q1 return is due in 2 days.</div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-indigo-50/50 hover:bg-indigo-50 transition-colors cursor-pointer border border-indigo-100">
-                      <div className="text-xs font-extrabold text-indigo-700 mb-0.5">New Task Assigned</div>
-                      <div className="text-[10px] text-gray-600 flex flex-col gap-0.5">
-                        <span>Priya assigned you to <strong className="text-gray-800">"TDS Return Filing"</strong>.</span>
-                        <span className="text-indigo-600 font-bold mt-0.5">Due Tomorrow • Priority: High</span>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer border border-transparent hover:border-gray-200">
-                      <div className="text-xs font-bold text-gray-900 mb-1">New Message Received</div>
-                      <div className="text-[10px] text-gray-500">Priya Sharma requested an audit extension.</div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer border border-transparent hover:border-gray-200">
-                      <div className="text-xs font-bold text-gray-900 mb-1">System Update</div>
-                      <div className="text-[10px] text-gray-500">TaxPro App Update Available! Please refresh.</div>
-                    </div>
+                  <div className="flex flex-col gap-2 p-3 text-center text-xs text-gray-500 font-bold bg-gray-50 rounded-xl my-2">
+                    No new notifications.
                   </div>
                   
                   <button className="w-full text-center text-xs font-bold text-[#5b52e0] mt-3 py-1 hover:underline">Mark all as read</button>
@@ -271,9 +260,16 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                       </div>
                       <span className="text-sm font-medium text-gray-700">krushil</span>
                     </div>
-                    <span className="px-2 py-1 bg-[#d1fae5] text-[#0f766e] text-[10px] font-bold rounded-lg leading-none">
-                      Admin
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end pl-2">
+                       <span className="px-2 py-1 bg-[#d1fae5] text-[#0f766e] text-[10px] font-bold rounded-lg leading-none">
+                         Admin
+                       </span>
+                       {userDepartment && (
+                         <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg leading-none truncate max-w-[100px]">
+                           {userDepartment}
+                         </span>
+                       )}
+                    </div>
                   </div>
 
                   <div className="h-px bg-gray-100 my-2"></div>
@@ -337,7 +333,7 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
       <div className="flex flex-1 relative overflow-hidden">
         
         {/* LEFT NAVY SIDEBAR (Hover to expand) */}
-        <aside className="group w-16 hover:w-64 bg-[#181c32] text-gray-300 flex flex-col py-4 px-3 flex-shrink-0 h-[calc(100vh-64px)] overflow-y-auto overflow-x-hidden transition-all duration-300 z-30 relative custom-scrollbar-hide">
+        <aside className="group w-16 hover:w-64 bg-[#181c32] text-gray-300 flex flex-col py-4 px-3 flex-shrink-0 h-full overflow-y-auto overflow-x-hidden transition-all duration-300 z-30 relative custom-scrollbar-hide">
           <div className="flex flex-col gap-1 w-56">
             {sidebarItems.map((item) => {
               const Icon = item.icon;
@@ -422,19 +418,7 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
 
             <div className="text-xs text-gray-400 font-semibold px-2 py-1">Quick Suggestions</div>
             <div className="flex flex-col gap-1 text-xs">
-              {['Acme Advisory Corp (FN-901)', 'GST 3B Return Filing Q1', 'Sterling Capital Pvt Ltd (FN-902)', 'TDS Payment Deposit Month of June'].map((s, idx) => (
-                <div 
-                  key={idx} 
-                  onClick={() => {
-                    setIsSearchOpen(false);
-                    onShowToast && onShowToast(`Navigating to ${s}`, 'info');
-                  }}
-                  className="p-2.5 rounded-xl hover:bg-gray-100 cursor-pointer text-gray-700 font-medium flex items-center justify-between"
-                >
-                  <span>{s}</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-                </div>
-              ))}
+              <div className="p-4 text-center text-gray-400 italic font-medium">Empty records</div>
             </div>
           </div>
         </div>

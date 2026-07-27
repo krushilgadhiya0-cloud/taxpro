@@ -7,23 +7,31 @@ export default function PrivateChatView({ onShowToast, preSelectedUser }) {
   const messagesEndRef = useRef(null);
 
   // Hardcoded contacts for UI demo
-  const [contacts, setContacts] = useState([
-    { id: 1, name: 'Priya Sharma', role: 'Tax Associate', avatar: 'PS', online: true },
-    { id: 2, name: 'krushil gadhiya', role: 'Admin', avatar: 'KG', online: true },
-    { id: 3, name: 'Alex Sterling', role: 'Accountant', avatar: 'AS', online: false },
-    { id: 4, name: 'John Doe', role: 'Intern', avatar: 'JD', online: true },
-  ]);
-
-  // Chat history mock per contact ID
-  const [chats, setChats] = useState({
-    1: [
-      { id: Date.now()-4000, text: "Hi, about the Acme Corp files?", isMe: false, time: "09:30 AM" },
-      { id: Date.now()-3000, text: "I uploaded them. Did you check?", isMe: true, time: "09:35 AM" }
-    ],
-    2: [
-      { id: Date.now()-2000, text: "Can you approve my leave request?", isMe: false, time: "Yesterday" }
-    ]
+  // Real contacts using localStorage
+  const [contacts, setContacts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_private_contacts');
+      if (saved) return JSON.parse(saved) || [];
+    } catch (e) {}
+    return [];
   });
+
+  // Chat history using localStorage
+  const [chats, setChats] = useState(() => {
+    try {
+      const savedChats = localStorage.getItem('taxpro_private_chats');
+      if (savedChats) return JSON.parse(savedChats) || {};
+    } catch (e) {}
+    return {};
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('taxpro_private_contacts', JSON.stringify(contacts));
+  }, [contacts]);
+
+  React.useEffect(() => {
+    localStorage.setItem('taxpro_private_chats', JSON.stringify(chats));
+  }, [chats]);
 
   useEffect(() => {
     if (preSelectedUser) {

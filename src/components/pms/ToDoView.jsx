@@ -16,12 +16,7 @@ export default function ToDoView({ onShowToast }) {
       console.error("Local storage error in ToDo:", err);
     }
     
-    return [
-      { id: 1, text: 'Reconcile GST 2B vs 3B for Acme Corp', category: 'GST', completed: false, isStarred: true, dueDate: '2026-07-27' },
-      { id: 2, text: 'Download DIR-3 KYC OTP for Sterling Director', category: 'MCA', completed: true, isStarred: false, dueDate: '2026-07-26' },
-      { id: 3, text: 'Send TDS payment reminder to Apex Logistics', category: 'Income Tax', completed: false, isStarred: true, dueDate: '2026-07-28' },
-      { id: 4, text: 'Prepare quarterly audit presentation for CFO meeting', category: 'General', completed: false, isStarred: false, dueDate: '2026-07-27' },
-    ];
+    return [];
   });
   
   const [newText, setNewText] = useState('');

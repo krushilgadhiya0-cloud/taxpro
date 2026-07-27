@@ -537,23 +537,9 @@ export default function TeamMembersView({ onShowToast }) {
                   <User className="w-4 h-4 text-emerald-600" /> Recent Active Assignments
                 </h4>
                 <div className="flex flex-col gap-2">
-                   
-                   <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex justify-between items-center">
-                     <div>
-                       <div className="text-sm font-bold text-gray-900">GST Registration Review</div>
-                       <div className="text-[10px] text-gray-500 font-semibold">Client: Acme Corp (FN-901)</div>
-                     </div>
-                     <span className="px-2 py-1 bg-amber-100 text-amber-700 text-[9px] font-bold rounded-lg uppercase tracking-wider">In Progress</span>
+                   <div className="text-[10px] text-gray-400 font-bold bg-gray-50 border border-gray-100 p-4 rounded-xl text-center italic">
+                     No active task assignments for this member yet.
                    </div>
-
-                   <div className="bg-gray-50 border border-gray-100 rounded-xl p-3 flex justify-between items-center">
-                     <div>
-                       <div className="text-sm font-bold text-gray-900">ITR Filing & Audit</div>
-                       <div className="text-[10px] text-gray-500 font-semibold">Client: Sterling Capital</div>
-                     </div>
-                     <span className="px-2 py-1 bg-red-100 text-red-600 text-[9px] font-bold rounded-lg uppercase tracking-wider">High Prio</span>
-                   </div>
-
                 </div>
               </div>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Search, Filter, Calendar, CheckCircle2, Clock, AlertCircle, User, MoreVertical, X } from 'lucide-react';
 
 export default function TasksView({ onShowToast }) {
@@ -6,13 +6,30 @@ export default function TasksView({ onShowToast }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  const [tasks, setTasks] = useState([
-    { id: 'TSK-101', title: 'GST 3B Return Filing Q1', client: 'Acme Advisory Corp', category: 'GST', dueDate: '2026-07-28', status: 'Pending', priority: 'High', assignee: 'Krushil Gadhiya' },
-    { id: 'TSK-102', title: 'Income Tax Audit Filing AY 2026-27', client: 'Sterling Capital Pvt Ltd', category: 'Income Tax', dueDate: '2026-07-30', status: 'In Progress', priority: 'High', assignee: 'Krushil Gadhiya' },
-    { id: 'TSK-103', title: 'MCA Annual Compliance DIR-3', client: 'NexGen Tech Solutions', category: 'MCA', dueDate: '2026-08-05', status: 'Pending', priority: 'Medium', assignee: 'Alex Sterling' },
-    { id: 'TSK-104', title: 'TDS Payment Deposit Month of June', client: 'Apex Logistics LLC', category: 'Income Tax', dueDate: '2026-07-25', status: 'Completed', priority: 'High', assignee: 'Krushil Gadhiya' },
-    { id: 'TSK-105', title: 'GSTR-1 Sales Data Reconciliation', client: 'BlueWave Enterprises', category: 'GST', dueDate: '2026-07-20', status: 'Overdue', priority: 'High', assignee: 'Sarah Jenkins' },
-  ]);
+  const [tasks, setTasks] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_global_tasks');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (err) {
+      console.error("Local storage error in Tasks:", err);
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('taxpro_global_tasks', JSON.stringify(tasks));
+  }, [tasks]);
+
+  const [clients] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_clients');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
 
   const [newTask, setNewTask] = useState({
     title: '',
@@ -212,13 +229,17 @@ export default function TasksView({ onShowToast }) {
 
               <div>
                 <label className="font-semibold text-gray-700 block mb-1">Client Name</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Acme Corp"
+                <select 
                   value={newTask.client}
                   onChange={e => setNewTask({...newTask, client: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500"
-                />
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 bg-white"
+                  required
+                >
+                  <option value="">-- Select Client --</option>
+                  {clients.map((c, idx) => (
+                    <option key={idx} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

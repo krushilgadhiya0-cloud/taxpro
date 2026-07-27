@@ -30,6 +30,12 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
   const [currentTime, setCurrentTime] = useState('25 Jul 2026, 12:34:10 pm');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [taskDetailType, setTaskDetailType] = useState(null);
+  const [userDepartment, setUserDepartment] = useState('');
+
+  React.useEffect(() => {
+    const dept = localStorage.getItem('taxpro_user_department');
+    if (dept) setUserDepartment(dept);
+  }, []);
 
   // Interactive Task Counts (matching PMS dashboard schema)
   const [taskMetrics, setTaskMetrics] = useState({
@@ -113,7 +119,9 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
               <div className="flex flex-col">
                 <span className="text-xl font-bold text-teal-600 leading-none">1</span>
                 <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Workspaces</span>
-                <span className="text-[10px] text-gray-400 mt-0.5">1 Admin</span>
+                <span className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[120px]">
+                  1 Admin {userDepartment ? `• ${userDepartment}` : ''}
+                </span>
               </div>
             </div>
 
@@ -238,18 +246,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                      <div className="p-6 border-t border-gray-100 bg-gray-50 sticky bottom-0">
                        <button 
                          onClick={() => {
-                           // Randomize Dashboard metric numbers to simulate fetching filtered data
-                           setTaskMetrics({
-                             dueToday: Math.floor(Math.random() * 20),
-                             dueTomorrow: Math.floor(Math.random() * 10),
-                             dueIn7Days: Math.floor(Math.random() * 50),
-                             dueAfter7Days: Math.floor(Math.random() * 30),
-                             dueIn30Days: Math.floor(Math.random() * 80),
-                             dueAfter30Days: Math.floor(Math.random() * 40),
-                             overdueUpTo7Days: Math.floor(Math.random() * 5),
-                             overdueMoreThan7Days: Math.floor(Math.random() * 3),
-                             dueTotal: Math.floor(Math.random() * 200 + 40)
-                           });
+                           // In a real app, this would fetch data from the server.
                            setIsFilterOpen(false);
                          }} 
                          className="w-full py-3.5 bg-[#5b52e0] text-white rounded-xl text-sm font-extrabold hover:bg-[#4c44cf] transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"

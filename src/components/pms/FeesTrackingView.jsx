@@ -1,12 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DollarSign, Send, Plus, X, Printer, History, Mail, AlertCircle, FileText } from 'lucide-react';
 
 export default function FeesTrackingView({ onShowToast }) {
-  const [fees, setFees] = useState([
-    { id: 'FT-1', client: 'Acme Advisory Corp', totalFee: 50000, paid: 45000, history: [{ date: '2026-06-15', desc: 'Initial Advance Received', amount: 45000 }] },
-    { id: 'FT-2', client: 'Sterling Capital Pvt Ltd', totalFee: 85000, paid: 85000, history: [{ date: '2026-05-10', desc: 'Full Settlement Received', amount: 85000 }] },
-    { id: 'FT-3', client: 'NexGen Tech Solutions', totalFee: 35000, paid: 0, history: [{ date: '2026-07-01', desc: 'Invoice Generated', amount: 0 }] },
-  ]);
+  const [fees, setFees] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_fees');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('taxpro_fees', JSON.stringify(fees));
+  }, [fees]);
+
+  const [clients] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_clients');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newFee, setNewFee] = useState({ client: '', totalFee: '', paid: '' });
@@ -142,15 +159,17 @@ export default function FeesTrackingView({ onShowToast }) {
             <form onSubmit={handleAddFee} className="flex flex-col gap-4 text-xs font-semibold">
               <div>
                 <label className="text-gray-700 block mb-1">Client Business Name *</label>
-                <input 
-                  type="text" 
-                  autoFocus
-                  placeholder="e.g. Apex Global Industries"
+                <select 
                   value={newFee.client}
                   onChange={e => setNewFee({...newFee, client: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-[#5b52e0] bg-gray-50 focus:bg-white"
                   required
-                />
+                >
+                  <option value="">-- Select Client --</option>
+                  {clients.map((c, i) => (
+                    <option key={i} value={c.name}>{c.name} {c.fileNo ? `(${c.fileNo})` : ''}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

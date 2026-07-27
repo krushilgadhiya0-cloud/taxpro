@@ -5,11 +5,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
   const [entries, setEntries] = useState(() => {
     const saved = localStorage.getItem('taxpro_fin_entries');
     if (saved) return JSON.parse(saved);
-    return [
-      { id: 'REC-801', type: 'Receipt', client: 'Acme Advisory Corp', mode: 'UPI / Net Banking', amount: '₹45,000.00', date: '2026-07-24' },
-      { id: 'PAY-802', type: 'Payment', client: 'Software Subscription (Zoho)', mode: 'Credit Card', amount: '₹12,400.00', date: '2026-07-22' },
-      { id: 'REC-803', type: 'Receipt', client: 'Sterling Capital Pvt Ltd', mode: 'Bank Transfer', amount: '₹85,000.00', date: '2026-07-20' },
-    ];
+    return [];
   });
   
   const [isModalOpen, setIsModalOpen] = useState(false);

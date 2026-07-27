@@ -4,12 +4,9 @@ import { Play, Pause, RotateCcw, Timer } from 'lucide-react';
 export default function TimeTrackingView({ onShowToast }) {
   const [seconds, setSeconds] = useState(0);
   const [isActive, setIsActive] = useState(false);
-  const [taskName, setTaskName] = useState('Acme Corp GST Audit');
+  const [taskName, setTaskName] = useState('');
   
-  const [history, setHistory] = useState([
-    { id: 1, task: 'Q3 Tax Filing Prep', duration: '02:15:30', date: 'Oct 12, 2026' },
-    { id: 2, task: 'Monthly Retainer Advisory', duration: '01:05:00', date: 'Oct 10, 2026' },
-  ]);
+  const [history, setHistory] = useState([]);
 
   useEffect(() => {
     let interval = null;

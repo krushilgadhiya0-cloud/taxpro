@@ -3,6 +3,56 @@ import { DollarSign, CheckCircle2, CloudLightning, ArrowRight, Wallet, History, 
 
 export default function OwnerPaymentsView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Overview');
+  const [remainingDays, setRemainingDays] = useState(14);
+  const [activePlan, setActivePlan] = useState('Starter Tier');
+
+  const plans = [
+    {
+      name: 'Startup Core',
+      desc: 'Ideal for early-stage fintechs & small teams',
+      price: '₹999 /mo',
+      daysToAdd: 30,
+      features: [
+        'Up to 25 Active Workers',
+        'Basic Payroll Auto-Dispatches',
+        'Standard OTP Verification',
+        'Weekly Financial Reports',
+      ],
+      popular: false,
+    },
+    {
+      name: 'Fintech Enterprise',
+      desc: 'For rapidly scaling companies & banks',
+      price: '₹1,999 /mo',
+      daysToAdd: 30,
+      features: [
+        'Unlimited Active Workforce',
+        'Razorpay Instant Multi-Rail UPI & Card Payments',
+        'Signature Ring OTP & Biometric Suite',
+        'Live Real-time AI Expense Predictions',
+      ],
+      popular: true,
+    },
+    {
+      name: 'Custom Banking',
+      desc: 'Dedicated infrastructure for financial institutions',
+      price: 'Custom /yr',
+      daysToAdd: 365,
+      features: [
+        'On-Premise Private Quantum Node',
+        'Custom Biometric Hardware SDK',
+        'Bespoke AI Neural Fine-tuning',
+        'SLA 99.999% Uptime Guarantee',
+      ],
+      popular: false,
+    }
+  ];
+
+  const handleUpgrade = (plan) => {
+    setActivePlan(plan.name);
+    setRemainingDays(prev => prev + plan.daysToAdd);
+    if(onShowToast) onShowToast(`Successfully upgraded to ${plan.name}! Added ${plan.daysToAdd} days to your active plan.`, 'success');
+  };
 
   const history = [
     { id: 'INV-0291', date: 'Jul 01, 2026', amount: '₹299', plan: 'Starter M-T-M', status: 'Paid' },
@@ -66,100 +116,75 @@ Generated securely via Razorpay API Gateway.
       </div>
 
       {activeTab === 'Overview' && (
-        <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex flex-col gap-6">
           
-          <div className="flex-1 bg-white border border-gray-200 rounded-3xl p-6 md:p-8 shadow-sm h-fit">
-            <div className="flex items-start justify-between mb-8">
-              <div>
-                <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Current Plan</div>
-                <h3 className="text-2xl font-extrabold text-gray-900 font-outfit flex items-center gap-2">
-                  <CloudLightning className="w-6 h-6 text-[#5b52e0]" /> Starter Tier
-                </h3>
-              </div>
-              <div className="flex flex-col items-end gap-1.5">
-                <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase tracking-wider rounded-lg border border-emerald-100 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> Active
-                </span>
-                <span className="text-[11px] font-bold text-gray-500 bg-gray-50 px-2 py-1 rounded-md border border-gray-100">
-                  <span className="text-gray-800">14 Days</span> Remaining
-                </span>
-              </div>
+          {/* Active Plan Status Header */}
+          <div className="bg-white border border-gray-200 rounded-3xl p-6 md:p-8 shadow-sm flex items-center justify-between">
+            <div>
+              <div className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Current Active Plan</div>
+              <h3 className="text-2xl font-extrabold text-gray-900 font-outfit flex items-center gap-2">
+                <CloudLightning className="w-6 h-6 text-cyan-500" /> {activePlan}
+              </h3>
             </div>
-
-            <h4 className="text-xs font-extrabold text-gray-400 uppercase tracking-widest mb-4 border-b border-gray-100 pb-2">Available Subscription Tiers</h4>
-            <div className="flex flex-col gap-3">
-              <div className="bg-gray-50 p-4 border border-gray-200 rounded-2xl flex items-center justify-between hover:border-gray-300 transition-colors cursor-pointer">
-                 <div>
-                   <h5 className="font-extrabold text-gray-900 text-sm">Standard Plan</h5>
-                   <p className="text-[10px] font-bold text-gray-400">Up to 10 users</p>
-                 </div>
-                 <div className="text-xl font-black text-gray-900 font-outfit">₹999 <span className="text-[10px] uppercase font-bold text-gray-400">/mo</span></div>
-              </div>
-              
-              <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl flex items-center justify-between relative overflow-hidden ring-1 ring-indigo-500/20 cursor-pointer shadow-sm">
-                 <div className="absolute top-0 right-0 bg-[#5b52e0] text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-bl-lg shadow-sm">Recommended</div>
-                 <div>
-                   <h5 className="font-extrabold text-[#5b52e0] text-sm">Professional Plan</h5>
-                   <p className="text-[10px] font-bold text-indigo-600/70">Unlimited users + File Tracking</p>
-                 </div>
-                 <div className="text-xl font-black text-indigo-700 font-outfit">₹1499 <span className="text-[10px] uppercase font-bold text-indigo-700/60">/mo</span></div>
-              </div>
-
-              <div className="bg-gray-900 p-4 border border-gray-800 rounded-2xl flex items-center justify-between text-white cursor-pointer hover:bg-black transition-colors">
-                 <div>
-                   <h5 className="font-extrabold text-white text-sm">Enterprise Custom</h5>
-                   <p className="text-[10px] font-bold text-gray-400">White-labeling & dedicated setup</p>
-                 </div>
-                 <div className="text-xs border border-gray-700 px-3 py-1.5 rounded-lg font-bold bg-gray-800 text-gray-200 shadow-sm">Configurator</div>
-              </div>
+            
+            <div className="flex flex-col items-end gap-1.5">
+              <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase tracking-wider rounded-lg border border-emerald-100 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> Active
+              </span>
+              <span className="text-[13px] font-bold text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+                <span className="text-gray-900 font-black text-lg">{remainingDays}</span> Days Remaining
+              </span>
             </div>
-
-            <button 
-              onClick={() => onShowToast && onShowToast('Navigating to Razorpay secure checkout portal...', 'info')}
-              className="w-full mt-6 py-3.5 bg-gradient-to-r from-[#1e1e2d] to-[#2d2d47] text-white rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 group"
-            >
-              Select & Upgrade Plan <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </button>
           </div>
 
-          <div className="w-full lg:w-96 flex flex-col gap-6">
-            <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <Wallet className="w-4 h-4 text-emerald-500" />
-                <h4 className="font-extrabold text-[#1e1e2d]">Payment Methods</h4>
-              </div>
-              
-              <div className="border border-emerald-500 border-dashed rounded-xl p-4 bg-emerald-50/50 flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-6 bg-[#1e1e2d] rounded flex items-center justify-center text-[10px] text-white font-bold tracking-wider italic shadow-sm">VISA</div>
-                  <div>
-                    <div className="text-sm font-bold text-gray-900 leading-tight">•••• 4242</div>
-                    <div className="text-[10px] text-gray-500 font-semibold">Expires 12/28</div>
+          {/* Pricing Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+            {plans.map((p, idx) => (
+              <div
+                key={idx}
+                className={`bg-white border p-6 rounded-3xl flex flex-col justify-between relative transition-all duration-300 ${
+                  p.popular ? 'border-cyan-400 shadow-xl shadow-cyan-500/10 scale-105 z-10' : 'border-gray-200 hover:border-cyan-200 hover:shadow-md'
+                }`}
+              >
+                {p.popular && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-r from-cyan-400 to-blue-600 text-white text-[9px] font-black uppercase tracking-widest shadow-sm">
+                    Most Popular
+                  </div>
+                )}
+                
+                <div>
+                  <h3 className="text-xl font-extrabold text-gray-900 font-outfit">{p.name}</h3>
+                  <p className="text-[11px] font-semibold text-gray-500 mt-1 h-8">{p.desc}</p>
+                  
+                  <div className="mt-4 mb-6">
+                    <span className="text-2xl font-black text-gray-900 font-outfit">{p.price}</span>
+                  </div>
+
+                  <div className="flex flex-col gap-2.5 mb-6">
+                    {p.features.map((f, i) => (
+                      <div key={i} className="flex items-start gap-2 text-[11px] font-semibold text-gray-600">
+                         <CheckCircle2 className="w-3.5 h-3.5 text-cyan-500 flex-shrink-0 mt-0.5" />
+                         <span>{f}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">Default</span>
-              </div>
 
-              <button className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-bold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
-                <CreditCard className="w-4 h-4 text-gray-400" /> Add New Payment Method
-              </button>
-            </div>
+                <button
+                  onClick={() => handleUpgrade(p)}
+                  className={`w-full py-3 rounded-xl text-xs font-extrabold transition-all active:scale-95 ${
+                    p.popular 
+                      ? 'bg-cyan-500 hover:bg-cyan-600 text-white shadow-lg shadow-cyan-500/20' 
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+                  }`}
+                >
+                  Get {p.name} (+{p.daysToAdd} Days)
+                </button>
 
-            <div className="bg-gradient-to-tr from-gray-900 to-[#1e1e2d] border border-gray-800 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-              <ShieldCheck className="w-32 h-32 text-white/5 absolute -right-6 -bottom-6" />
-              <div className="relative z-10 flex flex-col gap-3">
-                <h4 className="font-outfit font-extrabold text-lg">Secure Billing</h4>
-                <p className="text-xs text-gray-400 font-medium leading-relaxed mb-2">
-                  All transactions are handled securely by Razorpay India. TaxPro never locally stores your raw card data.
-                </p>
-                <div className="flex items-center gap-2 opacity-60">
-                  <LockIcon />
-                  <span className="text-[10px] font-mono tracking-wider">256-BIT ENCRYPTION</span>
-                </div>
               </div>
-            </div>
+            ))}
           </div>
-          
+
         </div>
       )}
 

@@ -3,20 +3,17 @@ import { Lightbulb, Plus, Filter, ThumbsUp, ThumbsDown, MessageSquare, Paperclip
 
 export default function IdeasView({ onShowToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [ideas, setIdeas] = useState([
-    { 
-      id: 1, 
-      title: 'What\'s on your mind?', 
-      content: 'I think we should automate the GST Filing Output generation.',
-      author: 'krushil gadhiya', 
-      upvotes: 45, 
-      downvotes: 2, 
-      status: 'Under Review',
-      tags: ['Automation', 'Tax'],
-      visibility: 'Public',
-      comments: 3
-    }
-  ]);
+  const [ideas, setIdeas] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_ideas');
+      if (saved) return JSON.parse(saved) || [];
+    } catch (e) {}
+    return [];
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('taxpro_ideas', JSON.stringify(ideas));
+  }, [ideas]);
 
   const [formData, setFormData] = useState({
     content: '',

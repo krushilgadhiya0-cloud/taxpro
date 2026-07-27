@@ -6,24 +6,17 @@ export default function DepartmentsView({ onShowToast }) {
   const [activeDeptStat, setActiveDeptStat] = useState(null);
   const [newDeptForm, setNewDeptForm] = useState({ name: '', desc: '', manager: '' });
   
-  const [depts, setDepts] = useState([
-    {
-      id: 1,
-      name: 'Sales and Marketing',
-      members: 5,
-      manager: 'Priya Sharma',
-      initials: 'SA',
-      desc: 'Focuses on promoting products, acquiring customers, and increasing revenue.',
-    },
-    {
-      id: 2,
-      name: 'Administration',
-      members: 2,
-      manager: 'Krushil Gadhiya',
-      initials: 'A',
-      desc: 'Handles overall management, office operations, and organizational policies.',
-    }
-  ]);
+  const [depts, setDepts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_departments');
+      if (saved) return JSON.parse(saved) || [];
+    } catch (e) {}
+    return [];
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('taxpro_departments', JSON.stringify(depts));
+  }, [depts]);
 
   const [deleteId, setDeleteId] = useState(null);
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Search, Users, Mail, Phone, FileText, CheckCircle, X, Download, Trash2, Printer, History, Archive, MapPin } from 'lucide-react';
 
 export default function ClientsView({ onShowToast }) {
@@ -8,13 +8,22 @@ export default function ClientsView({ onShowToast }) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [activeClientStat, setActiveClientStat] = useState(null);
 
-  const [clients, setClients] = useState([
-    { id: 'CL-501', name: 'Acme Advisory Corp', tradeName: 'Acme Financials', pan: 'ABCDE1234F', fileNo: 'FN-901', email: 'contact@acme.com', phone: '+91 98765 43210', status: 'Active', paymentHistory: [{ date: '2026-06-15', desc: 'Q1 Compliance Audit', amount: '₹45,000' }, { date: '2026-05-10', desc: 'Setup Retainer', amount: '₹5,000' }] },
-    { id: 'CL-502', name: 'Sterling Capital Pvt Ltd', tradeName: 'Sterling Global', pan: 'STRLG8890K', fileNo: 'FN-902', email: 'alex@sterling.com', phone: '+91 98123 45678', status: 'Active', paymentHistory: [{ date: '2026-07-02', desc: 'ITR-6 Filing', amount: '₹25,000' }] },
-    { id: 'CL-503', name: 'NexGen Tech Solutions', tradeName: 'NexGen Digital', pan: 'NXGNT5543P', fileNo: 'FN-903', email: 'info@nexgen.io', phone: '+91 97654 32109', status: 'Active', paymentHistory: [{ date: '2026-04-18', desc: 'GST Registration', amount: '₹8,500' }] },
-    { id: 'CL-504', name: 'Apex Logistics LLC', tradeName: 'Apex Shipping', pan: 'APXLG1122M', fileNo: 'FN-904', email: 'ops@apexlogistics.com', phone: '+91 99000 11223', status: 'Active', paymentHistory: [{ date: '2026-06-30', desc: 'Monthly TDS Review', amount: '₹12,000' }] },
-    { id: 'CL-505', name: 'Zeta Alpha Corp', tradeName: 'Zeta Archives', pan: 'ZETA5555L', fileNo: 'FN-888', email: 'zeta@z.com', phone: '+91 99999 99999', status: 'Old Client', paymentHistory: [{ date: '2025-12-10', desc: 'Final Settlement before closure', amount: '₹10,500' }] }
-  ]);
+  const [clients, setClients] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_clients');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('taxpro_clients', JSON.stringify(clients));
+  }, [clients]);
 
   const [newClient, setNewClient] = useState({
     name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: ''

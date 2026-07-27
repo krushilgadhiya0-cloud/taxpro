@@ -2,12 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Send, Users, Circle, MoreVertical, Search, Paperclip, Smile } from 'lucide-react';
 
 export default function CommunicationView({ onShowToast }) {
-  const [messages, setMessages] = useState([
-    { id: 1, text: "Hey team, did we get the Acme Corp data?", senderId: 'KG', senderName: 'Krushil Gadhiya', time: '10:00 AM', isMe: true },
-    { id: 2, text: "Yes, I just uploaded it to their portal. They also requested an extension for ITR.", senderId: 'PS', senderName: 'Priya Sharma', time: '10:05 AM', isMe: false },
-    { id: 3, text: "Great. Alex, please review the ITR draft.", senderId: 'KG', senderName: 'Krushil Gadhiya', time: '10:12 AM', isMe: true },
-    { id: 4, text: "Will do. Expect it by EOD today.", senderId: 'AS', senderName: 'Alex Sterling', time: '10:15 AM', isMe: false },
-  ]);
+  const [messages, setMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_group_chats');
+      if (saved) return JSON.parse(saved) || [];
+    } catch (e) {}
+    return [];
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('taxpro_group_chats', JSON.stringify(messages));
+  }, [messages]);
   const [inputMsg, setInputMsg] = useState('');
   const messagesEndRef = useRef(null);
 

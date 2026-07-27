@@ -2,11 +2,17 @@ import React, { useState } from 'react';
 import { UserCheck, Mail, Phone, Building, Plus, Trash2, X, AlertCircle } from 'lucide-react';
 
 export default function ContactPersonView({ onShowToast }) {
-  const [contacts, setContacts] = useState([
-    { id: 1, name: 'Rajesh Mehta', designation: 'Managing Director', client: 'Acme Advisory Corp', email: 'rmehta@acme.com', phone: '9876511223' },
-    { id: 2, name: 'Priya Sharma', designation: 'Head of Finance', client: 'Sterling Capital Pvt Ltd', email: 'psharma@sterling.com', phone: '9812399887' },
-    { id: 3, name: 'Amit Patel', designation: 'Chief Technology Officer', client: 'NexGen Tech Solutions', email: 'apatel@nexgen.io', phone: '9765444332' },
-  ]);
+  const [contacts, setContacts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_contacts');
+      if (saved) return JSON.parse(saved) || [];
+    } catch (e) {}
+    return [];
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('taxpro_contacts', JSON.stringify(contacts));
+  }, [contacts]);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
