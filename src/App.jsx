@@ -126,7 +126,9 @@ export default function App() {
     setIsAuthModalOpen(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem('taxpro_profile_completed');
     setIsAuthenticated(false);
     setActiveTab('home');
     showToast('Signed out of TaxPro AI session.', 'info');
