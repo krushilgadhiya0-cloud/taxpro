@@ -1,0 +1,481 @@
+import React, { useState } from 'react';
+import { 
+  Search, 
+  Clock, 
+  Bell, 
+  ChevronRight, 
+  LayoutDashboard, 
+  CheckSquare, 
+  Users, 
+  UserCheck, 
+  ListTodo, 
+  Receipt, 
+  UserPlus, 
+  MessageSquare, 
+  CalendarCheck, 
+  Timer, 
+  Settings, 
+  FileText, 
+  DollarSign,
+  RefreshCw,
+  Filter,
+  Lock,
+  X
+} from 'lucide-react';
+
+export default function DashboardView({ onOpenOTP, onTriggerAI }) {
+  const [activeSidebarItem, setActiveSidebarItem] = useState('Dashboard');
+  const [activeSubTab, setActiveSubTab] = useState('Tasks');
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [currentTime, setCurrentTime] = useState('25 Jul 2026, 12:34:10 pm');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [taskDetailType, setTaskDetailType] = useState(null);
+
+  // Interactive Task Counts (matching PMS dashboard schema)
+  const [taskMetrics, setTaskMetrics] = useState({
+    dueToday: 0,
+    dueTomorrow: 0,
+    dueIn7Days: 0,
+    dueAfter7Days: 0,
+    dueIn30Days: 0,
+    dueAfter30Days: 0,
+    overdueUpTo7Days: 0,
+    overdueMoreThan7Days: 0,
+    dueTotal: 0
+  });
+
+  const sidebarItems = [
+    { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
+    { name: 'Tasks', icon: CheckSquare, hasSub: true },
+    { name: 'Clients', icon: Users, hasSub: true },
+    { name: 'Contact Person', icon: UserCheck, hasSub: true },
+    { name: 'To Do', icon: ListTodo, hasSub: true },
+    { name: 'Receipts & Payments', icon: Receipt, hasSub: true },
+    { name: 'Register in out', icon: UserPlus, hasSub: true },
+    { name: 'Bulk Messages', icon: MessageSquare, hasSub: true },
+    { name: 'Attendance', icon: CalendarCheck, hasSub: true },
+    { name: 'Time Tracking', icon: Timer, hasSub: true },
+    { name: 'Settings', icon: Settings, hasSub: true },
+    { name: 'Reports', icon: FileText, hasSub: true },
+    { name: 'Fees Tracking', icon: DollarSign, hasSub: true },
+  ];
+
+  const dueCards = [
+    { key: 'dueToday', label: 'Due Today', count: taskMetrics.dueToday, borderColor: 'border-[#fde047]', bgColor: 'bg-[#fefce8]', textColor: 'text-[#ca8a04]' },
+    { key: 'dueTomorrow', label: 'Due Tomorrow', count: taskMetrics.dueTomorrow, borderColor: 'border-[#86efac]', bgColor: 'bg-[#f0fdf4]', textColor: 'text-[#16a34a]' },
+    { key: 'dueIn7Days', label: 'Due In 7 Days', count: taskMetrics.dueIn7Days, borderColor: 'border-[#93c5fd]', bgColor: 'bg-[#eff6ff]', textColor: 'text-[#2563eb]' },
+    { key: 'dueAfter7Days', label: 'Due After 7 Days', count: taskMetrics.dueAfter7Days, borderColor: 'border-[#93c5fd]', bgColor: 'bg-[#eff6ff]', textColor: 'text-[#2563eb]' },
+    { key: 'dueIn30Days', label: 'Due In 30 Days', count: taskMetrics.dueIn30Days, borderColor: 'border-[#93c5fd]', bgColor: 'bg-[#eff6ff]', textColor: 'text-[#2563eb]' },
+    { key: 'dueAfter30Days', label: 'Due After 30 Days', count: taskMetrics.dueAfter30Days, borderColor: 'border-[#93c5fd]', bgColor: 'bg-[#eff6ff]', textColor: 'text-[#2563eb]' },
+    { key: 'overdueUpTo7Days', label: 'Overdue Up To 7 Days', count: taskMetrics.overdueUpTo7Days, borderColor: 'border-[#fca5a5]', bgColor: 'bg-[#fef2f2]', textColor: 'text-[#dc2626]' },
+    { key: 'overdueMoreThan7Days', label: 'Overdue More Than 7 Days', count: taskMetrics.overdueMoreThan7Days, borderColor: 'border-[#fca5a5]', bgColor: 'bg-[#fef2f2]', textColor: 'text-[#dc2626]' },
+    { key: 'dueTotal', label: 'Due Total', count: taskMetrics.dueTotal, borderColor: 'border-[#c084fc]', bgColor: 'bg-[#faf5ff]', textColor: 'text-[#9333ea]' }
+  ];
+
+  return (
+    <div className="flex-1 bg-[#f3f4f6] text-gray-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+      
+      <div className="flex flex-1 relative">
+
+
+        {/* MAIN DASHBOARD CONTENT VIEW (Light Gray Background `#f3f4f6`) */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto bg-[#f3f4f6]">
+          
+          {/* PURPLE DASHBOARD HEADER BANNER (Vibrant Gradient Matching Screenshot) */}
+          <div className="w-full rounded-2xl bg-gradient-to-r from-[#5b52e0] via-[#7c3aed] to-[#9333ea] p-6 shadow-md text-white mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-extrabold font-outfit tracking-tight">Dashboard</h1>
+              <p className="text-xs text-indigo-100 mt-1">TaxPro PMS Real-Time Tax & Compliance Overview</p>
+            </div>
+
+            {/* Last Refreshed Badge */}
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/20 border border-white/20 backdrop-blur-md text-xs font-medium">
+              <span>Last Refreshed: {currentTime}</span>
+              <button 
+                onClick={() => setCurrentTime(new Date().toLocaleString())}
+                className="hover:rotate-180 transition-transform duration-500"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-white" />
+              </button>
+            </div>
+          </div>
+
+          {/* METRICS ROW (Image 1 feature request) */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-6 shadow-xs flex flex-wrap items-center gap-6">
+            
+            {/* Metric 1 */}
+            <div className="flex items-center gap-4 min-w-[120px] px-2">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                <svg className="w-5 h-5 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-teal-600 leading-none">1</span>
+                <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Workspaces</span>
+                <span className="text-[10px] text-gray-400 mt-0.5">1 Admin</span>
+              </div>
+            </div>
+
+            {/* Vertical Divider */}
+            <div className="h-10 w-px bg-gray-100"></div>
+
+            {/* Metric 2 */}
+            <div className="flex items-center gap-4 min-w-[120px] px-2">
+              <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center">
+                <svg className="w-5 h-5 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-sky-500 leading-none">2</span>
+                <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Departments</span>
+              </div>
+            </div>
+
+            {/* Vertical Divider */}
+            <div className="h-10 w-px bg-gray-100"></div>
+
+            {/* Metric 3 */}
+            <div className="flex items-center gap-4 min-w-[120px] px-2">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-emerald-500 leading-none">0</span>
+                <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Members</span>
+              </div>
+            </div>
+
+            {/* Vertical Divider */}
+            <div className="h-10 w-px bg-gray-100"></div>
+
+            {/* Metric 4 */}
+            <div className="flex items-center gap-4 min-w-[120px] px-2">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-amber-500 leading-none">0</span>
+                <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Managers</span>
+              </div>
+            </div>
+            
+            <div className="flex-1 flex justify-end relative">
+               <button 
+                 onClick={() => setIsFilterOpen(!isFilterOpen)}
+                 className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 transition-colors text-xs font-bold border border-indigo-100"
+               >
+                 <Filter className="w-4 h-4" /> Filter Options
+               </button>
+               
+               {/* Massive Slide-in Filter Drawer */}
+               {isFilterOpen && (
+                 <>
+                   <div 
+                     className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity" 
+                     onClick={() => setIsFilterOpen(false)}
+                   ></div>
+                   
+                   <div className="fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-50 flex flex-col transform transition-transform animate-slide-in-right overflow-y-auto border-l border-gray-200">
+                     <div className="p-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white/90 backdrop-blur-md z-10">
+                       <div className="flex items-center gap-3">
+                         <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center">
+                           <Filter className="w-5 h-5 text-indigo-600" />
+                         </div>
+                         <h3 className="text-xl font-extrabold text-gray-900 font-outfit">Dashboard Filters</h3>
+                       </div>
+                       <button onClick={() => setIsFilterOpen(false)} className="p-2 text-gray-400 hover:text-gray-900 rounded-full hover:bg-gray-100 transition-colors">
+                         <X className="w-5 h-5" />
+                       </button>
+                     </div>
+                     
+                     <div className="p-6 flex-1">
+                       <h4 className="text-xs font-extrabold text-gray-800 mb-4 uppercase tracking-wider">Refine Data</h4>
+                       
+                       <div className="mb-6">
+                         <label className="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-widest">Workspace Origin</label>
+                         <div className="space-y-2">
+                           <label className="flex items-center justify-between p-3 border border-gray-200 rounded-xl cursor-pointer hover:border-indigo-300 transition-colors bg-gray-50/50">
+                             <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                               <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" defaultChecked /> TaxPro HQ
+                             </div>
+                             <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-0.5 rounded shadow-sm border border-gray-100">Primary</span>
+                           </label>
+                         </div>
+                       </div>
+                       
+                       <div className="mb-6">
+                         <label className="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-widest">Department Scope</label>
+                         <div className="space-y-2">
+                           <label className="flex items-center gap-3 text-sm font-semibold text-gray-700 p-2.5 hover:bg-indigo-50/50 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
+                             <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" defaultChecked /> Audit & Assurance
+                           </label>
+                           <label className="flex items-center gap-3 text-sm font-semibold text-gray-700 p-2.5 hover:bg-indigo-50/50 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
+                             <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" defaultChecked /> Tax Compliance
+                           </label>
+                           <label className="flex items-center gap-3 text-sm font-semibold text-gray-700 p-2.5 hover:bg-indigo-50/50 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-indigo-100">
+                             <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /> Advisory Services
+                           </label>
+                         </div>
+                       </div>
+                       
+                       <div className="mb-6">
+                         <label className="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-widest">Data Date Range</label>
+                         <select className="w-full bg-gray-50 border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500/20">
+                           <option>This Quarter (Q3 2026)</option>
+                           <option>Last Quarter (Q2 2026)</option>
+                           <option>Year to Date</option>
+                           <option>All Time</option>
+                         </select>
+                       </div>
+                     </div>
+                     
+                     <div className="p-6 border-t border-gray-100 bg-gray-50 sticky bottom-0">
+                       <button 
+                         onClick={() => {
+                           // Randomize Dashboard metric numbers to simulate fetching filtered data
+                           setTaskMetrics({
+                             dueToday: Math.floor(Math.random() * 20),
+                             dueTomorrow: Math.floor(Math.random() * 10),
+                             dueIn7Days: Math.floor(Math.random() * 50),
+                             dueAfter7Days: Math.floor(Math.random() * 30),
+                             dueIn30Days: Math.floor(Math.random() * 80),
+                             dueAfter30Days: Math.floor(Math.random() * 40),
+                             overdueUpTo7Days: Math.floor(Math.random() * 5),
+                             overdueMoreThan7Days: Math.floor(Math.random() * 3),
+                             dueTotal: Math.floor(Math.random() * 200 + 40)
+                           });
+                           setIsFilterOpen(false);
+                         }} 
+                         className="w-full py-3.5 bg-[#5b52e0] text-white rounded-xl text-sm font-extrabold hover:bg-[#4c44cf] transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
+                       >
+                         Apply Filters & Sync
+                       </button>
+                     </div>
+                   </div>
+                 </>
+               )}
+            </div>
+
+          </div>
+
+          {/* SUB-TABS & CATEGORY FILTERS CARD (White Card Container) */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-6 shadow-xs">
+            
+            {/* Sub-tabs Row */}
+            <div className="flex items-center gap-6 border-b border-gray-100 pb-3 mb-4 text-xs font-bold">
+              {['Tasks', 'Todo', 'Live Time Tracking'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveSubTab(tab)}
+                  className={`pb-3 relative transition-colors ${
+                    activeSubTab === tab ? 'text-[#5b52e0] border-b-2 border-[#5b52e0]' : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Category Chips Row */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {['All', 'GST', 'Income Tax', 'MCA', 'Other'].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    activeCategory === cat 
+                      ? 'bg-[#5b52e0] text-white shadow-sm shadow-[#5b52e0]/30' 
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+          </div>
+
+          {/* 9 DUE METRIC CARDS GRID (White Cards + Colored Borders + Soft Fills) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-9 gap-3.5 mb-8">
+            {dueCards.map((card) => (
+              <div 
+                key={card.key}
+                className={`bg-white p-4 rounded-2xl border-2 ${card.borderColor} ${card.bgColor} flex flex-col justify-between text-center shadow-xs hover:shadow-md hover:scale-105 transition-all duration-200 cursor-default`}
+              >
+                <span className="text-[11px] font-bold text-gray-600 leading-tight">
+                  {card.label}
+                </span>
+                <div className={`text-3xl font-black font-outfit mt-3 ${card.textColor}`}>
+                  {card.count}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ALL TASK SUMMARY ROW (Based on the attached image) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            
+            {/* Left Box */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-xs flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-extrabold text-gray-900">All Task Summary - Userwise</h3>
+                <select className="border border-gray-200 rounded-lg text-xs font-semibold p-1.5 outline-none text-gray-700 bg-gray-50 focus:ring-2 focus:ring-indigo-500/20">
+                  <option>Working</option>
+                </select>
+              </div>
+              <div className="border border-gray-100 rounded-xl overflow-hidden flex-1 flex flex-col">
+                <div className="grid grid-cols-2 bg-gray-50/50 p-3 text-[10px] font-extrabold text-gray-500 border-b border-gray-100 uppercase tracking-widest">
+                  <span>USER</span>
+                  <span className="text-right">TOTAL TASKS</span>
+                </div>
+                <div className="grid grid-cols-2 p-3 text-xs font-bold text-gray-800 border-b border-gray-100 bg-white items-center">
+                  <span>Unassigned</span>
+                  <span className="text-right text-gray-500 font-semibold">-</span>
+                </div>
+                <div className="grid grid-cols-2 p-3 text-xs font-bold text-gray-800 bg-white items-center">
+                  <span>Total</span>
+                  <span className="text-right text-gray-500 font-semibold">-</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right stacked boxes */}
+            <div className="flex flex-col gap-4">
+              {/* Unassigned Tasks */}
+              <button 
+                onClick={() => setTaskDetailType('Unassigned')}
+                className="bg-red-50/60 hover:bg-red-100/80 border border-red-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98]"
+              >
+                <span className="text-4xl font-black text-red-600 mb-1 font-outfit">0</span>
+                <span className="text-xs font-bold text-gray-600">Unassigned Tasks</span>
+              </button>
+              
+              {/* Assigned Tasks */}
+              <button 
+                onClick={() => setTaskDetailType('Assigned')}
+                className="bg-green-50/60 hover:bg-green-100/80 border border-green-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98]"
+              >
+                <span className="text-4xl font-black text-green-600 mb-1 font-outfit">0</span>
+                <span className="text-xs font-bold text-gray-600">Assigned Tasks</span>
+              </button>
+
+              {/* Total Tasks */}
+              <button 
+                onClick={() => setTaskDetailType('Total')}
+                className="bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98]"
+              >
+                <span className="text-4xl font-black text-indigo-600 mb-1 font-outfit">0</span>
+                <span className="text-xs font-bold text-gray-600">Total Tasks</span>
+              </button>
+            </div>
+          </div>
+
+          {/* TWO COLUMN LOWER DASHBOARD SECTION */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Left Card: Recent Tasks */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-extrabold text-[#1e1e2d] font-outfit">Recent Tasks</h3>
+              </div>
+
+              {/* Table */}
+              <div className="w-full border border-gray-200 rounded-xl overflow-hidden mt-2">
+                <div className="grid grid-cols-2 bg-gray-50 p-3 text-xs font-extrabold text-gray-500 border-b border-gray-200">
+                  <span>TASK NAME</span>
+                  <span className="text-right">DUE DATE</span>
+                </div>
+                <div className="p-8 text-center text-xs text-gray-700 font-bold bg-white">
+                  No Recent Tasks
+                </div>
+              </div>
+            </div>
+
+            {/* Right Card: Recent Activities */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-extrabold text-[#1e1e2d] font-outfit">
+                  Recent Activities
+                </h3>
+              </div>
+
+              {/* Table */}
+              <div className="w-full border border-gray-200 rounded-xl overflow-hidden mt-2">
+                <div className="grid grid-cols-2 bg-gray-50 p-3 text-xs font-extrabold text-gray-500 border-b border-gray-200">
+                  <span>ACTIVITY</span>
+                  <span className="text-right">DATE LOGGED</span>
+                </div>
+                <div className="p-8 text-center text-xs text-gray-700 font-bold bg-white">
+                  No Recent Activities
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </main>
+      </div>
+
+      {/* FLOATING ACTION BUTTON (Bottom Right Blue Circle Button) */}
+      <button 
+        onClick={onTriggerAI}
+        className="fixed bottom-6 right-6 z-40 p-4 rounded-full bg-[#5b52e0] text-white shadow-xl hover:scale-110 transition-transform"
+        title="TaxPro PMS Quick Assistant"
+      >
+        <CheckSquare className="w-6 h-6" />
+      </button>
+
+      {/* TASK DETAILS MODAL OPENS ON BOX CLICK */}
+      {taskDetailType && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setTaskDetailType(null)}>
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200" 
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  taskDetailType === 'Unassigned' ? 'bg-red-100 text-red-600' :
+                  taskDetailType === 'Assigned' ? 'bg-green-100 text-green-600' :
+                  'bg-indigo-100 text-indigo-600'
+                }`}>
+                  <ListTodo className="w-4 h-4" />
+                </div>
+                <h3 className="text-lg font-extrabold text-gray-900 font-outfit">{taskDetailType} Tasks Overview</h3>
+              </div>
+              <button onClick={() => setTaskDetailType(null)} className="p-1.5 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-10 flex flex-col items-center justify-center min-h-[250px] text-center">
+              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                <Search className="w-6 h-6 text-gray-300" />
+              </div>
+              <h4 className="text-base font-bold text-gray-700 mb-1">No {taskDetailType} Tasks Found</h4>
+              <p className="text-sm text-gray-400 font-semibold max-w-xs mx-auto">
+                Once there are tasks that match this category, they will appear here.
+              </p>
+            </div>
+            
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+              <button 
+                onClick={() => setTaskDetailType(null)}
+                className="px-5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+              >
+                Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

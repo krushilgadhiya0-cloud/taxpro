@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="128" fill="#090909"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" stroke="url(#paint0_linear)" stroke-width="8" opacity="0.5"/>
+  <path d="M256 96L384 160V352L256 416L128 352V160L256 96Z" fill="url(#paint1_linear)" opacity="0.2"/>
+  <path d="M256 128L352 176V336L256 384L160 336V176L256 128Z" stroke="url(#paint2_linear)" stroke-width="16" stroke-linejoin="round"/>
+  <path d="M256 200V312" stroke="#06B6D4" stroke-width="16" stroke-linecap="round"/>
+  <path d="M200 256H312" stroke="#06B6D4" stroke-width="16" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="paint0_linear" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06B6D4"/>
+      <stop offset="0.5" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+    <linearGradient id="paint1_linear" x1="128" y1="96" x2="384" y2="416" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06B6D4"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+    <linearGradient id="paint2_linear" x1="160" y1="128" x2="352" y2="384" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06B6D4"/>
+      <stop offset="1" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+</svg>

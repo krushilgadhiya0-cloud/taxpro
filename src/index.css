@@ -1,0 +1,344 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-dark: #090909;
+  --bg-graphite: #121212;
+  --bg-card: rgba(22, 22, 26, 0.7);
+  --bg-card-hover: rgba(30, 30, 38, 0.85);
+  
+  --accent-cyan: #00F0FF;
+  --accent-blue: #0066FF;
+  --accent-emerald: #00FFA3;
+  --accent-purple: #A855F7;
+  --accent-gold: #F59E0B;
+  
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --border-glow: rgba(0, 240, 255, 0.3);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: var(--bg-dark);
+  color: #F8FAFC;
+  overflow-x: hidden;
+  position: relative;
+  min-height: 100vh;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #090909;
+}
+::-webkit-scrollbar-thumb {
+  background: #26262e;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00F0FF;
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+  background: rgba(18, 18, 22, 0.65);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-panel-hover:hover {
+  transform: translateY(-4px) scale(1.01);
+  border-color: rgba(0, 240, 255, 0.3);
+  box-shadow: 0 25px 60px rgba(0, 240, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.glass-nav {
+  background: rgba(9, 9, 12, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  color: #fff;
+  transition: all 0.2s ease;
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: #00F0FF;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.3), inset 0 0 10px rgba(0, 240, 255, 0.1);
+  background: rgba(0, 240, 255, 0.05);
+}
+
+/* Gradient Text */
+.text-gradient-cyan {
+  background: linear-gradient(135deg, #FFFFFF 0%, #00F0FF 50%, #0066FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-gradient-emerald {
+  background: linear-gradient(135deg, #FFFFFF 0%, #00FFA3 50%, #10B981 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-gradient-gold {
+  background: linear-gradient(135deg, #FFF 0%, #FCD34D 50%, #F59E0B 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-gradient-purple {
+  background: linear-gradient(135deg, #FFFFFF 0%, #E879F9 50%, #A855F7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Glowing Neon Buttons */
+.btn-neon-primary {
+  background: linear-gradient(135deg, #0066FF 0%, #00F0FF 100%);
+  color: #000;
+  font-weight: 700;
+  border-radius: 14px;
+  box-shadow: 0 0 25px rgba(0, 240, 255, 0.4);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-neon-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 40px rgba(0, 240, 255, 0.7);
+  filter: brightness(1.1);
+}
+
+.btn-neon-primary:active {
+  transform: scale(0.97);
+}
+
+.btn-neon-emerald {
+  background: linear-gradient(135deg, #059669 0%, #00FFA3 100%);
+  color: #000;
+  font-weight: 700;
+  border-radius: 14px;
+  box-shadow: 0 0 25px rgba(0, 255, 163, 0.4);
+  transition: all 0.3s ease;
+}
+
+.btn-neon-emerald:hover {
+  box-shadow: 0 0 40px rgba(0, 255, 163, 0.7);
+  transform: translateY(-2px);
+}
+
+.btn-glass-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #F8FAFC;
+  font-weight: 600;
+  border-radius: 14px;
+  transition: all 0.3s ease;
+}
+
+.btn-glass-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Dynamic Aurora Background Waves */
+.aurora-bg {
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 140vw;
+  height: 900px;
+  background: radial-gradient(circle at 50% 30%, rgba(0, 240, 255, 0.15), transparent 60%),
+              radial-gradient(circle at 20% 40%, rgba(168, 85, 247, 0.12), transparent 50%),
+              radial-gradient(circle at 80% 40%, rgba(0, 255, 163, 0.12), transparent 50%);
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+  animation: aurora-float 15s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-float {
+  0% { transform: translateX(-50%) rotate(0deg) scale(1); }
+  50% { transform: translateX(-48%) rotate(2deg) scale(1.08); }
+  100% { transform: translateX(-52%) rotate(-2deg) scale(0.95); }
+}
+
+/* Floating animation */
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(1deg); }
+}
+
+/* SIGNATURE OTP VERIFICATION RING ANIMATION */
+.otp-box {
+  width: 54px;
+  height: 64px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 26px;
+  font-weight: 800;
+  text-align: center;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.otp-box:focus {
+  outline: none;
+  border-color: #00F0FF;
+  box-shadow: 0 0 25px rgba(0, 240, 255, 0.5), inset 0 0 10px rgba(0, 240, 255, 0.2);
+  transform: scale(1.05);
+  background: rgba(0, 240, 255, 0.08);
+}
+
+.otp-box.filled {
+  border-color: rgba(0, 240, 255, 0.6);
+  color: #00F0FF;
+}
+
+.otp-box.error {
+  border-color: #EF4444 !important;
+  color: #EF4444 !important;
+  box-shadow: 0 0 25px rgba(239, 68, 68, 0.4) !important;
+}
+
+.otp-ring-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  border-radius: 28px;
+}
+
+.otp-ring-spinner {
+  position: absolute;
+  inset: -6px;
+  border-radius: 32px;
+  padding: 4px;
+  background: conic-gradient(from 0deg, #00F0FF, #00FFA3, #A855F7, #0066FF, #00F0FF);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: spin-ring 1.8s linear infinite;
+  filter: drop-shadow(0 0 15px rgba(0, 240, 255, 0.8));
+}
+
+.otp-ring-spinner.error {
+  background: conic-gradient(from 0deg, #EF4444, #F97316, #DC2626, #EF4444);
+  filter: drop-shadow(0 0 20px rgba(239, 68, 68, 0.9));
+  animation: spin-ring 0.8s linear infinite;
+}
+
+.otp-ring-spinner.success {
+  background: conic-gradient(from 0deg, #00FFA3, #10B981, #34D399, #00FFA3);
+  filter: drop-shadow(0 0 25px rgba(0, 255, 163, 1));
+  animation: none;
+}
+
+@keyframes spin-ring {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.pulse-ring-glow {
+  animation: ring-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes ring-pulse {
+  0% { opacity: 0.6; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1.02); }
+}
+
+/* Shake animation for failed OTP */
+.animate-shake {
+  animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translate3d(-2px, 0, 0); }
+  20%, 80% { transform: translate3d(4px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+  40%, 60% { transform: translate3d(6px, 0, 0); }
+}
+
+/* Checkmark SVG Animation */
+.checkmark-path {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: draw-check 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+}
+
+@keyframes draw-check {
+  to { stroke-dashoffset: 0; }
+}
+
+/* Fingerprint Laser Scanner Animation */
+.laser-line {
+  position: absolute;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #00F0FF, #00FFA3, transparent);
+  box-shadow: 0 0 15px #00F0FF;
+  animation: scan-laser 2s linear infinite alternate;
+}
+
+@keyframes scan-laser {
+  0% { top: 10%; }
+  100% { top: 90%; }
+}
+
+/* Face ID biometric mesh overlay */
+.biometric-grid {
+  background-image: radial-gradient(rgba(0, 240, 255, 0.4) 1px, transparent 1px);
+  background-size: 16px 16px;
+  animation: pulse-grid 2s infinite alternate;
+}
+
+@keyframes pulse-grid {
+  0% { opacity: 0.3; }
+  100% { opacity: 0.8; }
+}
+
+/* Skeleton shimmer */
+.shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer-anim 1.5s infinite;
+}
+
+@keyframes shimmer-anim {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}

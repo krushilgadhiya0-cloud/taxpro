@@ -1,0 +1,25 @@
+{
+  "short_name": "TaxPro AI",
+  "name": "TaxPro AI 3.0 — Next-Gen Financial & Tax Management",
+  "description": "Manage workers, payroll, reports, expenses, attendance, analytics and payments in one intelligent futuristic AI platform.",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#090909",
+  "theme_color": "#090909",
+  "display": "standalone",
+  "orientation": "any",
+  "categories": ["finance", "productivity", "utilities"]
+}
