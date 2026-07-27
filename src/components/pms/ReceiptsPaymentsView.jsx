@@ -65,7 +65,9 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-gray-500 uppercase">Total Fee Receipts</span>
-            <div className="text-2xl font-black text-emerald-600 font-outfit mt-1">₹1,31,999.00</div>
+            <div className="text-2xl font-black text-emerald-600 font-outfit mt-1">
+              ₹{entries.filter(e => e.type === 'Receipt').reduce((acc, curr) => acc + parseFloat(curr.amount.replace(/[^0-9.-]+/g,"")), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
             <ArrowUpRight className="w-5 h-5 text-emerald-600" />
@@ -75,7 +77,9 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-gray-500 uppercase">Total Firm Payments</span>
-            <div className="text-2xl font-black text-rose-600 font-outfit mt-1">₹12,400.00</div>
+            <div className="text-2xl font-black text-rose-600 font-outfit mt-1">
+              ₹{entries.filter(e => e.type === 'Payment').reduce((acc, curr) => acc + parseFloat(curr.amount.replace(/[^0-9.-]+/g,"")), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center">
             <ArrowDownRight className="w-5 h-5 text-rose-600" />

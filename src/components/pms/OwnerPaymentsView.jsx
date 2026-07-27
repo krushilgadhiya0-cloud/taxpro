@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DollarSign, CheckCircle2, CloudLightning, ArrowRight, Wallet, History, CreditCard, ShieldCheck } from 'lucide-react';
+import { DollarSign, CheckCircle2, CloudLightning, ArrowRight, Wallet, History, CreditCard, ShieldCheck, Lock } from 'lucide-react';
 
 export default function OwnerPaymentsView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Overview');
