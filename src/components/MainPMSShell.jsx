@@ -272,7 +272,7 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                     </button>
                     
                     <a 
-                      href="https://wa.me/919327397861" 
+                      href="https://wa.me/919327397851" 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="flex items-center gap-3 px-3 py-2 text-sm text-[#0f766e] hover:bg-teal-50 rounded-xl transition-colors w-full text-left font-medium"

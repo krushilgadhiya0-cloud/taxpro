@@ -14,19 +14,22 @@ export default function ContactSection({ onShowToast }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+    // Generate real mail handler
+    const mailtoLink = `mailto:krushilgadhiya0@gmail.com?subject=${encodeURIComponent(formData.subject)}&body=${encodeURIComponent("From: " + formData.name + "\nReturn Email: " + formData.email + "\n\nMessage:\n" + formData.content)}`;
     
-    // Simulate API call
+    window.location.href = mailtoLink;
+
     setTimeout(() => {
       setIsSubmitting(false);
       setIsSent(true);
-      if (onShowToast) onShowToast('Transmission successful. We will respond shortly.', 'success');
+      if (onShowToast) onShowToast('Opening secure email client... please hit send!', 'success');
       
       // Reset form
       setTimeout(() => {
         setIsSent(false);
         setFormData({ name: '', email: '', subject: '', content: '' });
       }, 3000);
-    }, 1500);
+    }, 1000);
   };
 
   const contactOptions = [
@@ -34,15 +37,15 @@ export default function ContactSection({ onShowToast }) {
       id: 'email',
       icon: Mail,
       title: 'Email Support',
-      value: 'support@taxpro.ai',
-      subtext: 'Avg response: 2 hrs',
+      value: 'krushilgadhiya0@gmail.com',
+      subtext: 'Avg response: 1-2 hrs',
       color: 'blue'
     },
     {
       id: 'phone',
       icon: Phone,
       title: 'Technical Helpline',
-      value: '+91 98765 43210',
+      value: '+91 93273 97851',
       subtext: 'Mon - Fri, 9am - 6pm',
       color: 'emerald'
     },

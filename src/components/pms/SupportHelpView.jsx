@@ -232,7 +232,7 @@ export default function SupportHelpView({ onShowToast }) {
                  <div className="w-full p-6 bg-white border border-emerald-100 rounded-2xl shadow-sm text-center">
                    <div className="text-xs font-extrabold text-gray-500 uppercase tracking-widest mb-2">Direct Contact Vector</div>
                    <h3 className="text-xl font-black text-gray-900 mb-4 flex items-center justify-center gap-2">
-                     <Phone className="w-5 h-5 text-emerald-500" /> +91 93273 97861
+                     <Phone className="w-5 h-5 text-emerald-500" /> +91 93273 97851
                    </h3>
                    <p className="text-xs text-gray-500 font-medium">
                      Please connect via WhatsApp at the scheduled time to initiate the consultation sequence.

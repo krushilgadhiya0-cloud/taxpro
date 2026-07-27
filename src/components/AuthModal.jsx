@@ -329,7 +329,7 @@ export default function AuthModal({ isOpen, mode, onClose, onSwitchMode, onOpenO
           <button
             onClick={() => {
               onClose();
-              if (onOpenOTP) onOpenOTP(email || 'cfo@taxpro.ai');
+              if (onOpenOTP) onOpenOTP(email || 'krushilgadhiya0@gmail.com');
             }}
             className="text-emerald-400 font-bold hover:underline"
           >
