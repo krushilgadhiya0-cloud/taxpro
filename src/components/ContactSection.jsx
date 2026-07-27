@@ -14,22 +14,38 @@ export default function ContactSection({ onShowToast }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    // Generate real mail handler
-    const mailtoLink = `mailto:krushilgadhiya0@gmail.com?subject=${encodeURIComponent(formData.subject)}&body=${encodeURIComponent("From: " + formData.name + "\nReturn Email: " + formData.email + "\n\nMessage:\n" + formData.content)}`;
-    
-    window.location.href = mailtoLink;
 
-    setTimeout(() => {
+    // Using Formsubmit.co for silent background email dispatch
+    fetch("https://formsubmit.co/ajax/krushilgadhiya0@gmail.com", {
+      method: "POST",
+      headers: { 
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        name: formData.name,
+        email: formData.email,
+        subject: formData.subject,
+        message: formData.content,
+        _template: "box"
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
       setIsSubmitting(false);
       setIsSent(true);
-      if (onShowToast) onShowToast('Opening secure email client... please hit send!', 'success');
+      if (onShowToast) onShowToast('Message transmitted securely to headquarters!', 'success');
       
       // Reset form
       setTimeout(() => {
         setIsSent(false);
         setFormData({ name: '', email: '', subject: '', content: '' });
       }, 3000);
-    }, 1000);
+    })
+    .catch(error => {
+       setIsSubmitting(false);
+       if (onShowToast) onShowToast('Transmission error. Please try again.', 'error');
+    });
   };
 
   const contactOptions = [
