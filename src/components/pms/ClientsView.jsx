@@ -27,7 +27,7 @@ export default function ClientsView({ onShowToast }) {
   }, [clients]);
 
   const [newClient, setNewClient] = useState({
-    name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: ''
+    name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '', attachedDocName: ''
   });
 
   const handleAddClient = (e) => {
@@ -43,13 +43,14 @@ export default function ClientsView({ onShowToast }) {
       fileNo: newClient.fileNo || `FN-${Math.floor(900 + Math.random() * 100)}`,
       email: newClient.email || 'client@finexo.in',
       phone: newClient.phone || '+91 98000 00000',
+      attachedDoc: newClient.attachedDocName || null,
       status: 'Active',
       paymentHistory: []
     };
 
     setClients(prev => [clientObj, ...prev]);
     setIsAddModalOpen(false);
-    setNewClient({ name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '' });
+    setNewClient({ name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '', attachedDocName: '' });
     
     if (undoInfo) clearTimeout(undoInfo.timer);
     
@@ -103,6 +104,38 @@ export default function ClientsView({ onShowToast }) {
     }, 500);
   };
 
+  const handleDownloadCSV = () => {
+    if (clients.length === 0) {
+      if (onShowToast) onShowToast('No clients available to export.', 'warning');
+      return;
+    }
+    const headers = ['Client ID', 'Name', 'Trade Name', 'File No', 'PAN', 'GSTIN', 'Email', 'Phone', 'Status', 'Attached Doc'];
+    const rows = clients.map(c => [
+      c.id, 
+      `"${c.name}"`, 
+      `"${c.tradeName}"`, 
+      `"${c.fileNo}"`, 
+      c.pan, 
+      c.gst, 
+      c.email, 
+      `"${c.phone}"`, 
+      c.status,
+      `"${c.attachedDoc || ''}"`
+    ]);
+    
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `TaxPro_Client_Ledger.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    if (onShowToast) onShowToast('Client ledger CSV downloaded!', 'success');
+  };
+
   const filteredClients = clients.filter(c => {
     // Perspective
     if (activeTab === 'Active' && c.status !== 'Active') return false;
@@ -131,7 +164,7 @@ export default function ClientsView({ onShowToast }) {
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
           <button 
-            onClick={() => onShowToast && onShowToast('Downloading client ledger as CSV...', 'info')}
+            onClick={handleDownloadCSV}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-sm transition-colors"
           >
             <Download className="w-4 h-4" /> <span className="hidden sm:inline">Download CSV</span>
@@ -292,6 +325,11 @@ export default function ClientsView({ onShowToast }) {
               <div>
                 <label className="text-gray-700 block mb-1">Email Address</label>
                 <input type="email" placeholder="client@acme.com" value={newClient.email} onChange={e => setNewClient({...newClient, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500" />
+              </div>
+
+              <div>
+                <label className="text-gray-700 block mb-1">Client Verification File (Optional)</label>
+                <input type="file" onChange={e => setNewClient({...newClient, attachedDocName: e.target.files[0]?.name || ''})} className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-gray-300 rounded-xl px-2 py-1.5 focus:border-indigo-500 transition-colors" />
               </div>
 
               <button type="submit" className="mt-4 py-3 bg-[#1e1e2d] text-white font-black text-sm rounded-xl hover:bg-indigo-600 shadow-lg transition-colors">
