@@ -1,125 +1,142 @@
 import React, { useState } from 'react';
-import { Zap, Calendar, Mail, MessageSquare, CheckSquare, RefreshCw, ExternalLink, CalendarDays, Inbox } from 'lucide-react';
+import { Calendar, Mail, MessageCircle, Check, Info, Settings, Clock } from 'lucide-react';
 
 export default function IntegrationsView({ onShowToast }) {
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  const handleSync = () => {
-    setIsSyncing(true);
-    if(onShowToast) onShowToast('Initiating secure sync with Google Workspace & Mail servers...', 'info');
-    setTimeout(() => {
-      setIsSyncing(false);
-      if(onShowToast) onShowToast('✓ All systems successfully synchronized.', 'success');
-    }, 2000);
-  };
-
-  const unifiedFeed = [
-    { type: 'mail', title: 'FW: Statutory Audit Documents', time: 'Today, 11:30 AM', desc: 'Gmail Inbox • Received from alex@sterling.com', icon: <Mail className="w-4 h-4 text-rose-600" />, color: 'bg-rose-50 border-rose-100' },
-    { type: 'whatsapp', title: '+91 9876543210', time: 'Today, 09:15 AM', desc: '"Hey, please send the tax filing confirmation PDF." ', icon: <MessageSquare className="w-4 h-4 text-emerald-600" />, color: 'bg-emerald-50 border-emerald-100' },
-    { type: 'mail', title: 'Invoice Approval Request', time: 'Yesterday', desc: 'Gmail Inbox • Received from accounts@nexgen.com', icon: <Mail className="w-4 h-4 text-rose-600" />, color: 'bg-rose-50 border-rose-100' },
-    { type: 'whatsapp', title: '+91 8888888888', time: 'Yesterday', desc: '"Are the GST returns filed for Q2?"', icon: <MessageSquare className="w-4 h-4 text-emerald-600" />, color: 'bg-emerald-50 border-emerald-100' }
-  ];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 bg-[#f3f4f6] min-h-screen text-gray-800">
+    <div className="p-4 sm:p-6 lg:p-8 bg-[#f9fafb] min-h-screen text-gray-800">
       
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-extrabold font-outfit text-[#1e1e2d] flex items-center gap-2">
-            <Zap className="w-6 h-6 text-[#5b52e0]" /> Systems & Integrations Hub
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">Centralized dashboard for WhatsApp and Mail synchronization.</p>
-        </div>
-
-        <button 
-          onClick={handleSync}
-          disabled={isSyncing}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-white font-bold text-sm shadow-md transition-all ${isSyncing ? 'bg-indigo-400 cursor-not-allowed' : 'bg-[#5b52e0] hover:bg-[#4c44cf]'}`}
-        >
-          <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-          {isSyncing ? 'Syncing APIs...' : 'Force Sync Data'}
-        </button>
+      <div className="mb-8">
+        <h1 className="text-2xl font-extrabold font-outfit text-gray-900">Integrations</h1>
+        <p className="text-sm text-gray-500 mt-1">Manage active system connections, external messaging nodes, and calendar synchronizations.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Grid container */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
         
-        {/* Left Column: Unified Inbox / Activity */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          <div className="bg-white border border-gray-200 rounded-3xl p-6 md:p-8 shadow-sm">
-            <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
-              <h3 className="font-extrabold text-gray-900 text-lg flex items-center gap-2">
-                <Inbox className="w-5 h-5 text-[#5b52e0]" /> Unified Inbox Feed
-              </h3>
-              <div className="flex gap-2">
-                <span className="px-2 py-1 rounded bg-rose-50 text-rose-600 text-[10px] font-bold uppercase">Gmail Active</span>
-                <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-600 text-[10px] font-bold uppercase">Chat Linked</span>
+        {/* Google Calendar Card */}
+        <div className="bg-white border border-gray-200 rounded-[20px] p-6 shadow-sm flex flex-col gap-5">
+           <div className="flex justify-between items-start">
+              <div className="flex gap-4 items-center">
+                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center shadow-md flex-shrink-0">
+                    <Calendar className="w-6 h-6 text-white" />
+                 </div>
+                 <div>
+                    <h3 className="font-bold text-gray-900 text-lg">Google Calendar</h3>
+                    <p className="text-gray-500 text-xs mt-0.5">Sync tasks with due dates to your calendar</p>
+                 </div>
               </div>
-            </div>
+              <div className="px-3 py-1 bg-gray-100 text-gray-500 rounded-full text-[11px] font-bold">
+                 Coming soon
+              </div>
+           </div>
 
-            <div className="space-y-4">
-              {unifiedFeed.map((item, idx) => (
-                <div key={idx} className={`p-4 rounded-xl border ${item.color} flex gap-4 transition-all hover:shadow-md cursor-pointer`}>
-                  <div className="mt-1 flex-shrink-0">
-                    <div className="bg-white p-2 rounded-lg shadow-sm">
-                      {item.icon}
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-bold text-sm text-gray-900 truncate">{item.title}</h4>
-                      <span className="text-[10px] font-bold text-gray-400 whitespace-nowrap ml-2">{item.time}</span>
-                    </div>
-                    <p className="text-xs text-gray-600 font-medium leading-relaxed">{item.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            <button className="w-full mt-6 py-3 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors">
-              Load Older Messages...
-            </button>
-          </div>
+           <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex gap-3 mt-1 items-start">
+              <Info className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-gray-500 font-medium">Google Calendar sync is on the way. We'll notify you when it's ready.</p>
+           </div>
+
+           <div className="mt-auto pt-4">
+              <button disabled className="px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 font-bold text-sm rounded-xl w-max cursor-not-allowed">
+                 Coming soon
+              </button>
+           </div>
         </div>
 
-        {/* Right Column: Integration Settings */}
-        <div className="flex flex-col gap-6">
-          
-          {/* Active Connectors */}
-          <div className="bg-[#1e1e2d] border border-gray-800 rounded-3xl p-6 shadow-xl text-white">
-            <h3 className="font-bold text-sm flex items-center gap-2 mb-5">
-              Active Message Connectors
-            </h3>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded bg-gray-800 flex items-center justify-center"><Mail className="w-4 h-4 text-gray-300" /></div>
-                  <div>
-                    <div className="text-xs font-bold text-white">Mail Server (IMAP)</div>
-                    <div className="text-[10px] text-emerald-400">Connected</div>
-                  </div>
-                </div>
-                <div className="w-10 h-5 bg-emerald-500 rounded-full cursor-pointer relative">
-                  <div className="w-3 h-3 bg-white rounded-full absolute top-1 right-1"></div>
-                </div>
+        {/* WhatsApp Business Card */}
+        <div className="bg-white border border-gray-200 rounded-[20px] p-6 shadow-sm flex flex-col gap-5">
+           <div className="flex justify-between items-start">
+              <div className="flex gap-4 items-center">
+                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#25D366] to-[#128C7E] flex items-center justify-center shadow-md flex-shrink-0">
+                    <MessageCircle className="w-6 h-6 text-white" />
+                 </div>
+                 <div>
+                    <h3 className="font-bold text-gray-900 text-lg">WhatsApp Business</h3>
+                    <p className="text-gray-500 text-xs mt-0.5">Send task alerts via your own WhatsApp channel</p>
+                 </div>
               </div>
+              <div className="px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full text-[11px] font-bold flex items-center gap-1">
+                 <Check className="w-3 h-3" /> Default
+              </div>
+           </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded bg-gray-800 flex items-center justify-center"><MessageSquare className="w-4 h-4 text-emerald-400" /></div>
-                  <div>
-                    <div className="text-xs font-bold text-white">WhatsApp Business API</div>
-                    <div className="text-[10px] text-gray-500">Not Configured</div>
-                  </div>
-                </div>
-                <div className="w-10 h-5 bg-gray-700 rounded-full cursor-pointer relative" onClick={() => onShowToast && onShowToast('WhatsApp API linking coming soon.', 'info')}>
-                  <div className="w-3 h-3 bg-white rounded-full absolute top-1 left-1"></div>
-                </div>
+           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex gap-3 mt-1 items-start">
+              <Info className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                 Currently using default TaxPro WhatsApp channel. Add your own WhatsApp Business API credentials to send alerts from your number.
+              </p>
+           </div>
+
+           <div className="flex flex-col gap-3 font-medium text-sm text-gray-600 mt-2">
+             <div className="flex items-center gap-2">
+                 <Check className="w-4 h-4 text-[#25D366]" /> Task assignment notifications
+             </div>
+             <div className="flex items-center gap-2">
+                 <Check className="w-4 h-4 text-[#25D366]" /> Due date reminders
+             </div>
+             <div className="flex items-center gap-2">
+                 <Check className="w-4 h-4 text-[#25D366]" /> Status update alerts
+             </div>
+             <div className="flex items-center gap-2">
+                 <Check className="w-4 h-4 text-[#25D366]" /> Approval request notifications
+             </div>
+           </div>
+
+           <div className="mt-4">
+              <button 
+                onClick={() => onShowToast && onShowToast('WhatsApp API Configuration opening...', 'info')}
+                className="w-full py-3 bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors"
+              >
+                 <Settings className="w-4 h-4" /> Setup Custom WhatsApp
+              </button>
+           </div>
+        </div>
+
+        {/* Email SMTP Card */}
+        <div className="bg-white border border-gray-200 rounded-[20px] p-6 shadow-sm flex flex-col gap-5">
+           <div className="flex justify-between items-start">
+              <div className="flex gap-4 items-center">
+                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center shadow-md flex-shrink-0">
+                    <Mail className="w-6 h-6 text-white" />
+                 </div>
+                 <div>
+                    <h3 className="font-bold text-gray-900 text-lg">Email (SMTP)</h3>
+                    <p className="text-gray-500 text-xs mt-0.5">Send task alerts via your own email server</p>
+                 </div>
               </div>
-            </div>
-            
-          </div>
+              <div className="px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full text-[11px] font-bold flex items-center gap-1">
+                 <Check className="w-3 h-3" /> Default
+              </div>
+           </div>
+
+           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex gap-3 mt-1 items-start">
+              <Info className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                 Currently using default TaxPro email service. Add your own SMTP server to send alerts from your domain.
+              </p>
+           </div>
+
+           <div className="flex flex-col gap-3 font-medium text-sm text-gray-600 mt-2">
+             <div className="flex items-center gap-2">
+                 <Check className="w-4 h-4 text-[#25D366]" /> Send from your own email domain
+             </div>
+             <div className="flex items-center gap-2">
+                 <Check className="w-4 h-4 text-[#25D366]" /> Custom branding in emails
+             </div>
+             <div className="flex items-center gap-2">
+                 <Check className="w-4 h-4 text-[#25D366]" /> Full delivery control
+             </div>
+           </div>
+
+           <div className="mt-4">
+              <button 
+                onClick={() => onShowToast && onShowToast('SMTP Server Configuration opening...', 'info')}
+                className="w-full py-3 bg-[#1e1e2d] hover:bg-black text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors"
+              >
+                 <Settings className="w-4 h-4" /> Setup Custom SMTP
+              </button>
+           </div>
         </div>
 
       </div>
