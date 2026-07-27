@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CheckSquare, Square, Plus, Trash2, Star, Calendar, Clock, AlertCircle, ListTodo, Search, Filter } from 'lucide-react';
+import { CheckSquare, Square, Plus, Trash2, Star, Calendar, Clock, AlertCircle, ListTodo, Search, Filter, X } from 'lucide-react';
 
 export default function ToDoView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Today');
@@ -18,8 +18,8 @@ export default function ToDoView({ onShowToast }) {
     
     return [];
   });
-  
-  const [newText, setNewText] = useState('');
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newTask, setNewTask] = useState({ text: '', category: 'General', dueDate: '', isStarred: false });
 
   useEffect(() => {
     localStorage.setItem('taxpro_todos', JSON.stringify(todos));
@@ -27,24 +27,28 @@ export default function ToDoView({ onShowToast }) {
 
   const addTodo = (e) => {
     if (e) e.preventDefault();
-    if (!newText.trim()) return;
+    if (!newTask.text.trim()) {
+       onShowToast && onShowToast('Task description cannot be empty.', 'warning');
+       return;
+    }
     
-    // Assign due date based on active tab context
-    let contextDate = '2026-07-27'; // Mock 'Today'
-    if (activeTab === 'Tomorrow') contextDate = '2026-07-28';
-    if (activeTab === 'Next 7 Days') contextDate = '2026-08-01';
+    // Assign due date based on active tab context if left blank
+    let contextDate = newTask.dueDate || '2026-07-27'; 
+    if (!newTask.dueDate && activeTab === 'Tomorrow') contextDate = '2026-07-28';
+    if (!newTask.dueDate && activeTab === 'Next 7 Days') contextDate = '2026-08-01';
 
     const newTaskObj = { 
       id: Date.now(), 
-      text: newText.trim(), 
-      category: 'General', 
+      text: newTask.text.trim(), 
+      category: newTask.category, 
       completed: false,
-      isStarred: activeTab === 'Starred',
+      isStarred: newTask.isStarred,
       dueDate: contextDate 
     };
 
     setTodos(prev => [newTaskObj, ...prev]);
-    setNewText('');
+    setNewTask({ text: '', category: 'General', dueDate: '', isStarred: false });
+    setIsAddModalOpen(false);
     
     // Automatically swap to a visible perspective if they added it from a hidden one
     if (activeTab === 'Completed' || activeTab === 'Overdue') {
@@ -153,21 +157,12 @@ export default function ToDoView({ onShowToast }) {
         {/* Right Active List Area */}
         <div className="flex-1 bg-white border border-gray-200 p-4 sm:p-6 rounded-2xl shadow-sm flex flex-col h-full">
            
-           <h2 className="text-xl font-extrabold text-[#1e1e2d] font-outfit mb-4">{activeTab}</h2>
-
-           {/* Add Input Bar */}
-           <form onSubmit={addTodo} className="flex gap-3 mb-6">
-             <input 
-               type="text" 
-               placeholder={`Add a task to '${activeTab}'...`}
-               value={newText}
-               onChange={e => setNewText(e.target.value)}
-               className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-900 outline-none focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-inner"
-             />
-             <button type="button" onClick={addTodo} className="px-6 py-3 bg-[#1e1e2d] text-white font-black text-sm rounded-xl hover:bg-indigo-600 flex items-center gap-2 shadow-md transition-colors hover:shadow-lg">
-               <Plus className="w-4 h-4" /> Add
+           <div className="flex items-center justify-between mb-4">
+             <h2 className="text-xl font-extrabold text-[#1e1e2d] font-outfit">{activeTab}</h2>
+             <button onClick={() => setIsAddModalOpen(true)} className="px-4 py-2 bg-[#1e1e2d] text-white font-black text-xs rounded-xl hover:bg-indigo-600 flex items-center gap-2 shadow-sm transition-colors">
+               <Plus className="w-3.5 h-3.5" /> Create Task
              </button>
-           </form>
+           </div>
 
            {/* The Items List */}
            <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-2.5">
@@ -262,6 +257,50 @@ export default function ToDoView({ onShowToast }) {
            </div>
         </div>
       </div>
+
+      {/* Record New Task Modal */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-[20px] p-6 w-full max-w-sm shadow-2xl relative animate-fade-in">
+            <button onClick={() => setIsAddModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-black">
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-lg font-extrabold font-outfit mb-5">Create New Task</h3>
+            
+            <form onSubmit={addTodo} className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1.5 block">Task Description</label>
+                <input autoFocus type="text" value={newTask.text} onChange={e => setNewTask({...newTask, text: e.target.value})} className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 bg-gray-50 focus:bg-white" placeholder="What needs to be done?" />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1.5 block">Category / Tag</label>
+                <select value={newTask.category} onChange={e => setNewTask({...newTask, category: e.target.value})} className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 bg-gray-50 focus:bg-white">
+                  <option value="General">General</option>
+                  <option value="GST Return">GST Return</option>
+                  <option value="Client Call">Client Call</option>
+                  <option value="Audit">Audit</option>
+                  <option value="Income Tax">Income Tax</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1.5 block">Due Date</label>
+                <input type="date" value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})} className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 bg-gray-50 focus:bg-white" />
+              </div>
+
+              <div className="flex items-center gap-2 mt-1">
+                <input type="checkbox" checked={newTask.isStarred} onChange={e => setNewTask({...newTask, isStarred: e.target.checked})} className="w-4 h-4 text-amber-500 border-gray-300 rounded focus:ring-amber-500" />
+                <label className="text-xs font-bold text-gray-700">Mark as Priority (Star)</label>
+              </div>
+
+              <button type="submit" className="mt-4 w-full py-3 bg-[#5b52e0] hover:bg-indigo-600 text-white font-bold text-sm rounded-xl">
+                Add Task
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
