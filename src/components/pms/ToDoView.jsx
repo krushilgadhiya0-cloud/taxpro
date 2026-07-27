@@ -61,6 +61,14 @@ export default function ToDoView({ onShowToast }) {
     onShowToast && onShowToast('Task shredded.', 'info');
   };
 
+  const clearAllTodos = () => {
+    if (window.confirm("Are you sure you want to permanently erase ALL records in your Todo checklist?")) {
+      setTodos([]);
+      localStorage.removeItem('taxpro_todos');
+      onShowToast && onShowToast('Ledger completely cleared.', 'success');
+    }
+  };
+
   // Filter Logic Based on 2026-07-27 standard test date logic
   const filteredTodos = todos.filter(t => {
     // Search bypass
@@ -86,15 +94,22 @@ export default function ToDoView({ onShowToast }) {
           <p className="text-xs text-gray-500 mt-1">Organize your workflow, mark priorities, and track overdue items.</p>
         </div>
 
-        <div className="relative w-full max-w-sm">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input 
-            type="text" 
-            placeholder="Search checklists..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 outline-none focus:border-indigo-500 shadow-sm transition-all"
-          />
+        <div className="flex items-center gap-3">
+          {todos.length > 0 && (
+             <button onClick={clearAllTodos} className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100 text-xs font-bold transition-all whitespace-nowrap">
+               <Trash2 className="w-4 h-4" /> Clear All Tasks
+             </button>
+          )}
+          <div className="relative w-full max-w-sm">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input 
+              type="text" 
+              placeholder="Search checklists..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 outline-none focus:border-indigo-500 shadow-sm transition-all"
+            />
+          </div>
         </div>
       </div>
 
@@ -165,54 +180,84 @@ export default function ToDoView({ onShowToast }) {
                  <p className="text-xs text-gray-400 mt-1">Check another perspective or create a new task.</p>
                </div>
              ) : (
-               filteredTodos.map(t => (
-                 <div 
-                   key={t.id} 
-                   className={`flex items-center justify-between p-4 rounded-xl border transition-all group ${
-                     t.completed ? 'bg-gray-50 border-gray-100 opacity-80' : 'bg-white border-gray-200 shadow-sm hover:shadow-md hover:border-indigo-300'
-                   }`}
-                 >
-                   
-                   <div className="flex items-start gap-4 flex-1">
-                     <button onClick={() => toggleTodo(t.id)} className="mt-0.5 relative group/check">
-                        {t.completed ? (
-                          <div className="w-5 h-5 rounded bg-emerald-500 text-white flex items-center justify-center shadow-sm">
-                            <CheckSquare className="w-3.5 h-3.5" />
-                          </div>
-                        ) : (
-                          <div className="w-5 h-5 rounded border-2 border-gray-300 group-hover/check:border-indigo-500 transition-colors"></div>
-                        )}
-                     </button>
+               activeTab === 'Completed' ? (() => {
+                 // Group completed tasks by Month/Year
+                 const grouped = filteredTodos.reduce((acc, t) => {
+                    const d = new Date(t.dueDate);
+                    const key = Number.isNaN(d.getTime()) ? 'Unscheduled' : d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+                    if (!acc[key]) acc[key] = [];
+                    acc[key].push(t);
+                    return acc;
+                 }, {});
 
-                     <div className="flex flex-col mr-4">
-                       <span className={`text-sm font-bold transition-colors ${t.completed ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                         {t.text}
-                       </span>
-                       <div className="flex items-center gap-3 mt-1.5">
-                         <span className="text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded bg-gray-100 text-gray-500">
-                           {t.category}
+                 return Object.keys(grouped).sort((a,b) => b.localeCompare(a)).map(monthKey => (
+                    <div key={monthKey} className="mb-4">
+                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 pl-2 border-l-2 border-gray-300 ml-1">{monthKey}</h4>
+                       <div className="flex flex-col gap-2.5">
+                         {grouped[monthKey].map(t => (
+                           <div key={t.id} className="flex items-center justify-between p-4 rounded-xl border transition-all group bg-gray-50 border-gray-100 opacity-80">
+                             <div className="flex items-start gap-4 flex-1">
+                               <button onClick={() => toggleTodo(t.id)} className="mt-0.5 relative group/check">
+                                  <div className="w-5 h-5 rounded bg-emerald-500 text-white flex items-center justify-center shadow-sm"><CheckSquare className="w-3.5 h-3.5" /></div>
+                               </button>
+                               <div className="flex flex-col mr-4">
+                                 <span className="text-sm font-bold line-through text-gray-400">{t.text}</span>
+                                 <div className="flex items-center gap-3 mt-1.5">
+                                   <span className="text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded bg-gray-100 text-gray-500">{t.category}</span>
+                                   <span className="text-[10px] font-bold flex items-center gap-1 text-gray-400"><Calendar className="w-3 h-3" /> {t.dueDate}</span>
+                                 </div>
+                               </div>
+                             </div>
+                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                               <button onClick={() => deleteTodo(t.id)} className="p-2 rounded-lg hover:bg-red-50 hover:text-red-500 text-gray-400 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                    </div>
+                 ));
+               })() : (
+                 filteredTodos.map(t => (
+                   <div 
+                     key={t.id} 
+                     className="flex items-center justify-between p-4 rounded-xl border transition-all group bg-white border-gray-200 shadow-sm hover:shadow-md hover:border-indigo-300"
+                   >
+                     
+                     <div className="flex items-start gap-4 flex-1">
+                       <button onClick={() => toggleTodo(t.id)} className="mt-0.5 relative group/check">
+                          <div className="w-5 h-5 rounded border-2 border-gray-300 group-hover/check:border-indigo-500 transition-colors"></div>
+                       </button>
+
+                       <div className="flex flex-col mr-4">
+                         <span className="text-sm font-bold transition-colors text-gray-800">
+                           {t.text}
                          </span>
-                         {t.dueDate && (
-                           <span className={`text-[10px] font-bold flex items-center gap-1 ${
-                             t.dueDate < '2026-07-27' && !t.completed ? 'text-red-500' : 'text-gray-400'
-                           }`}>
-                             <Calendar className="w-3 h-3" /> {t.dueDate}
+                         <div className="flex items-center gap-3 mt-1.5">
+                           <span className="text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded bg-gray-100 text-gray-500">
+                             {t.category}
                            </span>
-                         )}
+                           {t.dueDate && (
+                             <span className={`text-[10px] font-bold flex items-center gap-1 ${
+                               t.dueDate < '2026-07-27' && !t.completed ? 'text-red-500' : 'text-gray-400'
+                             }`}>
+                               <Calendar className="w-3 h-3" /> {t.dueDate}
+                             </span>
+                           )}
+                         </div>
                        </div>
                      </div>
-                   </div>
 
-                   <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <button onClick={() => toggleStar(t.id)} className="p-2 rounded-lg hover:bg-amber-50 group/star transition-colors">
-                       <Star className={`w-4 h-4 ${t.isStarred ? 'text-amber-400 fill-amber-400' : 'text-gray-300 group-hover/star:text-amber-400'}`} />
-                     </button>
-                     <button onClick={() => deleteTodo(t.id)} className="p-2 rounded-lg hover:bg-red-50 hover:text-red-500 text-gray-400 transition-colors">
-                       <Trash2 className="w-4 h-4" />
-                     </button>
+                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                       <button onClick={() => toggleStar(t.id)} className="p-2 rounded-lg hover:bg-amber-50 group/star transition-colors">
+                         <Star className={`w-4 h-4 ${t.isStarred ? 'text-amber-400 fill-amber-400' : 'text-gray-300 group-hover/star:text-amber-400'}`} />
+                       </button>
+                       <button onClick={() => deleteTodo(t.id)} className="p-2 rounded-lg hover:bg-red-50 hover:text-red-500 text-gray-400 transition-colors">
+                         <Trash2 className="w-4 h-4" />
+                       </button>
+                     </div>
                    </div>
-                 </div>
-               ))
+                 ))
+               )
              )}
            </div>
         </div>
