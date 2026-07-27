@@ -491,67 +491,6 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
         </div>
       )}
 
-      {/* WORKSPACE SWITCHER MODAL */}
-      {isWorkspaceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full border border-gray-200 shadow-2xl relative animate-fade-in">
-            <button onClick={() => setIsWorkspaceModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-2">
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-xl font-extrabold font-outfit text-gray-900 mb-1">Select Workspace</h3>
-            <p className="text-xs text-gray-500 mb-6 font-medium">Switch administrative context between different firms or branches.</p>
-            
-            <div className="flex flex-col gap-3 mb-6">
-               <div className="p-4 rounded-2xl border-2 border-[#5b52e0] bg-indigo-50/50 flex items-center justify-between cursor-pointer shadow-sm relative overflow-hidden">
-                 <div className="absolute top-0 right-0 bg-[#5b52e0] text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-bl-[10px]">Active</div>
-                 <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-500 text-white flex items-center justify-center font-bold text-lg shadow-inner">
-                     FA
-                   </div>
-                   <div>
-                     <h4 className="font-extrabold text-[#1e1e2d] text-sm">Finexo Advisory</h4>
-                     <p className="text-[10px] font-bold text-gray-500">Main Headquarters</p>
-                   </div>
-                 </div>
-                 <div className="flex items-center gap-1.5 px-2 py-1 bg-white rounded-md border border-gray-200 shadow-2xs">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span className="text-[9px] font-bold text-gray-600 uppercase">Connected</span>
-                 </div>
-               </div>
-
-               <div 
-                 onClick={() => {
-                   onShowToast && onShowToast('Switching administrative connection to Nexus Legal... (Mock)', 'info');
-                   setIsWorkspaceModalOpen(false);
-                 }}
-                 className="p-4 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-indigo-300 flex items-center justify-between cursor-pointer transition-all group shadow-xs"
-               >
-                 <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-xl bg-gray-800 text-white flex items-center justify-center font-bold text-lg shadow-inner group-hover:bg-[#5b52e0] transition-colors">
-                     NL
-                   </div>
-                   <div>
-                     <h4 className="font-extrabold text-[#1e1e2d] text-sm group-hover:text-[#5b52e0] transition-colors">Nexus Legal Partners</h4>
-                     <p className="text-[10px] font-bold text-gray-500">Branch Office</p>
-                   </div>
-                 </div>
-                 <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-[#5b52e0] transition-colors" />
-               </div>
-            </div>
-
-            <button 
-              onClick={() => {
-                 onShowToast && onShowToast('Opening secure workspace configuration portal...', 'info');
-                 setIsWorkspaceModalOpen(false);
-              }}
-              className="w-full py-3.5 border-2 border-dashed border-gray-300 rounded-2xl text-gray-700 hover:text-[#5b52e0] hover:border-[#5b52e0] hover:bg-indigo-50 font-bold text-xs transition-all flex items-center justify-center gap-2"
-            >
-              <Plus className="w-4 h-4 text-[#5b52e0]" /> Create New Workspace
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* GLOBAL BROADCAST MODAL */}
       {isBroadcastModalOpen && (
