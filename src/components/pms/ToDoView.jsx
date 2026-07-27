@@ -163,41 +163,54 @@ export default function ToDoView({ onShowToast }) {
                </div>
              ) : (
                activeTab === 'Completed' ? (() => {
-                 // Group completed tasks by Month/Year
+                 // Group completed tasks by Month/Year using YYYY-MM to ensure chronological sorting
                  const grouped = filteredTodos.reduce((acc, t) => {
                     const d = new Date(t.dueDate);
-                    const key = Number.isNaN(d.getTime()) ? 'Unscheduled' : d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-                    if (!acc[key]) acc[key] = [];
-                    acc[key].push(t);
+                    const isInvalid = Number.isNaN(d.getTime());
+                    const sortKey = isInvalid ? '0000-00' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                    const displayKey = isInvalid ? 'Unscheduled' : d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+                    
+                    if (!acc[sortKey]) acc[sortKey] = { display: displayKey, items: [] };
+                    acc[sortKey].items.push(t);
                     return acc;
                  }, {});
 
-                 return Object.keys(grouped).sort((a,b) => b.localeCompare(a)).map(monthKey => (
-                    <div key={monthKey} className="mb-4">
-                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 pl-2 border-l-2 border-gray-300 ml-1">{monthKey}</h4>
-                       <div className="flex flex-col gap-2.5">
-                         {grouped[monthKey].map(t => (
-                           <div key={t.id} className="flex items-center justify-between p-4 rounded-xl border transition-all group bg-gray-50 border-gray-100 opacity-80">
-                             <div className="flex items-start gap-4 flex-1">
-                               <button onClick={() => toggleTodo(t.id)} className="mt-0.5 relative group/check">
-                                  <div className="w-5 h-5 rounded bg-emerald-500 text-white flex items-center justify-center shadow-sm"><CheckSquare className="w-3.5 h-3.5" /></div>
-                               </button>
-                               <div className="flex flex-col mr-4">
-                                 <span className="text-sm font-bold line-through text-gray-400">{t.text}</span>
-                                 <div className="flex items-center gap-3 mt-1.5">
-                                   <span className="text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded bg-gray-100 text-gray-500">{t.category}</span>
-                                   <span className="text-[10px] font-bold flex items-center gap-1 text-gray-400"><Calendar className="w-3 h-3" /> {t.dueDate}</span>
+                 return Object.keys(grouped).sort((a,b) => b.localeCompare(a)).map(sortKey => {
+                    const group = grouped[sortKey];
+                    // Sort items inside the group by exact date (newest first)
+                    const sortedItems = [...group.items].sort((a, b) => {
+                        const dA = new Date(a.dueDate).getTime();
+                        const dB = new Date(b.dueDate).getTime();
+                        return (Number.isNaN(dB) ? 0 : dB) - (Number.isNaN(dA) ? 0 : dA);
+                    });
+
+                    return (
+                      <div key={sortKey} className="mb-4">
+                         <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 pl-2 border-l-2 border-gray-300 ml-1">{group.display}</h4>
+                         <div className="flex flex-col gap-2.5">
+                           {sortedItems.map(t => (
+                             <div key={t.id} className="flex items-center justify-between p-4 rounded-xl border transition-all group bg-gray-50 border-gray-100 opacity-80">
+                               <div className="flex items-start gap-4 flex-1">
+                                 <button onClick={() => toggleTodo(t.id)} className="mt-0.5 relative group/check">
+                                    <div className="w-5 h-5 rounded bg-emerald-500 text-white flex items-center justify-center shadow-sm"><CheckSquare className="w-3.5 h-3.5" /></div>
+                                 </button>
+                                 <div className="flex flex-col mr-4">
+                                   <span className="text-sm font-bold line-through text-gray-400">{t.text}</span>
+                                   <div className="flex items-center gap-3 mt-1.5">
+                                     <span className="text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded bg-gray-100 text-gray-500">{t.category}</span>
+                                     <span className="text-[10px] font-bold flex items-center gap-1 text-gray-400"><Calendar className="w-3 h-3" /> {t.dueDate}</span>
+                                   </div>
                                  </div>
                                </div>
+                               <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                 <button onClick={() => deleteTodo(t.id)} className="p-2 rounded-lg hover:bg-red-50 hover:text-red-500 text-gray-400 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                               </div>
                              </div>
-                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                               <button onClick={() => deleteTodo(t.id)} className="p-2 rounded-lg hover:bg-red-50 hover:text-red-500 text-gray-400 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                             </div>
-                           </div>
-                         ))}
-                       </div>
-                    </div>
-                 ));
+                           ))}
+                         </div>
+                      </div>
+                    );
+                 });
                })() : (
                  filteredTodos.map(t => (
                    <div 
