@@ -422,14 +422,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
         </main>
       </div>
 
-      {/* FLOATING ACTION BUTTON (Bottom Right Blue Circle Button) */}
-      <button 
-        onClick={onTriggerAI}
-        className="fixed bottom-6 right-6 z-40 p-4 rounded-full bg-[#5b52e0] text-white shadow-xl hover:scale-110 transition-transform"
-        title="TaxPro PMS Quick Assistant"
-      >
-        <CheckSquare className="w-6 h-6" />
-      </button>
+
 
       {/* TASK DETAILS MODAL OPENS ON BOX CLICK */}
       {taskDetailType && (
