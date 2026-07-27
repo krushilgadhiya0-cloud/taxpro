@@ -67,6 +67,7 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
   const [notificationTab, setNotificationTab] = useState('All');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
+  const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -264,7 +265,7 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                   <div className="h-px bg-gray-100 my-2"></div>
 
                   <div className="flex flex-col gap-1">
-                    <button onClick={() => { setIsProfileOpen(false); setActiveItem('Settings'); }} className="flex items-center gap-3 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
+                    <button onClick={() => { setIsProfileOpen(false); setIsEditProfileModalOpen(true); }} className="flex items-center gap-3 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-colors w-full text-left">
                       <Edit className="w-4 h-4 text-gray-400" />
                       <span>Edit Profile</span>
                     </button>
@@ -722,6 +723,62 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                 </div>
                 <Lock className="w-4 h-4 text-gray-300 group-hover:text-red-400" />
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT PROFILE MODAL */}
+      {isEditProfileModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-slide-up border border-gray-100">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Edit className="w-5 h-5 text-indigo-600" /> Edit Profile
+              </h2>
+              <button onClick={() => setIsEditProfileModalOpen(false)} className="text-gray-400 hover:text-gray-900 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="w-16 h-16 rounded-full bg-[#1e40af] flex items-center justify-center font-extrabold text-xl text-white shadow-sm ring-4 ring-indigo-50 cursor-pointer hover:opacity-90 transition-opacity">
+                    KG
+                  </div>
+                  <button className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors border border-indigo-100">
+                    Change Avatar
+                  </button>
+                </div>
+                
+                <div>
+                  <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-widest">Full Name</label>
+                  <input type="text" defaultValue="Krushil Gadhiya" className="w-full text-sm border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-semibold text-gray-800" />
+                </div>
+                
+                <div>
+                  <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-widest">Email Address (Read Only)</label>
+                  <input type="email" readOnly defaultValue="krushilgadhiya138@gmail.com" className="w-full text-sm border border-gray-200 rounded-xl px-4 py-2.5 outline-none bg-gray-50 text-gray-500 cursor-not-allowed font-medium" />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-widest">Department / Title</label>
+                  <input type="text" defaultValue={userDepartment || "Admin"} onChange={(e) => { 
+                      setUserDepartment(e.target.value); 
+                      localStorage.setItem('taxpro_user_department', e.target.value); 
+                  }} className="w-full text-sm border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-semibold text-gray-800" placeholder="e.g. Finance & Tax" />
+                </div>
+                
+                <button 
+                  onClick={() => {
+                    setIsEditProfileModalOpen(false);
+                    if(onShowToast) onShowToast('Profile details updated successfully!', 'success');
+                  }}
+                  className="w-full mt-4 bg-indigo-600 text-white font-bold text-sm py-3 rounded-xl shadow-md hover:bg-indigo-700 transition-colors"
+                >
+                  Save Changes
+                </button>
+              </div>
             </div>
           </div>
         </div>
