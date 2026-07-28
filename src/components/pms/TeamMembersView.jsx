@@ -170,7 +170,9 @@ export default function TeamMembersView({ onShowToast }) {
               <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-2">TOTAL MEMBERS</div>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl px-6 py-4 flex flex-col justify-center min-w-[140px] shadow-sm">
-              <div className="text-xl font-black text-gray-900 leading-none">0</div>
+              <div className="text-xl font-black text-gray-900 leading-none">
+                {members.filter(m => m.role && m.role.toLowerCase().includes('manager')).length}
+              </div>
               <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-2">MANAGERS</div>
             </div>
           </div>
