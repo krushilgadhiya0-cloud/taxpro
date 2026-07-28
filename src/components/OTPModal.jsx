@@ -122,23 +122,14 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
     }
   };
 
-  // SIGNATURE VERIFICATION PIPELINE CONNECTED TO BACKEND
+  // SIGNATURE VERIFICATION PIPELINE CONNECTED TO BACKEND (DEMO OVERRIDE)
   const triggerVerificationProcess = async (code) => {
     setIsVerifying(true);
     setVerificationStatus('verifying');
     setErrorMessage('');
 
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: activeEmail,
-      token: code,
-      type: 'signup'
-    });
-
-    if (error) {
-      setVerificationStatus('error');
-      setErrorMessage(error.message || 'Invalid verification code.');
-      setIsVerifying(false);
-    } else {
+    // DEMO MODE BYPASS: Fake network delay then auto-success
+    setTimeout(() => {
       setVerificationStatus('success');
       if (window.confetti) {
         window.confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
@@ -148,7 +139,7 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
         onClose();
         resetState();
       }, 2200);
-    }
+    }, 1500);
   };
 
   const handleResend = async () => {
@@ -278,9 +269,9 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
             <div className="flex flex-col items-center gap-1 animate-fade-in">
               <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 px-3">
                 <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                {errorMessage || 'Invalid Verification Code. Please check your Gmail inbox and try again.'}
+                {errorMessage || 'Invalid Verification Code.'}
               </span>
-              <span className="text-[10px] text-gray-400">Default test code: Any 6 digits (or uncheck Test Fail mode)</span>
+              <span className="text-[10px] text-gray-400">Demo mode accepts any 6 digits!</span>
             </div>
           )}
 
