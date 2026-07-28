@@ -365,6 +365,10 @@ export default function App() {
         onClose={() => setIsOTPModalOpen(false)}
         onSuccessRedirect={() => {
           showToast('✓ Gmail OTP Verification Successful!', 'success');
+          if (userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com') {
+            setIsAuthenticated(true);
+            return;
+          }
           if (localStorage.getItem('taxpro_profile_completed')) {
             setIsAuthenticated(true);
             setActiveTab(pendingTab || 'dashboard');
@@ -393,6 +397,10 @@ export default function App() {
         }}
         onLoginSuccess={() => {
           showToast('✓ Authentication successful!', 'success');
+          if (userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com') {
+            setIsAuthenticated(true);
+            return;
+          }
           if (localStorage.getItem('taxpro_profile_completed')) {
             setIsAuthenticated(true);
             setActiveTab(pendingTab || 'dashboard');
