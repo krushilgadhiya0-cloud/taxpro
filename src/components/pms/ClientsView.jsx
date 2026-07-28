@@ -25,7 +25,8 @@ export default function ClientsView({ onShowToast }) {
           tradeName: c.trade_name,
           fileNo: c.file_no,
           attachedDoc: c.attached_doc,
-          paymentHistory: c.payment_history
+          paymentHistory: c.payment_history,
+          address: c.client_address || ''
        }));
        setClients(mapped);
     } else if (error) {
@@ -39,7 +40,7 @@ export default function ClientsView({ onShowToast }) {
   }, []);
 
   const [newClient, setNewClient] = useState({
-    name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '', attachedDocName: ''
+    name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '', attachedDocName: '', address: ''
   });
 
   const handleAddClient = async (e) => {
@@ -56,7 +57,6 @@ export default function ClientsView({ onShowToast }) {
     const finalDoc = newClient.attachedDocName || null;
 
     const { data: dbData, error: dbError } = await supabase.from('clients').insert([{
-      id: clientId,
       name: newClient.name,
       trade_name: finalTradeName,
       pan: finalPan,
@@ -64,6 +64,7 @@ export default function ClientsView({ onShowToast }) {
       file_no: finalFileNo,
       email: finalEmail,
       phone: finalPhone,
+      client_address: newClient.address || '',
       attached_doc: finalDoc,
       status: 'Active',
       payment_history: []
@@ -80,12 +81,13 @@ export default function ClientsView({ onShowToast }) {
       tradeName: insertedClient.trade_name,
       fileNo: insertedClient.file_no,
       attachedDoc: insertedClient.attached_doc,
-      paymentHistory: insertedClient.payment_history
+      paymentHistory: insertedClient.payment_history,
+      address: insertedClient.client_address || ''
     };
 
     setClients(prev => [newClientObj, ...prev]);
     setIsAddModalOpen(false);
-    setNewClient({ name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '', attachedDocName: '' });
+    setNewClient({ name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '', attachedDocName: '', address: '' });
 
     if (undoInfo) clearTimeout(undoInfo.timer);
 
@@ -175,7 +177,8 @@ export default function ClientsView({ onShowToast }) {
        gst: clientEditForm.gst,
        file_no: clientEditForm.fileNo,
        email: clientEditForm.email,
-       phone: clientEditForm.phone
+       phone: clientEditForm.phone,
+       client_address: clientEditForm.address || ''
     }).eq('id', clientEditForm.id);
 
     if (error) {
@@ -427,6 +430,11 @@ export default function ClientsView({ onShowToast }) {
               </div>
 
               <div>
+                <label className="text-gray-700 block mb-1">Client Address</label>
+                <textarea rows="2" placeholder="e.g. 123 Business Suite, Commerce City" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 max-h-24 min-h-[60px]" />
+              </div>
+
+              <div>
                 <label className="text-gray-700 block mb-1">Client Related File (Optional)</label>
                 <input type="file" onChange={e => setNewClient({...newClient, attachedDocName: e.target.files[0]?.name || ''})} className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-gray-300 rounded-xl px-2 py-1.5 focus:border-indigo-500 transition-colors" />
               </div>
@@ -529,16 +537,18 @@ export default function ClientsView({ onShowToast }) {
                  )}
                </div>
                <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl col-span-2">
-                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1">Contact Reference</div>
+                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1">Contact & Address</div>
                  {isEditingClient ? (
                    <div className="space-y-2">
                      <input type="text" value={clientEditForm.phone} onChange={e => setClientEditForm({...clientEditForm, phone: e.target.value})} className="text-xs font-bold text-gray-800 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" placeholder="Phone" />
                      <input type="email" value={clientEditForm.email} onChange={e => setClientEditForm({...clientEditForm, email: e.target.value})} className="text-xs font-bold text-gray-600 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" placeholder="Email" />
+                     <input type="text" value={clientEditForm.address} onChange={e => setClientEditForm({...clientEditForm, address: e.target.value})} className="text-xs font-bold text-gray-600 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" placeholder="Client Address" />
                    </div>
                  ) : (
                    <>
-                     <div className="text-xs font-bold text-gray-800">{activeClientStat.phone}</div>
-                     <div className="text-xs font-bold text-gray-600">{activeClientStat.email}</div>
+                     <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 opacity-50" /> {activeClientStat.phone}</div>
+                     <div className="text-xs font-bold text-gray-600 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 opacity-50" /> {activeClientStat.email}</div>
+                     {activeClientStat.address && <div className="text-[11px] font-bold text-gray-500 flex items-start gap-1.5 mt-1.5 leading-snug"><MapPin className="w-3.5 h-3.5 shrink-0 opacity-50" /> {activeClientStat.address}</div>}
                    </>
                  )}
                </div>
