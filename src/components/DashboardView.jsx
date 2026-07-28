@@ -358,42 +358,6 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
 
           </div>
 
-          {/* SUB-TABS & CATEGORY FILTERS CARD (White Card Container) */}
-          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-6 shadow-xs">
-            
-            {/* Sub-tabs Row */}
-            <div className="flex items-center gap-6 border-b border-gray-100 pb-3 mb-4 text-xs font-bold">
-              {['Tasks', 'Todo', 'Live Time Tracking'].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveSubTab(tab)}
-                  className={`pb-3 relative transition-colors ${
-                    activeSubTab === tab ? 'text-[#5b52e0] border-b-2 border-[#5b52e0]' : 'text-gray-500 hover:text-gray-800'
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            {/* Category Chips Row */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {['All', 'GST', 'Income Tax', 'MCA', 'Other'].map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                    activeCategory === cat 
-                      ? 'bg-[#5b52e0] text-white shadow-sm shadow-[#5b52e0]/30' 
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-
-          </div>
 
           {/* 9 DUE METRIC CARDS GRID (White Cards + Colored Borders + Soft Fills) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-9 gap-3.5 mb-8">

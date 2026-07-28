@@ -12,7 +12,10 @@ import {
   LogOut,
   Database,
   Globe2,
-  ServerCrash
+  ServerCrash,
+  Download,
+  Printer,
+  X
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -20,6 +23,8 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [stats, setStats] = useState({ totalAdmins: 0, totalWorkers: 0, activeRevenue: 0 });
   const [members, setMembers] = useState([]);
+  const [activeDetailModal, setActiveDetailModal] = useState(null); // 'admins' | 'workers' | 'revenue'
+  const [metricDataList, setMetricDataList] = useState([]);
   
   useEffect(() => {
     fetchGlobalStats();
@@ -35,11 +40,54 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
       const workers = memberData.filter(m => !m.role?.toLowerCase().includes('admin') && !m.role?.toLowerCase().includes('manager'));
       
       setStats({
-        totalAdmins: admins.length || 7, // Mock minimums if empty
-        totalWorkers: workers.length || 142,
-        activeRevenue: (admins.length || 7) * 499 // Rough estimation $499 per tenant standard tier
+        totalAdmins: admins.length,
+        totalWorkers: workers.length,
+        activeRevenue: admins.length * 499 
       });
     }
+  };
+
+  const openDetailModal = (type) => {
+    setActiveDetailModal(type);
+    if (type === 'admins') {
+       setMetricDataList(members.filter(m => m.role?.toLowerCase().includes('admin') || m.role?.toLowerCase().includes('manager')));
+    } else if (type === 'workers') {
+       setMetricDataList(members.filter(m => !m.role?.toLowerCase().includes('admin') && !m.role?.toLowerCase().includes('manager')));
+    } else if (type === 'revenue') {
+       // Revenue essentially tracks tenants/admins
+       setMetricDataList(members.filter(m => m.role?.toLowerCase().includes('admin') || m.role?.toLowerCase().includes('manager')));
+    }
+  };
+
+  const exportToCSV = () => {
+    if (!metricDataList || metricDataList.length === 0) return;
+    
+    const headers = ["Name", "Email", "Role", "Department", "Payment Expected (Mock)"];
+    const csvRows = [headers.join(',')];
+    
+    metricDataList.forEach(m => {
+      const isTenant = m.role?.toLowerCase().includes('admin') || m.role?.toLowerCase().includes('manager');
+      csvRows.push([
+        `"${m.name || 'Unknown'}"`,
+        `"${m.email || 'Unknown'}"`,
+        `"${m.role || 'Member'}"`,
+        `"${m.department || 'N/A'}"`,
+        `"${isTenant ? '$499/mo' : '$0'}"`
+      ].join(','));
+    });
+    
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a'); 
+    a.href = url;
+    a.download = `taxpro_global_${activeDetailModal}_export.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    if (onShowToast) onShowToast('CSV Download initiated!', 'success');
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   // Mock SaaS Admins (Tenants)
@@ -147,10 +195,10 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
           
           {/* Top Metrics Row */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <MetricCard title="Total Admins (Tenants)" value={stats.totalAdmins} trend="+12% MTW" icon={<Building2 className="w-5 h-5 text-indigo-400" />} />
-            <MetricCard title="Global Platform Workers" value={stats.totalWorkers} trend="+34% MTW" icon={<Users className="w-5 h-5 text-emerald-400" />} />
-            <MetricCard title="Monthly Recurring Rev" value={`$${stats.activeRevenue}`} trend="+8.4% MTW" icon={<CreditCard className="w-5 h-5 text-purple-400" />} />
-            <MetricCard title="System Health" value="99.99%" trend="Optimal" icon={<Activity className="w-5 h-5 text-cyan-400" />} />
+            <MetricCard title="Total Admins (Tenants)" value={stats.totalAdmins} trend="LIVE DB" icon={<Building2 className="w-5 h-5 text-indigo-400" />} onClick={() => openDetailModal('admins')} />
+            <MetricCard title="Global Platform Workers" value={stats.totalWorkers} trend="LIVE DB" icon={<Users className="w-5 h-5 text-emerald-400" />} onClick={() => openDetailModal('workers')} />
+            <MetricCard title="Monthly Recurring Rev" value={`$${stats.activeRevenue}`} trend="LIVE DB" icon={<CreditCard className="w-5 h-5 text-purple-400" />} onClick={() => openDetailModal('revenue')} />
+            <MetricCard title="System Health" value="99.99%" trend="Optimal" icon={<Activity className="w-5 h-5 text-cyan-400" />} onClick={() => {}} />
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -247,13 +295,92 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
         </div>
       </main>
 
+      {/* METRIC DETAIL MODAL FOR CSV / PRINT */}
+      {activeDetailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm print:bg-white print:p-0 print:block">
+          <div className="relative w-full max-w-4xl max-h-[85vh] bg-[#09090b] border border-white/10 rounded-3xl shadow-2xl flex flex-col overflow-hidden print:w-full print:max-w-none print:h-auto print:border-none print:shadow-none print:bg-white print:text-black">
+            
+            {/* Modal Header */}
+            <div className="p-6 border-b border-white/5 flex items-center justify-between print:border-black/10">
+              <div>
+                <h3 className="text-xl font-black text-white font-outfit print:text-black">
+                  {activeDetailModal === 'admins' ? 'Total Admins (Tenants) Ledger' : ""}
+                  {activeDetailModal === 'workers' ? 'Global Platform Workers Directory' : ""}
+                  {activeDetailModal === 'revenue' ? 'Monthly Recurring Revenue Originators' : ""}
+                </h3>
+                <p className="text-xs text-gray-500 mt-1 print:text-gray-600">
+                  Total Records: {metricDataList.length} | Sourced strictly from LIVE Supabase Database
+                </p>
+              </div>
+              <div className="flex items-center gap-2 print:hidden">
+                <button onClick={exportToCSV} className="p-2 rounded-xl bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 transition-all" title="Download CSV">
+                  <Download className="w-4 h-4" />
+                </button>
+                <button onClick={handlePrint} className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-all" title="Print Ledger">
+                  <Printer className="w-4 h-4" />
+                </button>
+                <div className="w-px h-6 bg-white/10 mx-1"></div>
+                <button onClick={() => setActiveDetailModal(null)} className="p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Data Table */}
+            <div className="flex-1 overflow-y-auto p-0 scrollbar-hide">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 bg-[#09090b] z-10 print:bg-white">
+                  <tr className="border-b border-white/5 print:border-b-2 print:border-black">
+                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black">Name</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black">Email</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black">Role</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black">Dept</th>
+                    {activeDetailModal === 'revenue' && (
+                      <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black text-right">ARR (Mock)</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {metricDataList.map((m, idx) => (
+                    <tr key={idx} className="border-b border-white/5 hover:bg-white/[0.02] print:border-b print:border-gray-200 print:text-black">
+                      <td className="px-6 py-4 text-sm font-bold text-white print:text-black">{m.name || 'N/A'}</td>
+                      <td className="px-6 py-4 text-xs font-mono text-gray-400 print:text-gray-800">{m.email}</td>
+                      <td className="px-6 py-4">
+                        <span className="text-[10px] uppercase font-bold px-2 py-1 bg-white/5 rounded text-gray-300 print:bg-gray-100 print:text-gray-700">
+                          {m.role || 'Member'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-xs font-semibold text-gray-400 print:text-gray-600">{m.department || 'General'}</td>
+                      {activeDetailModal === 'revenue' && (
+                        <td className="px-6 py-4 text-sm font-black text-emerald-400 text-right print:text-black">
+                          $499 <span className="text-[10px] text-gray-500 font-normal">/mo</span>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                  {metricDataList.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="px-6 py-12 text-center text-gray-500 font-bold">No active live data found in Supabase.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
 
-function MetricCard({ title, value, trend, icon }) {
+function MetricCard({ title, value, trend, icon, onClick }) {
   return (
-    <div className="bg-[#09090b] border border-white/5 p-6 rounded-3xl relative overflow-hidden group hover:border-purple-500/30 transition-colors cursor-pointer">
+    <div 
+      onClick={onClick}
+      className={`bg-[#09090b] border border-white/5 p-6 rounded-3xl relative overflow-hidden group hover:border-purple-500/30 transition-colors ${onClick ? 'cursor-pointer' : ''}`}
+    >
       <div className="absolute top-0 right-0 p-4 opacity-50 group-hover:opacity-100 group-hover:scale-110 transition-all group-hover:text-purple-400">
         <ArrowUpRight className="w-12 h-12 text-white/5" />
       </div>
