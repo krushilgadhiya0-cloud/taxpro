@@ -87,6 +87,7 @@ export default function TeamMembersView({ onShowToast }) {
       
       if (dbData && dbData.length > 0) {
          setMembers(prev => [dbData[0], ...prev]);
+         window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
       }
 
       // 2. Attempt to dispatch the invitation email via backend (Non-Critical)
@@ -142,6 +143,7 @@ export default function TeamMembersView({ onShowToast }) {
     
     setMembers(prev => prev.filter(x => x.id !== deleteData.id));
     setDeleteData(null);
+    window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
     if (onShowToast) onShowToast('Record successfully removed.', 'info');
   };
 

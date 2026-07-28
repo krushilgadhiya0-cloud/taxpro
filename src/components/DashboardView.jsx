@@ -65,9 +65,29 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
     loadData();
     setCurrentTime(new Date().toLocaleString());
 
-    // Auto-refresh every 2 seconds to instantly reflect changes from other PMS tabs
+    // Subscribe to all changes in the database for instantaneous reactivity (Zero Latency - if enabled)
+    const realtimeChannel = supabase.channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+         loadData();
+         setCurrentTime(new Date().toLocaleString());
+      })
+      .subscribe();
+
+    // Event-driven instant sync for local component actions (Zero Latency - guaranteed)
+    const handleLocalSync = () => {
+      loadData();
+      setCurrentTime(new Date().toLocaleString());
+    };
+    window.addEventListener('taxpro_db_updated', handleLocalSync);
+
+    // Fallback sync every 2 seconds for guaranteed data integrity across sessions
     const intervalId = window.setInterval(loadData, 2000);
-    return () => window.clearInterval(intervalId);
+    
+    return () => {
+      supabase.removeChannel(realtimeChannel);
+      window.removeEventListener('taxpro_db_updated', handleLocalSync);
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   // Update clock periodically (optional, manual refresh sets it too)
