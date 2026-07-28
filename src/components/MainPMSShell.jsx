@@ -77,6 +77,11 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
   const [broadcastText, setBroadcastText] = useState('');
   
   const [userDepartment, setUserDepartment] = useState('');
+  
+  // Complaint Box State
+  const [isComplainModalOpen, setIsComplainModalOpen] = useState(false);
+  const [complainText, setComplainText] = useState('');
+  const [isSubmittingComplain, setIsSubmittingComplain] = useState(false);
 
   useEffect(() => {
     const dept = localStorage.getItem('taxpro_user_department');
@@ -126,6 +131,40 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
       window.removeEventListener('ai_search', handleVoiceSearch);
     };
   }, [onShowToast]);
+
+  const handleComplainSubmit = async () => {
+    if (!complainText.trim()) return;
+    setIsSubmittingComplain(true);
+    
+    try {
+       const userEmail = localStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token') 
+          ? JSON.parse(localStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token'))?.user?.email 
+          : 'Anonymous';
+       
+       const baseUrl = window.location.origin;
+       const res = await fetch(`${baseUrl}/api/complain`, {
+          method: 'POST',
+          headers:{'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            reporterEmail: userEmail,
+            reporterName: 'Authorized Employee',
+            complaintText: complainText
+          })
+       });
+       
+       if (res.ok) {
+         if (onShowToast) onShowToast('Complaint successfully transmitted to Super Admin.', 'success');
+       } else {
+         if (onShowToast) onShowToast('Failed to route complaint.', 'warning');
+       }
+    } catch(err) {
+       if (onShowToast) onShowToast('Network error filing complaint.', 'error');
+    }
+    
+    setIsSubmittingComplain(false);
+    setIsComplainModalOpen(false);
+    setComplainText('');
+  };
 
   const sidebarItems = [
     { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
@@ -198,6 +237,15 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
             title="Global Broadcast System"
           >
             <Megaphone className="w-4 h-4" />
+          </button>
+          
+          {/* Complain / Feedback Box */}
+          <button 
+            onClick={() => setIsComplainModalOpen(true)}
+            className="p-2 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 transition-colors shadow-sm"
+            title="Report a Complaint to Management"
+          >
+            <AlertCircle className="w-4 h-4" />
           </button>
 
           {/* Notifications Toggle */}
@@ -672,6 +720,51 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
                   className="w-full mt-4 bg-indigo-600 text-white font-bold text-sm py-3 rounded-xl shadow-md hover:bg-indigo-700 transition-colors"
                 >
                   Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* COMPLAINT BOX MODAL */}
+      {isComplainModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsComplainModalOpen(false)}></div>
+          <div className="relative bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-amber-100">
+            <div className="p-6 bg-gradient-to-br from-amber-50 to-orange-50 border-b border-amber-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shadow-inner">
+                  <AlertCircle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-amber-900 leading-none">Register Complaint</h3>
+                  <p className="text-[11px] text-amber-700 font-bold mt-1 uppercase tracking-wider">Direct routing to Master Admin Mailbox</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 bg-white space-y-4">
+              <textarea
+                value={complainText}
+                onChange={e => setComplainText(e.target.value)}
+                placeholder="Describe your issue, feedback, or complaint in detail..."
+                className="w-full h-32 rounded-xl border border-gray-200 p-4 text-sm resize-none focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-500/10 placeholder:text-gray-400"
+              />
+              
+              <div className="flex justify-end gap-3 mt-6">
+                <button 
+                  onClick={() => setIsComplainModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl font-bold text-sm text-gray-500 hover:bg-gray-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleComplainSubmit}
+                  disabled={isSubmittingComplain || !complainText.trim()}
+                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isSubmittingComplain ? 'Transmitting...' : 'Send to Inbox'}
                 </button>
               </div>
             </div>
