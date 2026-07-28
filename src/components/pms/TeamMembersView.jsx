@@ -73,33 +73,7 @@ export default function TeamMembersView({ onShowToast }) {
     let emailSent = false;
     
     try {
-      const smtpRaw = localStorage.getItem('taxpro_smtp');
-      const smtpConfig = smtpRaw ? JSON.parse(smtpRaw) : null;
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-      
-      const response = await fetch(`${baseUrl}/api/integrations/invite`, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({
-            smtpConfig,
-            memberName: formData.name,
-            targetEmail: formData.email,
-            generatedPassword: formData.password || 'password123',
-            role: formData.role
-         })
-      });
-      
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error || 'Dispatch Failed');
-      
-      emailSent = true;
-      if (smtpConfig) {
-         if (onShowToast) onShowToast(`Real invitation efficiently delivered to ${formData.email}! User Registered.`, 'success');
-      } else {
-         if (onShowToast) onShowToast(`User Registered successfully. (Hint: Setup SMTP in Integrations to send real emails)`, 'info');
-      }
-
-      // Automatically register the user into the Cloud database "team_members" table
+      // 1. Automatically register the user into the Cloud database "team_members" table FIRST
       const { data: dbData, error: dbError } = await supabase.from('team_members').insert([
         {
           name: formData.name,
@@ -111,9 +85,41 @@ export default function TeamMembersView({ onShowToast }) {
         }
       ]).select();
       
-      if (!dbError && dbData) {
+      if (dbError) throw new Error(`Database Error: ${dbError.message}`);
+      
+      if (dbData && dbData.length > 0) {
          setMembers(prev => [dbData[0], ...prev]);
       }
+
+      // 2. Attempt to dispatch the invitation email via backend (Non-Critical)
+      try {
+        const smtpRaw = localStorage.getItem('taxpro_smtp');
+        const smtpConfig = smtpRaw ? JSON.parse(smtpRaw) : null;
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+        
+        const response = await fetch(`${baseUrl}/api/integrations/invite`, {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+              smtpConfig,
+              memberName: formData.name,
+              targetEmail: formData.email,
+              generatedPassword: formData.password || 'password123',
+              role: formData.role
+           })
+        });
+        
+        const data = await response.json();
+        if (!data.success) {
+           console.warn("SMTP Dispatch failed:", data.error);
+        } else {
+           if (smtpConfig && onShowToast) onShowToast(`Real invitation efficiently delivered to ${formData.email}! User Registered.`, 'success');
+        }
+      } catch (backendErr) {
+        console.warn("Backend unavailable for email dispatch. Skipping email.");
+      }
+      
+      if (onShowToast) onShowToast(`User ${formData.name} Registered successfully to Cloud Directory.`, 'success');
 
     } catch (err) {
       if (onShowToast) onShowToast(`Registration Failed: ${err.message}`, 'error');
