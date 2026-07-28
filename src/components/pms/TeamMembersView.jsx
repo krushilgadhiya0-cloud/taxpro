@@ -102,9 +102,9 @@ export default function TeamMembersView({ onShowToast }) {
       try {
         const smtpRaw = localStorage.getItem('taxpro_smtp');
         const smtpConfig = smtpRaw ? JSON.parse(smtpRaw) : null;
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
         
-        const response = await fetch(`${baseUrl}/api/integrations/invite`, {
+        const response = await fetch(`${baseUrl}/api/invite`, {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
@@ -120,7 +120,7 @@ export default function TeamMembersView({ onShowToast }) {
         if (!data.success) {
            console.warn("SMTP Dispatch failed:", data.error);
         } else {
-           if (smtpConfig && onShowToast) onShowToast(`Real invitation efficiently delivered to ${formData.email}! User Registered.`, 'success');
+           if (onShowToast) onShowToast(`Real invitation efficiently delivered to ${formData.email}! User Registered.`, 'success');
         }
       } catch (backendErr) {
         console.warn("Backend unavailable for email dispatch. Skipping email.");
