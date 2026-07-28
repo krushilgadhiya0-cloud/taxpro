@@ -1,51 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Filter, Calendar, CheckCircle2, Clock, AlertCircle, User, MoreVertical, X, Paperclip } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function TasksView({ onShowToast }) {
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  const [tasks, setTasks] = useState(() => {
-    try {
-      const saved = localStorage.getItem('taxpro_global_tasks');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (err) {
-      console.error("Local storage error in Tasks:", err);
+  const [tasks, setTasks] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    const [tasksRes, clientsRes] = await Promise.all([
+      supabase.from('global_tasks').select('*').order('created_at', { ascending: false }),
+      supabase.from('clients').select('name').order('created_at', { ascending: false })
+    ]);
+
+    if (!tasksRes.error && tasksRes.data) {
+       const mapped = tasksRes.data.map(t => ({
+         ...t,
+         dueDate: t.due_date
+       }));
+       setTasks(mapped);
     }
-    return [];
-  });
+    
+    if (!clientsRes.error && clientsRes.data) {
+       setClients(clientsRes.data);
+    }
+
+    setIsLoading(false);
+  };
 
   useEffect(() => {
-    localStorage.setItem('taxpro_global_tasks', JSON.stringify(tasks));
-  }, [tasks]);
-
-  useEffect(() => {
-    const handleStorageChange = () => {
-      try {
-        const saved = localStorage.getItem('taxpro_global_tasks');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && JSON.stringify(parsed) !== JSON.stringify(tasks)) {
-             setTasks(parsed);
-          }
-        }
-      } catch (e) {}
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [tasks]);
-
-  const [clients] = useState(() => {
-    try {
-      const saved = localStorage.getItem('taxpro_clients');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [];
-  });
+    fetchData();
+  }, []);
 
   const [newTask, setNewTask] = useState({
     title: '',
@@ -57,33 +47,59 @@ export default function TasksView({ onShowToast }) {
     project: ''
   });
 
-  const handleAddTask = (e) => {
+  const handleAddTask = async (e) => {
     e.preventDefault();
     if (!newTask.title || !newTask.client) return;
 
-    const taskObj = {
-      id: `TSK-${Math.floor(100 + Math.random() * 900)}`,
+    const taskId = `TSK-${Math.floor(100 + Math.random() * 900)}`;
+    const finalDueDate = newTask.dueDate || '2026-08-15';
+    const finalAssignee = newTask.assignee || 'Krushil Gadhiya';
+    const finalProject = newTask.project || 'None';
+
+    const { data: dbData, error: dbError } = await supabase.from('global_tasks').insert([{
+      id: taskId,
       title: newTask.title,
       client: newTask.client,
       category: newTask.category,
-      dueDate: newTask.dueDate || '2026-08-15',
+      due_date: finalDueDate,
       status: 'Pending',
       priority: newTask.priority,
-      assignee: newTask.assignee || 'Krushil Gadhiya',
-      project: newTask.project || 'None',
+      assignee: finalAssignee,
+      project: finalProject,
       attachment: newTask.attachment || null
+    }]).select();
+
+    if (dbError) {
+       if (onShowToast) onShowToast(`Failed to create task: ${dbError.message}`, 'error');
+       return;
+    }
+
+    const insertedTask = dbData[0];
+    const taskObj = {
+      ...insertedTask,
+      dueDate: insertedTask.due_date
     };
 
     setTasks([taskObj, ...tasks]);
     setIsAddModalOpen(false);
     setNewTask({ title: '', client: '', category: 'GST', dueDate: '', priority: 'Medium', assignee: 'Krushil Gadhiya', project: '' });
-    onShowToast && onShowToast('✓ New task created successfully in Finexo PMS!', 'success');
+    onShowToast && onShowToast('✓ New task safely persisted in cloud database!', 'success');
   };
 
-  const toggleStatus = (id) => {
+  const toggleStatus = async (id) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    
+    const nextStatus = task.status === 'Completed' ? 'Pending' : 'Completed';
+    
+    const { error } = await supabase.from('global_tasks').update({ status: nextStatus }).eq('id', id);
+    if (error) {
+       if (onShowToast) onShowToast(`Failed to update status: ${error.message}`, 'error');
+       return;
+    }
+
     setTasks(tasks.map(t => {
       if (t.id === id) {
-        const nextStatus = t.status === 'Completed' ? 'Pending' : 'Completed';
         return { ...t, status: nextStatus };
       }
       return t;

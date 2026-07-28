@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Users, Mail, Phone, FileText, CheckCircle, X, Download, Trash2, Printer, History, Archive, MapPin, Edit2, Save } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function ClientsView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Active');
@@ -11,105 +12,154 @@ export default function ClientsView({ onShowToast }) {
   const [isEditingClient, setIsEditingClient] = useState(false);
   const [clientEditForm, setClientEditForm] = useState(null);
 
-  const [clients, setClients] = useState(() => {
-    try {
-      const saved = localStorage.getItem('taxpro_clients');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (err) {
-      console.error(err);
+  const [clients, setClients] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchClients = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
+    if (!error && data) {
+       // Convert snake_case from Database back to camelCase for the UI
+       const mapped = data.map(c => ({
+          ...c,
+          tradeName: c.trade_name,
+          fileNo: c.file_no,
+          attachedDoc: c.attached_doc,
+          paymentHistory: c.payment_history
+       }));
+       setClients(mapped);
+    } else if (error) {
+       if (onShowToast) onShowToast("Failed to fetch clients from cloud.", "error");
     }
-    return [];
-  });
+    setIsLoading(false);
+  };
 
   useEffect(() => {
-    localStorage.setItem('taxpro_clients', JSON.stringify(clients));
-  }, [clients]);
+    fetchClients();
+  }, []);
 
   const [newClient, setNewClient] = useState({
     name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '', attachedDocName: ''
   });
 
-  const handleAddClient = (e) => {
+  const handleAddClient = async (e) => {
     e.preventDefault();
     if (!newClient.name) return;
 
-    const clientObj = {
-      id: `CL-${Math.floor(500 + Math.random() * 500)}`,
+    const clientId = `CL-${Math.floor(500 + Math.random() * 500)}`;
+    const finalTradeName = newClient.tradeName || newClient.name;
+    const finalPan = newClient.pan || 'ABCDE1234F';
+    const finalGst = newClient.gst || '27ABCDE1234F1Z5';
+    const finalFileNo = newClient.fileNo || `FN-${Math.floor(900 + Math.random() * 100)}`;
+    const finalEmail = newClient.email || 'client@finexo.in';
+    const finalPhone = newClient.phone || '+91 98000 00000';
+    const finalDoc = newClient.attachedDocName || null;
+
+    const { data: dbData, error: dbError } = await supabase.from('clients').insert([{
+      id: clientId,
       name: newClient.name,
-      tradeName: newClient.tradeName || newClient.name,
-      pan: newClient.pan || 'ABCDE1234F',
-      gst: newClient.gst || '27ABCDE1234F1Z5',
-      fileNo: newClient.fileNo || `FN-${Math.floor(900 + Math.random() * 100)}`,
-      email: newClient.email || 'client@finexo.in',
-      phone: newClient.phone || '+91 98000 00000',
-      attachedDoc: newClient.attachedDocName || null,
+      trade_name: finalTradeName,
+      pan: finalPan,
+      gst: finalGst,
+      file_no: finalFileNo,
+      email: finalEmail,
+      phone: finalPhone,
+      attached_doc: finalDoc,
       status: 'Active',
-      paymentHistory: []
+      payment_history: []
+    }]).select();
+
+    if (dbError) {
+      if (onShowToast) onShowToast(`Failed to add client: ${dbError.message}`, 'error');
+      return;
+    }
+
+    const insertedClient = dbData[0];
+    const newClientObj = {
+      ...insertedClient,
+      tradeName: insertedClient.trade_name,
+      fileNo: insertedClient.file_no,
+      attachedDoc: insertedClient.attached_doc,
+      paymentHistory: insertedClient.payment_history
     };
 
-    setClients(prev => [clientObj, ...prev]);
+    setClients(prev => [newClientObj, ...prev]);
     setIsAddModalOpen(false);
     setNewClient({ name: '', tradeName: '', pan: '', gst: '', fileNo: '', email: '', phone: '', attachedDocName: '' });
-    
+
     if (undoInfo) clearTimeout(undoInfo.timer);
-    
+
     const timerId = setTimeout(() => {
        setUndoInfo(null);
     }, 5000);
-    
-    setUndoInfo({ id: clientObj.id, name: clientObj.name, timer: timerId });
+
+    setUndoInfo({ id: newClientObj.id, name: newClientObj.name, timer: timerId });
   };
 
-  const handleUndoAdd = () => {
+  const handleUndoAdd = async () => {
      if (undoInfo) {
         clearTimeout(undoInfo.timer);
+        await supabase.from('clients').delete().eq('id', undoInfo.id);
         setClients(prev => prev.filter(c => c.id !== undoInfo.id));
         setUndoInfo(null);
         if (onShowToast) onShowToast('Client addition undone successfully.', 'info');
      }
   };
 
-  const deleteClient = (e, id) => {
+  const deleteClient = async (e, id) => {
     e.stopPropagation();
     if(window.confirm('Are you absolutely sure you want to permanently delete this client? This cannot be undone.')) {
+      const { error } = await supabase.from('clients').delete().eq('id', id);
+      if (error) {
+        if (onShowToast) onShowToast(`Error deleting: ${error.message}`, 'error');
+        return;
+      }
       setClients(clients.filter(c => c.id !== id));
       setActiveClientStat(null);
       if(onShowToast) onShowToast('Client profile permanently deleted.', 'info');
     }
   };
 
-  const toggleOldStatus = (e, id) => {
+  const toggleOldStatus = async (e, id) => {
     e.stopPropagation();
+    
+    const client = clients.find(c => c.id === id);
+    if (!client) return;
+    
+    const nextStatus = client.status === 'Active' ? 'Old Client' : 'Active';
+    
+    const { error } = await supabase.from('clients').update({ status: nextStatus }).eq('id', id);
+    if (error) {
+       if (onShowToast) onShowToast(`Failed to update status: ${error.message}`, 'error');
+       return;
+    }
+
     setClients(clients.map(c => {
-      if(c.id === id) {
-        const nextStatus = c.status === 'Active' ? 'Old Client' : 'Active';
+      if (c.id === id) {
         if(onShowToast) onShowToast(`Client status changed to ${nextStatus}`, 'success');
-        
-        // update active modal stat simultaneously if we have it open
         if(activeClientStat && activeClientStat.id === id) {
            setActiveClientStat({ ...c, status: nextStatus });
         }
-        
         return { ...c, status: nextStatus };
       }
       return c;
     }));
   };
 
-  const updateClientDoc = (id, fileName) => {
-    setClients(clients.map(c => {
-      if (c.id === id) {
-        if(activeClientStat && activeClientStat.id === id) {
-           setActiveClientStat({ ...c, attachedDoc: fileName });
+  const updateClientDoc = async (id, fileName) => {
+    const { error } = await supabase.from('clients').update({ attached_doc: fileName }).eq('id', id);
+    if (!error) {
+      setClients(clients.map(c => {
+        if (c.id === id) {
+          if(activeClientStat && activeClientStat.id === id) {
+             setActiveClientStat({ ...c, attachedDoc: fileName });
+          }
+          return { ...c, attachedDoc: fileName };
         }
-        return { ...c, attachedDoc: fileName };
-      }
-      return c;
-    }));
-    if (onShowToast) onShowToast('Client related file properly updated and linked.', 'success');
+        return c;
+      }));
+      if (onShowToast) onShowToast('Client related file properly updated and linked.', 'success');
+    }
   };
 
   const startEditClient = () => {
@@ -117,7 +167,22 @@ export default function ClientsView({ onShowToast }) {
     setIsEditingClient(true);
   };
 
-  const saveEditClient = () => {
+  const saveEditClient = async () => {
+    const { error } = await supabase.from('clients').update({
+       name: clientEditForm.name,
+       trade_name: clientEditForm.tradeName,
+       pan: clientEditForm.pan,
+       gst: clientEditForm.gst,
+       file_no: clientEditForm.fileNo,
+       email: clientEditForm.email,
+       phone: clientEditForm.phone
+    }).eq('id', clientEditForm.id);
+
+    if (error) {
+       if (onShowToast) onShowToast(`Error editing: ${error.message}`, 'error');
+       return;
+    }
+
     setClients(clients.map(c => c.id === clientEditForm.id ? { ...c, ...clientEditForm } : c));
     setActiveClientStat(clientEditForm);
     setIsEditingClient(false);

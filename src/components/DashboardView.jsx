@@ -41,17 +41,19 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
     if (dept) setUserDepartment(dept);
 
     try {
-      const savedTasks = localStorage.getItem('taxpro_global_tasks');
-      if (savedTasks) {
-        const parsed = JSON.parse(savedTasks);
-        if (Array.isArray(parsed)) setTasks(parsed);
-      }
-      
-      // Pull only IDs to count metrics efficiently
-      const [membersRes, deptsRes] = await Promise.all([
+      // Pull tasks strictly for metrics
+      const [tasksRes, membersRes, deptsRes] = await Promise.all([
+         supabase.from('global_tasks').select('*'),
          supabase.from('team_members').select('id'),
          supabase.from('departments').select('id')
       ]);
+      
+      if (tasksRes.data) {
+         setTasks(tasksRes.data.map(t => ({
+           ...t,
+           dueDate: t.due_date
+         })));
+      }
       
       if (membersRes.data) setTeamMembers(membersRes.data);
       if (deptsRes.data) setDepartmentsList(deptsRes.data);
