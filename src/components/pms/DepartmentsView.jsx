@@ -1,18 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Building2, Plus, Bot, Users, HelpCircle, UserCog, CheckSquare, Edit, Trash2, ChevronLeft, ChevronRight, X, Download } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function DepartmentsView({ onShowToast }) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [activeDeptStat, setActiveDeptStat] = useState(null);
   const [newDeptForm, setNewDeptForm] = useState({ name: 'Compliance', customName: '', isOther: false, desc: '', manager: '' });
   
-  const [depts, setDepts] = useState(() => {
-    try {
-      const saved = localStorage.getItem('taxpro_departments');
-      if (saved) return JSON.parse(saved) || [];
-    } catch (e) {}
-    return [];
-  });
+  const [depts, setDepts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchDepts();
+  }, []);
+
+  const fetchDepts = async () => {
+    setIsLoading(true);
+    // Remove local storage pulling, strictly hit the new 'departments' Supabase table
+    const { data, error } = await supabase.from('departments').select('*').order('created_at', { ascending: false });
+    if (error) {
+       console.error("Error fetching departments:", error);
+       if (onShowToast) onShowToast("Failed to sync departments from cloud.", "error");
+    } else {
+       setDepts(data || []);
+    }
+    setIsLoading(false);
+  };
 
   const [availableManagers] = useState(() => {
     try {
@@ -35,30 +48,36 @@ export default function DepartmentsView({ onShowToast }) {
     depts.map(d => d.manager).filter(m => m && m !== 'Not assigned' && m !== 'Unassigned')
   ).size;
 
-  React.useEffect(() => {
-    localStorage.setItem('taxpro_departments', JSON.stringify(depts));
-  }, [depts]);
+  const uniqueManagersCount = new Set(
+    depts.map(d => d.manager).filter(m => m && m !== 'Not assigned' && m !== 'Unassigned')
+  ).size;
 
   const [deleteId, setDeleteId] = useState(null);
 
-  const handleAddDept = (e) => {
+  const handleAddDept = async (e) => {
     e.preventDefault();
     const finalName = newDeptForm.isOther ? newDeptForm.customName : newDeptForm.name;
     if (!finalName) return;
     
     const initials = finalName.split(' ').map(n => n.charAt(0).toUpperCase()).slice(0,2).join('');
     
-    setDepts(prev => [
-      ...prev,
+    // Inject directly into Supabase Cloud
+    const { data, error } = await supabase.from('departments').insert([
       {
-        id: Date.now(),
         name: finalName,
-        members: 0,
         manager: newDeptForm.manager || 'Not assigned',
         initials: initials || 'D',
-        desc: newDeptForm.desc || 'Newly created department.'
+        description: newDeptForm.desc || 'Newly created department.'
       }
-    ]);
+    ]).select();
+
+    if (error) {
+       console.error(error);
+       if (onShowToast) onShowToast(`Upload Error: ${error.message}`, 'error');
+       return;
+    }
+
+    setDepts(prev => [data[0], ...prev]);
 
     setIsAddModalOpen(false);
     setNewDeptForm({ name: 'Compliance', customName: '', isOther: false, desc: '', manager: '' });
@@ -72,7 +91,7 @@ export default function DepartmentsView({ onShowToast }) {
     }
     const csvRows = ['Name,Initials,Members,Manager,Description'];
     depts.forEach(d => {
-      csvRows.push(`"${d.name}","${d.initials}","${d.members}","${d.manager || 'Unassigned'}","${d.desc}"`);
+      csvRows.push(`"${d.name}","${d.initials}","${d.members || 0}","${d.manager || 'Unassigned'}","${d.description || d.desc}"`);
     });
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -85,7 +104,7 @@ export default function DepartmentsView({ onShowToast }) {
 
   const handleDownloadSingleDept = (dept) => {
     const csvRows = ['Name,Initials,Members,Manager,Description'];
-    csvRows.push(`"${dept.name}","${dept.initials}","${dept.members}","${dept.manager || 'Unassigned'}","${dept.desc}"`);
+    csvRows.push(`"${dept.name}","${dept.initials}","${dept.members || 0}","${dept.manager || 'Unassigned'}","${dept.description || dept.desc}"`);
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -95,7 +114,12 @@ export default function DepartmentsView({ onShowToast }) {
     if (onShowToast) onShowToast(`Downloaded profile for ${dept.name}`, 'success');
   };
 
-  const executeDelete = () => {
+  const executeDelete = async () => {
+    const { error } = await supabase.from('departments').delete().eq('id', deleteId);
+    if (error) {
+       if (onShowToast) onShowToast(`Error deleting: ${error.message}`, 'error');
+       return;
+    }
     setDepts(prev => prev.filter(d => d.id !== deleteId));
     setDeleteId(null);
     if (onShowToast) onShowToast('Department deleted.', 'info');
@@ -175,7 +199,7 @@ export default function DepartmentsView({ onShowToast }) {
               </div>
 
               <p className="text-sm text-gray-500 mb-6 flex-1 pr-4 leading-relaxed">
-                {d.desc}
+                {d.description || d.desc}
               </p>
 
               <div className="flex items-center gap-3 bg-gray-50/80 border border-gray-100 p-3 rounded-2xl mb-2 pointer-events-auto">

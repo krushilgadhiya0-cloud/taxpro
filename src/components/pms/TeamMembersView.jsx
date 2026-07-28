@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Users2, RotateCcw, Upload, Send, Plus, Trash2, X, Shield, Mail, Phone, Building, Briefcase, KeyRound, Download, AlertCircle, Loader2 } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function TeamMembersView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Members');
@@ -11,6 +12,20 @@ export default function TeamMembersView({ onShowToast }) {
   // Advanced State Formulation
   const [members, setMembers] = useState([]);
   const [invitations, setInvitations] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchMembers = async () => {
+    setIsLoading(true);
+    const { data, error } = await supabase.from('team_members').select('*').order('created_at', { ascending: false });
+    if (!error && data) {
+       setMembers(data);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchMembers();
+  }, []);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -83,6 +98,23 @@ export default function TeamMembersView({ onShowToast }) {
       } else {
          if (onShowToast) onShowToast(`User Registered successfully. (Hint: Setup SMTP in Integrations to send real emails)`, 'info');
       }
+
+      // Automatically register the user into the Cloud database "team_members" table
+      const { data: dbData, error: dbError } = await supabase.from('team_members').insert([
+        {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone ? purePhone : '',
+          role: formData.role,
+          department: formData.department,
+          status: 'Active'
+        }
+      ]).select();
+      
+      if (!dbError && dbData) {
+         setMembers(prev => [dbData[0], ...prev]);
+      }
+
     } catch (err) {
       if (onShowToast) onShowToast(`Registration Failed: ${err.message}`, 'error');
     } finally {
@@ -94,22 +126,33 @@ export default function TeamMembersView({ onShowToast }) {
     setActiveTab('Invitations');
   };
 
-  const executeDelete = () => {
+  const executeDelete = async () => {
     if (!deleteData) return;
-    if (deleteData.type === 'Invitations') setInvitations(prev => prev.filter(x => x.id !== deleteData.id));
-    if (deleteData.type === 'Members') setMembers(prev => prev.filter(x => x.id !== deleteData.id));
+    
+    if (deleteData.type === 'Invitations') {
+       setInvitations(prev => prev.filter(x => x.id !== deleteData.id));
+    }
+    
+    if (deleteData.type === 'Members') {
+       const { error } = await supabase.from('team_members').delete().eq('id', deleteData.id);
+       if (error) {
+          if (onShowToast) onShowToast(`Failed to delete member: ${error.message}`, 'error');
+          return;
+       }
+       setMembers(prev => prev.filter(x => x.id !== deleteData.id));
+    }
+    
     setDeleteData(null);
     if (onShowToast) onShowToast('Record successfully removed.', 'info');
   };
 
   const currentList = activeTab === 'Members' ? members : activeTab === 'Invitations' ? invitations : [];
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-      if (onShowToast) onShowToast('List data refreshed successfully!', 'success');
-    }, 800);
+    await fetchMembers();
+    setIsRefreshing(false);
+    if (onShowToast) onShowToast('List data refreshed successfully!', 'success');
   };
 
   const handleDownloadCSV = () => {

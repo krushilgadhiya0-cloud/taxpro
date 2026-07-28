@@ -22,6 +22,7 @@ import {
   Lock,
   X
 } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
 export default function DashboardView({ onOpenOTP, onTriggerAI }) {
   const [activeSidebarItem, setActiveSidebarItem] = useState('Dashboard');
@@ -35,7 +36,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
   const [teamMembers, setTeamMembers] = useState([]);
   const [departmentsList, setDepartmentsList] = useState([]);
 
-  const loadData = () => {
+  const loadData = async () => {
     const dept = localStorage.getItem('taxpro_user_department');
     if (dept) setUserDepartment(dept);
 
@@ -46,17 +47,15 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
         if (Array.isArray(parsed)) setTasks(parsed);
       }
       
-      const savedMembers = localStorage.getItem('taxpro_team_members');
-      if (savedMembers) {
-        const parsed = JSON.parse(savedMembers);
-        if (Array.isArray(parsed)) setTeamMembers(parsed);
-      }
+      // Pull only IDs to count metrics efficiently
+      const [membersRes, deptsRes] = await Promise.all([
+         supabase.from('team_members').select('id'),
+         supabase.from('departments').select('id')
+      ]);
       
-      const savedDepts = localStorage.getItem('taxpro_departments');
-      if (savedDepts) {
-        const parsed = JSON.parse(savedDepts);
-        if (Array.isArray(parsed)) setDepartmentsList(parsed);
-      }
+      if (membersRes.data) setTeamMembers(membersRes.data);
+      if (deptsRes.data) setDepartmentsList(deptsRes.data);
+      
     } catch (e) {}
   };
 
