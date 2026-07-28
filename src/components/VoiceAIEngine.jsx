@@ -94,7 +94,7 @@ export default function VoiceAIEngine({ onShowToast }) {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex items-center justify-end gap-3 pointer-events-none group animate-in slide-in-from-bottom flex-col items-end">
+    <div className="fixed bottom-[5.5rem] right-6 z-50 flex items-center justify-end gap-3 pointer-events-none group animate-in slide-in-from-bottom flex-col items-end">
       
       {/* HUD display showing what you said if we are listening */}
       <div className={`pointer-events-auto transition-all duration-300 max-w-[200px] bg-black/80 backdrop-blur-md rounded-2xl p-3 border border-white/10 shadow-2xl ${isListening && transcript ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 hidden'}`}>
