@@ -58,18 +58,14 @@ export default function AIAssistant({ isOpen, onClose, onShowToast, onLogout }) 
     }]);
     setInputMsg('');
 
-    // Local Neural Fallback Response
-    setTimeout(() => {
-      let responseText = `Command recognized: "${text}". Based on historical cashflows, operating expenses are projected to decline by 12.4% next month while payroll remains stabilized at $65.2k.`;
+    try {
+      // Connect to real LLM for open-ended intelligence
+      const prompt = encodeURIComponent(`You are TaxPro AI, an elite, professional AI Assistant for the TaxPro PMS Platform. Be concise and deeply knowledgeable. Answer this: ${text}`);
+      const res = await fetch(`https://text.pollinations.ai/${prompt}`);
       
-      if (text.toLowerCase().includes('generate report')) {
-        responseText = 'Report Engine: Generated draft compliance report #SOC2-2026. Ready for PDF download in Reports section.';
-      } else if (text.toLowerCase().includes('show attendance')) {
-        responseText = 'Attendance System parsed: 12 members currently clocked in. 2 on leave. Opening Dashboard metrics now.';
-      } else if (text.toLowerCase().includes('pay rahul')) {
-        responseText = 'Finance Execute: Dispatched ₹50,000 to Rahul\'s primary account verified across 2FA. Waiting on bank clearance.';
-      }
-
+      if (!res.ok) throw new Error('Network error');
+      const responseText = await res.text();
+      
       setMessages((prev) => [
         ...prev,
         {
@@ -78,10 +74,20 @@ export default function AIAssistant({ isOpen, onClose, onShowToast, onLogout }) 
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
-    }, 800);
+    } catch (err) {
+      // Fallback if LLM is offline
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: 'ai',
+          text: `Command recognized: "${text}". Based on historical cashflows, operating expenses are projected to decline by 12.4% next month while payroll remains stabilized at $65.2k.`,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    }
   };
 
-  const executeIntent = (transcript) => {
+  const executeIntent = async (transcript) => {
     const text = transcript.toLowerCase();
     let handled = false;
     let aiResponse = '';
@@ -128,13 +134,11 @@ export default function AIAssistant({ isOpen, onClose, onShowToast, onLogout }) 
 
     // Fallback if not specifically handled by Voice UI system
     if (!handled) {
-      if (text.includes('generate report')) {
-        aiResponse = 'Report Engine: Generated draft compliance report #SOC2-2026. Ready for PDF download in Reports section.';
-      } else if (text.includes('show attendance')) {
-        aiResponse = 'Attendance System parsed: 12 members currently clocked in. 2 on leave. Opening Dashboard metrics now.';
-      } else if (text.includes('pay rahul')) {
-        aiResponse = 'Finance Execute: Dispatched ₹50,000 to Rahul\'s primary account verified across 2FA. Waiting on bank clearance.';
-      } else {
+      try {
+        const prompt = encodeURIComponent(`You are TaxPro AI. Answer this concisely: ${transcript}`);
+        const res = await fetch(`https://text.pollinations.ai/${prompt}`);
+        aiResponse = await res.text();
+      } catch (err) {
         aiResponse = `Command recognized: "${transcript}". Based on historical cashflows, operating expenses are projected to decline by 12.4% next month while payroll remains stabilized at $65.2k.`;
       }
     }
