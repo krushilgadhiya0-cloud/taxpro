@@ -28,6 +28,8 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
   const [activeSidebarItem, setActiveSidebarItem] = useState('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState('Tasks');
   const [activeCategory, setActiveCategory] = useState('All');
+  const [dateRangeFilter, setDateRangeFilter] = useState('All Time');
+  const [tempDateRange, setTempDateRange] = useState('All Time');
   const [currentTime, setCurrentTime] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [taskDetailType, setTaskDetailType] = useState(null);
@@ -112,7 +114,36 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
     
     let dToday = 0, dTomorrow = 0, d7 = 0, dAfter7 = 0, dto30 = 0, dAfter30 = 0, ov7 = 0, ovMore7 = 0, dTotal = 0;
     
-    tasks.forEach(t => {
+    // Apply Date Range Filter conceptually based on creation date or due date
+    const filteredByRange = tasks.filter(t => {
+      if (dateRangeFilter === 'All Time') return true;
+      
+      const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.created_at || new Date());
+      const currentMonth = today.getMonth() + 1;
+      const currentYear = today.getFullYear();
+      let qStartMonth, qEndMonth;
+      
+      if (dateRangeFilter.includes('This Quarter')) {
+        const q = Math.ceil(currentMonth / 3);
+        qStartMonth = (q - 1) * 3 + 1;
+        qEndMonth = q * 3;
+        return tDate.getFullYear() === currentYear && (tDate.getMonth() + 1) >= qStartMonth && (tDate.getMonth() + 1) <= qEndMonth;
+      } 
+      else if (dateRangeFilter.includes('Last Quarter')) {
+        let lastQ = Math.ceil(currentMonth / 3) - 1;
+        let y = currentYear;
+        if (lastQ === 0) { lastQ = 4; y = currentYear - 1; }
+        qStartMonth = (lastQ - 1) * 3 + 1;
+        qEndMonth = lastQ * 3;
+        return tDate.getFullYear() === y && (tDate.getMonth() + 1) >= qStartMonth && (tDate.getMonth() + 1) <= qEndMonth;
+      }
+      else if (dateRangeFilter === 'Year to Date') {
+        return tDate.getFullYear() === currentYear;
+      }
+      return true;
+    });
+
+    filteredByRange.forEach(t => {
        if (t.status === 'Completed') return;    
        
        if (t.dueDate) {
@@ -143,23 +174,47 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
       overdueMoreThan7Days: ovMore7,
       dueTotal: dTotal
     });
-  }, [tasks]);
+  }, [tasks, dateRangeFilter]);
 
-  const unassignedTasks = tasks.filter(t => !t.assignee || t.assignee === 'None' || t.assignee === 'Unassigned').length;
-  const totalTasks = tasks.length;
+  const activeFilteredTasks = tasks.filter(t => {
+      if (dateRangeFilter === 'All Time') return true;
+      
+      const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.created_at || new Date());
+      const currentMonth = new Date().getMonth() + 1;
+      const currentYear = new Date().getFullYear();
+      
+      if (dateRangeFilter.includes('This Quarter')) {
+        const qStart = (Math.ceil(currentMonth / 3) - 1) * 3 + 1;
+        return tDate.getFullYear() === currentYear && (tDate.getMonth() + 1) >= qStart && (tDate.getMonth() + 1) <= qStart + 2;
+      } 
+      else if (dateRangeFilter.includes('Last Quarter')) {
+        let lastQ = Math.ceil(currentMonth / 3) - 1;
+        let y = currentYear;
+        if (lastQ === 0) { lastQ = 4; y = currentYear - 1; }
+        const qStart = (lastQ - 1) * 3 + 1;
+        return tDate.getFullYear() === y && (tDate.getMonth() + 1) >= qStart && (tDate.getMonth() + 1) <= qStart + 2;
+      }
+      else if (dateRangeFilter === 'Year to Date') {
+        return tDate.getFullYear() === currentYear;
+      }
+      return true;
+  });
+
+  const unassignedTasks = activeFilteredTasks.filter(t => !t.assignee || t.assignee === 'None' || t.assignee === 'Unassigned').length;
+  const totalTasks = activeFilteredTasks.length;
   const assignedTasks = totalTasks - unassignedTasks;
   
   const userWiseSummary = {};
-  tasks.forEach(t => {
+  activeFilteredTasks.forEach(t => {
      const assignee = t.assignee || 'Unassigned';
      if (!userWiseSummary[assignee]) userWiseSummary[assignee] = 0;
      userWiseSummary[assignee]++;
   });
 
-  const recentTasks = [...tasks].sort((a,b) => {
+  const recentTasks = [...activeFilteredTasks].sort((a,b) => {
      const da = new Date(a.dueDate || 0);
      const db = new Date(b.dueDate || 0);
-     return db - da; // Sort descending, assuming higher priority for recent... Wait, maybe closest due date?
+     return db - da;
   }).slice(0, 4);
 
   const sidebarItems = [
@@ -351,11 +406,15 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                        
                        <div className="mb-6">
                          <label className="text-[10px] font-bold text-gray-400 uppercase mb-3 block tracking-widest">Data Date Range</label>
-                         <select className="w-full bg-gray-50 border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500/20">
-                           <option>This Quarter (Q3 2026)</option>
-                           <option>Last Quarter (Q2 2026)</option>
-                           <option>Year to Date</option>
-                           <option>All Time</option>
+                         <select 
+                           value={tempDateRange}
+                           onChange={(e) => setTempDateRange(e.target.value)}
+                           className="w-full bg-gray-50 border border-gray-200 text-gray-700 text-sm font-semibold rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                         >
+                           <option value="This Quarter (Q3 2026)">This Quarter (Q3 2026)</option>
+                           <option value="Last Quarter (Q2 2026)">Last Quarter (Q2 2026)</option>
+                           <option value="Year to Date">Year to Date</option>
+                           <option value="All Time">All Time</option>
                          </select>
                        </div>
                      </div>
@@ -363,7 +422,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                      <div className="p-6 border-t border-gray-100 bg-gray-50 sticky bottom-0">
                        <button 
                          onClick={() => {
-                           // In a real app, this would fetch data from the server.
+                           setDateRangeFilter(tempDateRange);
                            setIsFilterOpen(false);
                          }} 
                          className="w-full py-3.5 bg-[#5b52e0] text-white rounded-xl text-sm font-extrabold hover:bg-[#4c44cf] transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
