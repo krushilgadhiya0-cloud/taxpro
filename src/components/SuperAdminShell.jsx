@@ -187,11 +187,11 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
                 className="w-80 bg-white/5 border border-white/10 rounded-full pl-10 pr-4 py-2 text-sm font-semibold text-white outline-none focus:border-purple-500/50 transition-all placeholder:text-gray-600"
               />
             </div>
-            <button className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-white/5 relative">
+            <button onClick={() => onShowToast && onShowToast('No new master notifications.', 'info')} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-white/5 relative">
               <Bell className="w-4 h-4" />
               <span className="absolute top-2 right-2.5 w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
             </button>
-            <button className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-white/5">
+            <button onClick={() => onShowToast && onShowToast('Master configurations locked by deployment.', 'warning')} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all border border-white/5">
               <Settings2 className="w-4 h-4" />
             </button>
           </div>
@@ -201,22 +201,27 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
         <div className="p-8 max-w-7xl mx-auto space-y-8">
           
           {/* Top Metrics Row */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <MetricCard title="Total Admins (Tenants)" value={stats.totalAdmins} trend="LIVE DB" icon={<Building2 className="w-5 h-5 text-indigo-400" />} onClick={() => openDetailModal('admins')} />
-            <MetricCard title="Global Platform Workers" value={stats.totalWorkers} trend="LIVE DB" icon={<Users className="w-5 h-5 text-emerald-400" />} onClick={() => openDetailModal('workers')} />
-            <MetricCard title="Monthly Recurring Rev" value={`$${stats.activeRevenue}`} trend="LIVE DB" icon={<CreditCard className="w-5 h-5 text-purple-400" />} onClick={() => openDetailModal('revenue')} />
-            <MetricCard title="System Health" value="99.99%" trend="Optimal" icon={<Activity className="w-5 h-5 text-cyan-400" />} onClick={() => {}} />
-          </div>
+          {(activeTab === 'Overview' || activeTab === 'Global Logistics' || activeTab === 'Infrastructure') && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 animate-fade-in">
+              <MetricCard title="Total Admins (Tenants)" value={stats.totalAdmins} trend="LIVE DB" icon={<Building2 className="w-5 h-5 text-indigo-400" />} onClick={() => openDetailModal('admins')} />
+              <MetricCard title="Global Platform Workers" value={stats.totalWorkers} trend="LIVE DB" icon={<Users className="w-5 h-5 text-emerald-400" />} onClick={() => openDetailModal('workers')} />
+              <MetricCard title="Monthly Recurring Rev" value={`$${stats.activeRevenue}`} trend="LIVE DB" icon={<CreditCard className="w-5 h-5 text-purple-400" />} onClick={() => openDetailModal('revenue')} />
+              <MetricCard title="System Health" value="99.99%" trend="Optimal" icon={<Activity className="w-5 h-5 text-cyan-400" />} onClick={() => onShowToast && onShowToast('All microservices operational', 'success')} />
+            </div>
+          )}
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
             
             {/* SaaS Payment & Subscription Ledger */}
-            <div className="xl:col-span-2 space-y-4">
+            {(activeTab === 'Overview' || activeTab === 'Tenants' || activeTab === 'Revenue & Billing') && (
+            <div className={`${activeTab === 'Overview' ? 'xl:col-span-2' : 'xl:col-span-3'} space-y-4 animate-fade-in`}>
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-purple-400" /> Subscription Ledgers
                 </h3>
-                <button className="text-xs font-bold text-purple-400 hover:text-purple-300">View All Invoices &rarr;</button>
+                {activeTab === 'Overview' && (
+                  <button onClick={() => setActiveTab('Revenue & Billing')} className="text-xs font-bold text-purple-400 hover:text-purple-300 transition-colors">View All Invoices &rarr;</button>
+                )}
               </div>
               
               <div className="bg-[#09090b] border border-white/5 rounded-3xl overflow-hidden shadow-2xl">
@@ -260,9 +265,11 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
                 </table>
               </div>
             </div>
+            )}
 
             {/* Global Security & Activity Feed */}
-            <div className="space-y-4">
+            {(activeTab === 'Overview' || activeTab === 'Security Logs') && (
+            <div className={`${activeTab === 'Overview' ? 'col-span-1' : 'xl:col-span-2'} space-y-4 animate-fade-in`}>
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <ServerCrash className="w-5 h-5 text-indigo-400" /> Platform Feed
@@ -291,13 +298,17 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
                   ))}
                 </div>
                 
-                <button className="w-full mt-6 py-3 rounded-xl border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-all text-center">
+                <button onClick={() => { setActiveTab('Security Logs'); onShowToast && onShowToast('Filtering audit context...', 'info'); }} className="w-full mt-6 py-3 rounded-xl border border-white/10 text-xs font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-all text-center cursor-pointer">
                   View Full Audit Log
                 </button>
               </div>
+            </div>
+            )}
 
-              {/* NEW BOX: AI TRAINING & UNHANDLED INTENTS */}
-              <div className="flex items-center justify-between mt-8">
+            {/* NEW BOX: AI TRAINING & UNHANDLED INTENTS */}
+            {(activeTab === 'Overview' || activeTab === 'Security Logs') && (
+            <div className={`${activeTab === 'Overview' ? 'col-span-1 xl:col-span-3' : 'xl:col-span-1'} space-y-4 animate-fade-in`}>
+              <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-amber-400" /> AI Training & Failed Intents
                 </h3>
@@ -323,8 +334,25 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
                    ))}
                  </div>
               </div>
-
             </div>
+            )}
+            
+            {/* Empty Statues for remaining tabs */}
+            {(activeTab === 'Global Logistics' || activeTab === 'Infrastructure') && (
+              <div className="xl:col-span-3 py-24 flex flex-col items-center justify-center text-center animate-fade-in border border-dashed border-white/10 rounded-3xl bg-white/[0.01]">
+                <Globe2 className="w-12 h-12 text-gray-700 mb-4" />
+                <h3 className="text-xl font-bold text-gray-400 mb-2">Detailed view for {activeTab}</h3>
+                <p className="text-sm font-medium text-gray-600 max-w-sm">
+                  Full infrastructure mapping and geo-location tracking data is currently routed through the top Global Platform Workers metric card. Let us know if you want native charts built here.
+                </p>
+                <button 
+                  onClick={() => openDetailModal('workers')}
+                  className="mt-6 px-6 py-3 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 rounded-xl font-bold text-sm transition-all border border-purple-500/20 cursor-pointer"
+                >
+                   Open Master Directory
+                </button>
+              </div>
+            )}
 
           </div>
           
