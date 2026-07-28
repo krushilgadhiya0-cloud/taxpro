@@ -3,59 +3,77 @@ import { Users, Building, Search, Flame, AlertTriangle, Scale, CarFront, Plus, C
 
 export default function WorkloadView({ onShowToast, onNavigateToPrivateChat }) {
   const [search, setSearch] = useState('');
+  const [activeDept, setActiveDept] = useState('All Departments');
+  const [team, setTeam] = useState([]);
+  const [departments, setDepartments] = useState([]);
   
-  // Real Local Component State
-  const [team, setTeam] = useState(() => {
-    try {
-      const saved = localStorage.getItem('taxpro_workload_team');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch(e) {}
-    return [];
-  });
-
   React.useEffect(() => {
-    localStorage.setItem('taxpro_workload_team', JSON.stringify(team));
-  }, [team]);
+    fetchWorkloadData();
+  }, []);
+
+  const fetchWorkloadData = async () => {
+    const [membersRes, tasksRes] = await Promise.all([
+      import('../../lib/supabaseClient').then(m => m.supabase.from('team_members').select('*')),
+      import('../../lib/supabaseClient').then(m => m.supabase.from('global_tasks').select('*'))
+    ]);
+
+    if (!membersRes.error && membersRes.data) {
+      const allTasks = tasksRes.data || [];
+      const depts = [...new Set(membersRes.data.map(m => m.department).filter(Boolean))];
+      setDepartments(depts);
+
+      const computedTeam = membersRes.data.map(member => {
+        const myTasks = allTasks.filter(t => t.assignee?.toLowerCase() === member.name?.toLowerCase());
+        
+        let pending = 0, inProg = 0, overdue = 0, high = 0, done = 0;
+        const today = new Date().toISOString().split('T')[0];
+
+        myTasks.forEach(t => {
+          if (t.status === 'Completed') done++;
+          else {
+            if (t.status === 'In Progress') inProg++;
+            else pending++; // Default Pending
+
+            if (t.due_date && t.due_date < today) overdue++;
+            if (t.priority === 'High') high++;
+          }
+        });
+
+        const active = pending + inProg + overdue;
+        const total = myTasks.length;
+        
+        let status = 'Balanced';
+        if (active === 0) status = 'Free';
+        else if (active > 15) status = 'Overloaded';
+        else if (active > 7) status = 'Busy';
+
+        return {
+          id: member.id,
+          name: member.name || 'Unknown',
+          role: member.role || 'Member',
+          department: member.department,
+          initials: (member.name || 'Un known').substring(0,2).toUpperCase(),
+          status,
+          metrics: { active, pending, inProg, overdue, high },
+          done,
+          total
+        };
+      });
+
+      setTeam(computedTeam);
+    }
+  };
 
   const filteredTeam = useMemo(() => {
-    if (!search) return team;
-    return team.filter(m => m.name.toLowerCase().includes(search.toLowerCase()));
-  }, [search, team]);
-
-  const handleAssignTask = () => {
-    const assignee = window.prompt("Who are you assigning a task to? (Type name)");
-    if (!assignee) return;
-
-    setTeam(prev => {
-      const exists = prev.find(member => member.name.toLowerCase() === assignee.toLowerCase());
-      if (exists) {
-        return prev.map(member => {
-          if (member.name.toLowerCase() === assignee.toLowerCase()) {
-            const newTotal = member.total + 1;
-            const metrics = { ...member.metrics, pending: member.metrics.pending + 1, active: member.metrics.active + 1 };
-            return { ...member, total: newTotal, metrics };
-          }
-          return member;
-        });
-      } else {
-        return [...prev, {
-          id: Date.now(),
-          name: assignee,
-          role: 'Team Member',
-          initials: assignee.substring(0,2).toUpperCase(),
-          status: 'Balanced',
-          metrics: { active: 1, pending: 1, inProg: 0, overdue: 0, high: 0 },
-          done: 0,
-          total: 1
-        }];
-      }
-    });
-    
-    if (onShowToast) onShowToast(`Task allocated. Workload matrix for ${assignee} updated!`, 'success');
-  };
+    let result = team;
+    if (activeDept !== 'All Departments') {
+      result = result.filter(m => m.department === activeDept);
+    }
+    if (search) {
+      result = result.filter(m => m.name.toLowerCase().includes(search.toLowerCase()));
+    }
+    return result;
+  }, [search, activeDept, team]);
 
   const getStatusColor = (status) => {
     switch(status) {
@@ -103,10 +121,15 @@ export default function WorkloadView({ onShowToast, onNavigateToPrivateChat }) {
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="relative flex items-center bg-white border border-gray-200 rounded-xl px-3 py-2 w-full sm:w-48 shadow-sm">
           <Building className="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" />
-          <select className="w-full text-sm font-semibold text-gray-600 outline-none bg-transparent appearance-none cursor-pointer">
-            <option>All Departments</option>
-            <option>Sales and Marketing</option>
-            <option>Administration</option>
+          <select 
+            value={activeDept}
+            onChange={(e) => setActiveDept(e.target.value)}
+            className="w-full text-sm font-semibold text-gray-600 outline-none bg-transparent appearance-none cursor-pointer"
+          >
+            <option value="All Departments">All Departments</option>
+            {departments.map((dept, idx) => (
+              <option key={idx} value={dept}>{dept}</option>
+            ))}
           </select>
         </div>
         
@@ -241,15 +264,7 @@ export default function WorkloadView({ onShowToast, onNavigateToPrivateChat }) {
 
       </div>
 
-      {/* Floating Action Button */}
-      <div className="fixed bottom-8 right-8 z-40 flex items-center group cursor-pointer" onClick={handleAssignTask}>
-        <div className="px-3 py-1.5 bg-gray-900 text-white text-xs font-bold rounded-lg shadow-lg mr-2 opacity-0 -translate-x-4 transition-all duration-300 group-hover:opacity-100 group-hover:translate-x-0 pointer-events-none">
-          Assign Task
-        </div>
-        <button className="w-14 h-14 bg-[#0f766e] text-white rounded-full flex items-center justify-center shadow-lg hover:shadow-2xl hover:scale-105 transition-all outline-none">
-          <Plus className="w-6 h-6" />
-        </button>
-      </div>
+
 
     </div>
   );
