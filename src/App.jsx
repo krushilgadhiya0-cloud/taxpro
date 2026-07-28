@@ -16,6 +16,7 @@ import ContactSection from './components/ContactSection';
 import ToastContainer from './components/ToastContainer';
 import LoadingScreen from './components/LoadingScreen';
 import ProfileSetupModal from './components/ProfileSetupModal';
+import PWAModal from './components/PWAModal';
 import MainPMSShell from './components/MainPMSShell';
 import SuperAdminShell from './components/SuperAdminShell';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
