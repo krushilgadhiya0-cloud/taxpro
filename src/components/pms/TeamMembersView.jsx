@@ -65,22 +65,6 @@ export default function TeamMembersView({ onShowToast }) {
       return;
     }
     
-    // Add to invitations array with advanced details
-    setInvitations(prev => [
-      { 
-        id: Date.now(), 
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone ? purePhone : '',
-        role: formData.role,
-        department: formData.department,
-        hasPresetPass: !!formData.password,
-        password: formData.password || '',
-        status: 'Pending Invite' 
-      },
-      ...prev
-    ]);
-    
     // Close and reset
     setIsInviting(true);
     let emailSent = false;
