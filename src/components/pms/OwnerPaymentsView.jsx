@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DollarSign, CheckCircle2, CloudLightning, ArrowRight, Wallet, History, CreditCard, ShieldCheck, Lock } from 'lucide-react';
+import { DollarSign, CheckCircle2, CloudLightning, ArrowRight, Wallet, History, CreditCard, ShieldCheck, Lock, Printer, Download } from 'lucide-react';
 
 export default function OwnerPaymentsView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Overview');
@@ -160,6 +160,11 @@ Generated securely via Razorpay API Gateway.
     if(onShowToast) onShowToast(`Verified Razorpay receipt fetched & downloaded for ${invoice.id}`, 'success');
   };
 
+  const handlePrintReceipt = (invoice) => {
+    if(onShowToast) onShowToast(`Preparing printable receipt for ${invoice.id}...`, 'info');
+    setTimeout(() => window.print(), 500);
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-gray-50 min-h-screen text-gray-800">
       
@@ -293,12 +298,20 @@ Generated securely via Razorpay API Gateway.
                       </span>
                     </td>
                     <td className="p-4 pr-6 text-right">
-                      <button 
-                        onClick={() => handleDownloadRazorpayReceipt(h)}
-                        className="text-[#5b52e0] text-xs font-bold hover:underline"
-                      >
-                        Razopay Receipt
-                      </button>
+                      <div className="flex items-center justify-end gap-3">
+                        <button 
+                          onClick={() => handleDownloadRazorpayReceipt(h)}
+                          className="text-[#5b52e0] text-[10px] uppercase font-bold hover:bg-[#5b52e0]/10 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" /> Save
+                        </button>
+                        <button 
+                          onClick={() => handlePrintReceipt(h)}
+                          className="text-gray-600 text-[10px] uppercase font-bold hover:bg-gray-100 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                        >
+                          <Printer className="w-3 h-3" /> Print
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

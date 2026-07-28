@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Send, Plus, X, Printer, History, Mail, AlertCircle, FileText } from 'lucide-react';
+import { DollarSign, Send, Plus, X, Printer, History, Mail, AlertCircle, FileText, Download } from 'lucide-react';
 
 export default function FeesTrackingView({ onShowToast }) {
   const [fees, setFees] = useState(() => {
@@ -74,6 +74,21 @@ export default function FeesTrackingView({ onShowToast }) {
     setTimeout(() => {
       window.print();
     }, 500);
+  };
+
+  const handleDownloadLedger = () => {
+    if (!activeFeeStat) return;
+    const csvRows = ['Date,Description,Amount'];
+    if (activeFeeStat.history) {
+      activeFeeStat.history.forEach(h => csvRows.push(`"${h.date}","${h.desc}","${h.amount}"`));
+    }
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Ledger_${activeFeeStat.client.replace(/\s+/g, '_')}.csv`;
+    link.click();
+    if (onShowToast) onShowToast('Client ledger downloaded securely.', 'success');
   };
 
   return (
@@ -245,6 +260,12 @@ export default function FeesTrackingView({ onShowToast }) {
                      <Mail className="w-4 h-4" /> E-Mail Notice
                    </button>
                  )}
+                 <button 
+                   onClick={handleDownloadLedger}
+                   className="px-3 py-2 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-200 flex items-center gap-1.5 transition-colors"
+                 >
+                   <Download className="w-4 h-4" /> Download
+                 </button>
                  <button 
                    onClick={triggerPrint}
                    className="px-3 py-2 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-200 flex items-center gap-1.5 transition-colors"

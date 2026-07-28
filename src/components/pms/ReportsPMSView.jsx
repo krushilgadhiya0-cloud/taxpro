@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Download, Activity, CheckSquare, Target, Users, BookOpen, CreditCard, FolderKanban, Lightbulb } from 'lucide-react';
+import { FileText, Download, Activity, CheckSquare, Target, Users, BookOpen, CreditCard, FolderKanban, Lightbulb, Printer } from 'lucide-react';
 
 export default function ReportsPMSView({ onShowToast }) {
   const reports = [
@@ -81,6 +81,11 @@ export default function ReportsPMSView({ onShowToast }) {
      if (onShowToast) onShowToast(`Direct export complete: ${r.title} CSV generated.`, 'success');
   };
 
+  const triggerPrint = (title) => {
+    if (onShowToast) onShowToast(`Generating printable format for ${title}...`, 'info');
+    setTimeout(() => window.print(), 500);
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-[#f3f4f6] min-h-screen text-gray-800">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
@@ -111,12 +116,20 @@ export default function ReportsPMSView({ onShowToast }) {
               {r.desc}
             </p>
 
-            <button 
-              onClick={() => handleDownload(r)}
-              className="mt-auto w-full py-3 bg-gray-100 hover:bg-[#5b52e0] text-gray-800 hover:text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 border border-gray-300 hover:border-[#5b52e0] transition-all shadow-sm"
-            >
-              <Download className="w-4 h-4" /> Export CSV
-            </button>
+            <div className="mt-auto flex gap-2">
+              <button 
+                onClick={() => handleDownload(r)}
+                className="flex-1 py-3 bg-gray-100 hover:bg-[#5b52e0] text-gray-800 hover:text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-gray-300 hover:border-[#5b52e0] transition-all shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" /> CSV
+              </button>
+              <button 
+                onClick={() => triggerPrint(r.title)}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-800 text-gray-800 hover:text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 border border-gray-300 hover:border-gray-800 transition-all shadow-sm"
+              >
+                <Printer className="w-3.5 h-3.5" /> Print
+              </button>
+            </div>
           </div>
         ))}
       </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, Bot, Users, HelpCircle, UserCog, CheckSquare, Edit, Trash2, ChevronLeft, ChevronRight, X, Download } from 'lucide-react';
+import { Building2, Plus, Bot, Users, HelpCircle, UserCog, CheckSquare, Edit, Trash2, ChevronLeft, ChevronRight, X, Download, Printer } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function DepartmentsView({ onShowToast }) {
@@ -98,6 +98,11 @@ export default function DepartmentsView({ onShowToast }) {
     if (onShowToast) onShowToast('All departments list downloaded successfully.', 'success');
   };
 
+  const triggerPrint = () => {
+    if (onShowToast) onShowToast('Preparing printable Departments view...', 'info');
+    setTimeout(() => window.print(), 500);
+  };
+
   const handleDownloadSingleDept = (dept) => {
     const csvRows = ['Name,Initials,Members,Manager,Description'];
     csvRows.push(`"${dept.name}","${dept.initials}","${dept.members || 0}","${dept.manager || 'Unassigned'}","${dept.description || dept.desc}"`);
@@ -154,6 +159,12 @@ export default function DepartmentsView({ onShowToast }) {
         </div>
 
         <div className="flex items-center gap-3 self-start sm:self-auto">
+          <button 
+            onClick={triggerPrint}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-emerald-200 bg-white hover:bg-emerald-50 text-emerald-700 font-bold text-sm shadow-sm transition-all"
+          >
+            <Printer className="w-4 h-4" /> Print All
+          </button>
           <button 
             onClick={handleDownloadCSV}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-emerald-200 bg-white hover:bg-emerald-50 text-emerald-700 font-bold text-sm shadow-sm transition-all"

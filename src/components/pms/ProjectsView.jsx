@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check, Printer, Paperclip } from 'lucide-react';
+import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check, Printer, Paperclip, Download } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function ProjectsView({ onShowToast }) {
@@ -129,6 +129,21 @@ export default function ProjectsView({ onShowToast }) {
 
     setNewTaskTitle('');
     if (onShowToast) onShowToast(`Added task to ${openProject.name}`, 'success');
+  };
+
+  const handleDownloadTasks = () => {
+    if (!openProject) return;
+    const csvRows = ['Task Description,Assignee,Status,Created At'];
+    openProject.tasks.forEach(t => {
+      csvRows.push(`"${t.title}","${t.assignee}","${t.completed ? 'Completed' : 'Pending'}","${t.createdAt}"`);
+    });
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${openProject.name.replace(/\s+/g, '_')}_Tasks.csv`;
+    link.click();
+    if(onShowToast) onShowToast(`Downloaded tasks for ${openProject.name}`, 'success');
   };
 
   const getFilteredProjects = () => {
@@ -513,6 +528,12 @@ export default function ProjectsView({ onShowToast }) {
                 </div>
               </div>
               <div className="flex gap-2">
+                <button 
+                  onClick={handleDownloadTasks}
+                  className="p-1.5 text-gray-500 hover:text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors shadow-sm bg-white border border-emerald-100 flex items-center gap-1 px-3 text-xs font-bold"
+                >
+                  <Download className="w-4 h-4" /> CSV
+                </button>
                 <button 
                   onClick={() => window.print()}
                   className="p-1.5 text-gray-500 hover:text-emerald-700 hover:bg-emerald-100 rounded-full transition-colors shadow-sm bg-white border border-emerald-100 flex items-center gap-1 px-3 text-xs font-bold"

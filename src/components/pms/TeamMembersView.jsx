@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Users2, RotateCcw, Upload, Send, Plus, Trash2, X, Shield, Mail, Phone, Building, Briefcase, KeyRound, Download, AlertCircle, Loader2 } from 'lucide-react';
+import { User, Users2, RotateCcw, Upload, Send, Plus, Trash2, X, Shield, Mail, Phone, Building, Briefcase, KeyRound, Download, AlertCircle, Loader2, Printer } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function TeamMembersView({ onShowToast }) {
@@ -191,6 +191,11 @@ export default function TeamMembersView({ onShowToast }) {
     if (onShowToast) onShowToast(`${activeTab} list downloaded securely.`, 'success');
   };
 
+  const triggerPrint = () => {
+    if (onShowToast) onShowToast('Preparing printable Team hierarchy view...', 'info');
+    setTimeout(() => window.print(), 500);
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-gray-50/50 min-h-screen text-gray-800 relative pb-24 border-t border-gray-100">
       
@@ -232,6 +237,12 @@ export default function TeamMembersView({ onShowToast }) {
               className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-200 bg-white text-emerald-700 font-bold text-sm transition-colors flex-1 xl:flex-none ${isRefreshing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-50'}`}
             >
               <RotateCcw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh
+            </button>
+            <button 
+              onClick={triggerPrint}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-sm transition-colors flex-1 xl:flex-none"
+            >
+              <Printer className="w-4 h-4" /> Print List
             </button>
             <button 
               onClick={handleDownloadCSV}
