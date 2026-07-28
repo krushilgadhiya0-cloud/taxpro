@@ -240,6 +240,10 @@ export default function IntegrationsView({ onShowToast }) {
                      <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">From Address</label>
                      <input value={smtpConfig.sender_email} onChange={e => setSmtpConfig({...smtpConfig, sender_email: e.target.value})} type="text" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" placeholder="noreply@yourdomain.com" />
                    </div>
+                   <div className="flex-1">
+                     <label className="text-sm font-bold text-[#3c4043] mb-1.5 block">Target Verification Email</label>
+                     <input value={smtpConfig.target_email || ''} onChange={e => setSmtpConfig({...smtpConfig, target_email: e.target.value})} type="text" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" placeholder="Send test ping to..." />
+                   </div>
                    <div className="flex items-center gap-2 mb-3 px-2">
                      <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-[#44b595] focus:ring-[#44b595]" />
                      <label className="text-sm font-bold text-[#3c4043]">SSL</label>
@@ -318,6 +322,14 @@ export default function IntegrationsView({ onShowToast }) {
                  <div>
                    <label className="text-sm font-bold text-[#3c4043] mb-1.5 flex items-center gap-1">Meta API Version <span className="text-gray-400 font-medium">(optional)</span></label>
                    <input type="text" defaultValue="v21.0" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white focus:border-[#44b595] transition-colors" />
+                 </div>
+
+                 <div>
+                   <label className="text-sm font-bold text-[#3c4043] mb-1.5 flex items-center gap-2">
+                     Target Number 
+                     <span className="text-[10px] font-bold text-white bg-indigo-500 px-2 flex items-center rounded-full leading-none py-1">Required for Testing</span>
+                   </label>
+                   <input value={whatsappConfig.target_phone || ''} onChange={e => setWhatsappConfig({...whatsappConfig, target_phone: e.target.value})} type="text" className="w-full border border-gray-200 rounded-xl px-4 py-3 outline-none text-[#3c4043] bg-white border-dashed focus:border-[#44b595] border-indigo-200" placeholder="+1234567890 (Include country code)" />
                  </div>
                </div>
 

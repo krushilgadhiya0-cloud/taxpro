@@ -26,7 +26,8 @@ export default function ClientsView({ onShowToast }) {
           fileNo: c.file_no,
           attachedDoc: c.attached_doc,
           paymentHistory: c.payment_history,
-          address: c.client_address || ''
+          address: c.client_address || '',
+          createdAt: c.created_at
        }));
        setClients(mapped);
     } else if (error) {
@@ -82,7 +83,8 @@ export default function ClientsView({ onShowToast }) {
       fileNo: insertedClient.file_no,
       attachedDoc: insertedClient.attached_doc,
       paymentHistory: insertedClient.payment_history,
-      address: insertedClient.client_address || ''
+      address: insertedClient.client_address || '',
+      createdAt: insertedClient.created_at
     };
 
     setClients(prev => [newClientObj, ...prev]);
@@ -330,11 +332,14 @@ export default function ClientsView({ onShowToast }) {
                    <h3 className="font-outfit font-extrabold text-lg text-gray-900 leading-tight mb-1 group-hover:text-[#5b52e0] transition-colors">{c.name}</h3>
                    <div className="text-xs font-bold text-gray-500">{c.tradeName}</div>
                  </div>
-                 <span className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest font-black shrink-0 ${
-                   c.status === 'Active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
-                 }`}>
-                   {c.status}
-                 </span>
+                 <div className="flex flex-col items-end gap-1.5">
+                   <span className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest font-black shrink-0 ${
+                     c.status === 'Active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                   }`}>
+                     {c.status}
+                   </span>
+                   <div className="text-[9px] font-bold text-gray-400">Joined: {new Date(c.createdAt).toLocaleDateString()}</div>
+                 </div>
                </div>
 
                <div className="grid grid-cols-2 gap-3 mb-5 border-t border-b border-gray-100 py-3">
@@ -474,11 +479,14 @@ export default function ClientsView({ onShowToast }) {
                     <div className="text-sm font-bold text-gray-500 mb-2">T/A: {activeClientStat.tradeName}</div>
                   </>
                 )}
-                <span className={`px-2.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ${
-                  activeClientStat.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-                }`}>
-                  {activeClientStat.status}
-                </span>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className={`px-2.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ${
+                    activeClientStat.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}>
+                    {activeClientStat.status}
+                  </span>
+                  <span className="text-xs font-bold text-gray-500">Joined: {new Date(activeClientStat.createdAt).toLocaleDateString()}</span>
+                </div>
               </div>
               
               <div className="flex flex-wrap gap-2 print:hidden items-start">
