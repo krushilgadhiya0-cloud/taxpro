@@ -9,13 +9,15 @@ export default function TasksView({ onShowToast }) {
 
   const [tasks, setTasks] = useState([]);
   const [clients, setClients] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchData = async () => {
     setIsLoading(true);
-    const [tasksRes, clientsRes] = await Promise.all([
+    const [tasksRes, clientsRes, membersRes] = await Promise.all([
       supabase.from('global_tasks').select('*').order('created_at', { ascending: false }),
-      supabase.from('clients').select('name').order('created_at', { ascending: false })
+      supabase.from('clients').select('name').order('created_at', { ascending: false }),
+      supabase.from('team_members').select('name')
     ]);
 
     if (!tasksRes.error && tasksRes.data) {
@@ -28,6 +30,12 @@ export default function TasksView({ onShowToast }) {
     
     if (!clientsRes.error && clientsRes.data) {
        setClients(clientsRes.data);
+    }
+
+    if (!membersRes.error && membersRes.data) {
+       // Filter empty names and make a clean array
+       const names = membersRes.data.map(m => m.name).filter(n => n && n.trim() !== '');
+       setTeamMembers(names);
     }
 
     setIsLoading(false);
@@ -323,8 +331,8 @@ export default function TasksView({ onShowToast }) {
 
               <div className="pt-2 border-t border-gray-100">
                 <label className="font-extrabold text-sm text-gray-900 block mb-3 text-center">Assign Team Member</label>
-                <div className="grid grid-cols-2 gap-3 max-w-sm mx-auto">
-                  {['Krushil Gadhiya', 'Sarah Jenkins', 'Alex Sterling', 'Priya Sharma'].map(member => (
+                <div className="grid grid-cols-2 gap-3 max-w-sm mx-auto overflow-y-auto max-h-48 p-1">
+                  {teamMembers.length > 0 ? teamMembers.map(member => (
                     <button
                       key={member}
                       type="button"
@@ -336,9 +344,11 @@ export default function TasksView({ onShowToast }) {
                       }`}
                     >
                       <User className={`w-5 h-5 ${newTask.assignee === member ? 'text-indigo-600' : 'text-gray-400'}`} />
-                      <span className="text-[10px] font-bold text-center leading-tight">{member}</span>
+                      <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{member}</span>
                     </button>
-                  ))}
+                  )) : (
+                    <div className="col-span-2 text-center text-xs text-gray-400 font-bold py-4">No team members available.</div>
+                  )}
                 </div>
               </div>
 
