@@ -16,8 +16,8 @@ import ContactSection from './components/ContactSection';
 import ToastContainer from './components/ToastContainer';
 import LoadingScreen from './components/LoadingScreen';
 import ProfileSetupModal from './components/ProfileSetupModal';
-import PWAModal from './components/PWAModal';
 import MainPMSShell from './components/MainPMSShell';
+import SuperAdminShell from './components/SuperAdminShell';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
 import { supabase } from './lib/supabaseClient';
 
@@ -77,6 +77,9 @@ export default function App() {
          }
       }
       if (session) {
+        if (session.user?.email) {
+          setUserEmail(session.user.email);
+        }
         if (session.user?.user_metadata?.profile_completed) {
           localStorage.setItem('taxpro_profile_completed', 'true');
         }
@@ -92,6 +95,9 @@ export default function App() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session?.user?.email) {
+          setUserEmail(session.user.email);
+        }
         if (session?.user?.user_metadata?.profile_completed) {
           localStorage.setItem('taxpro_profile_completed', 'true');
         }
@@ -164,6 +170,10 @@ export default function App() {
 
   // When Authenticated: Render Full 1:1 Main PMS Application Suite
   if (isAuthenticated) {
+    if (userEmail === 'workforcepro09@gmail.com') {
+       return <SuperAdminShell onLogout={handleLogout} onShowToast={showToast} />;
+    }
+
     return (
       <div className="relative min-h-screen bg-[#f3f4f6]">
         <ToastContainer toasts={toasts} onCloseToast={closeToast} />
