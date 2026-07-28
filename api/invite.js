@@ -23,7 +23,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });
   }
 
-  const { memberName, targetEmail, generatedPassword, role } = req.body;
+  const { memberName, targetEmail, generatedPassword, role, origin } = req.body;
+  
+  const siteUrl = origin || 'https://taxpro.vercel.app';
 
   if (!targetEmail || !memberName) {
     return res.status(400).json({ success: false, error: 'Email and Name are required.' });
@@ -44,6 +46,8 @@ export default async function handler(req, res) {
              <p style="margin: 0 0 10px 0; font-size: 14px;"><b>Assigned Login ID:</b> ${targetEmail}</p>
              ${generatedPassword ? `<p style="margin: 0; font-size: 14px;"><b>Temporary Secure Password:</b> ${generatedPassword}</p>` : `<p style="margin: 0; color: #6B7280; font-size: 13px;"><i>Please use the verified onboarding link to define your own encrypted master password upon your first initial login.</i></p>`}
            </div>
+           
+           <a href="${siteUrl}" style="display: inline-block; padding: 12px 24px; background-color: #0f766e; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; margin-bottom: 20px;">Access Your Workspace Dashboard</a>
            
            <p style="color: #10B981; font-weight: bold; font-size: 14px;">We look forward to seeing you inside!</p>
            <hr style="border: none; border-top: 1px solid #eaeaea; margin: 20px 0;" />

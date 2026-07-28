@@ -12,6 +12,7 @@ export default function TeamMembersView({ onShowToast }) {
   // Advanced State Formulation
   const [members, setMembers] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [departmentsList, setDepartmentsList] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -25,6 +26,11 @@ export default function TeamMembersView({ onShowToast }) {
     const { data: taskData } = await supabase.from('global_tasks').select('*');
     if (taskData) {
        setTasks(taskData);
+    }
+    
+    const { data: deptData } = await supabase.from('departments').select('name');
+    if (deptData) {
+       setDepartmentsList(deptData.map(d => d.name));
     }
     
     setIsLoading(false);
@@ -113,7 +119,8 @@ export default function TeamMembersView({ onShowToast }) {
               memberName: formData.name,
               targetEmail: formData.email,
               generatedPassword: formData.password || 'password123',
-              role: formData.role
+              role: formData.role,
+              origin: window.location.origin
            })
         });
         
@@ -462,11 +469,15 @@ export default function TeamMembersView({ onShowToast }) {
                       onChange={e => setFormData({...formData, department: e.target.value})}
                       className="w-full bg-gray-50 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500/20"
                     >
-                      <option>General</option>
-                      <option>Sales and Marketing</option>
-                      <option>Administration</option>
-                      <option>Audit & Assurance</option>
-                      <option>Tax Compliance</option>
+                      {departmentsList.length > 0 ? (
+                        departmentsList.map(dept => <option key={dept}>{dept}</option>)
+                      ) : (
+                        <>
+                          <option>General</option>
+                          <option>Sales and Marketing</option>
+                          <option>Administration</option>
+                        </>
+                      )}
                     </select>
                   </div>
                 </div>
