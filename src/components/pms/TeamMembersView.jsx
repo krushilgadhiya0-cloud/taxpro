@@ -88,7 +88,8 @@ export default function TeamMembersView({ onShowToast }) {
           phone: formData.phone ? purePhone : '',
           role: formData.role,
           department: formData.department,
-          status: 'Pending Invite'
+          status: formData.password ? 'Active' : 'Pending Invite',
+          preset_password: formData.password || null
         }
       ]).select();
       
@@ -661,13 +662,11 @@ export default function TeamMembersView({ onShowToast }) {
                        <div className="relative flex-1">
                          <KeyRound className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                          <input 
-                           type="text" 
-                           value={activeMemberStat.password || ''}
-                           placeholder={activeMemberStat.hasPresetPass ? '********' : 'User set password privately'}
+                           type={activeMemberStat.preset_password ? "text" : "password"}
+                           value={activeMemberStat.preset_password || ''}
+                           placeholder={activeMemberStat.preset_password ? '********' : 'User secured password privately'}
                            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:bg-white focus:border-indigo-300 transition-colors"
-                           onChange={(e) => {
-                             setActiveMemberStat({...activeMemberStat, password: e.target.value});
-                           }}
+                           disabled
                          />
                        </div>
                        <button 
