@@ -50,6 +50,23 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
 
   useEffect(() => {
+    // Check for Supabase OAuth Callback Errors in URL Hash
+    const hash = window.location.hash;
+    if (hash && hash.includes('error=')) {
+      const params = new URLSearchParams(hash.substring(1));
+      const errorDesc = params.get('error_description')?.replace(/\+/g, ' ') || params.get('error');
+      
+      setTimeout(() => {
+         showToast(`✕ Login Failed: ${errorDesc}`, 'error');
+         if (errorDesc && errorDesc.toLowerCase().includes('provider')) {
+            showToast('⚠️ Please ensure the Google Auth Provider is strictly enabled in your Supabase Dashboard.', 'warning');
+         }
+      }, 600);
+
+      // Clean up the dirty URL
+      window.history.replaceState(null, null, window.location.pathname + window.location.search);
+    }
+
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
