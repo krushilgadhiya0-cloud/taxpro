@@ -3,7 +3,7 @@ import { Settings, Save, Shield, Printer } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function SettingsPMSView({ onShowToast }) {
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState(() => localStorage.getItem('taxpro_theme') || 'light');
   const [activeLang, setActiveLang] = useState('en');
   const [resetting, setResetting] = useState(false);
 
@@ -102,7 +102,9 @@ export default function SettingsPMSView({ onShowToast }) {
           <button 
             onClick={() => {
               setTheme('dark');
-              if (onShowToast) onShowToast('Dark Mode mock activated (component local level).', 'info');
+              document.documentElement.classList.add('dark-mode-global');
+              localStorage.setItem('taxpro_theme', 'dark');
+              if (onShowToast) onShowToast('Global Dark Mode Activated!', 'success');
             }}
             className={`flex-1 py-3 text-white text-xs font-bold rounded-xl border-2 flex flex-col items-center gap-2 shadow-md transition-all ${
               theme === 'dark' ? 'bg-gray-900 border-[#5b52e0] ring-4 ring-indigo-500/20' : 'bg-gray-900 border-gray-900 opacity-70 hover:opacity-100'
@@ -112,7 +114,12 @@ export default function SettingsPMSView({ onShowToast }) {
             Dark Mode
           </button>
           <button 
-            onClick={() => setTheme('light')}
+            onClick={() => {
+              setTheme('light');
+              document.documentElement.classList.remove('dark-mode-global');
+              localStorage.setItem('taxpro_theme', 'light');
+              if (onShowToast) onShowToast('Global Light Mode Activated!', 'success');
+            }}
             className={`flex-1 py-3 text-gray-700 text-xs font-bold rounded-xl border-2 flex flex-col items-center gap-2 shadow-sm transition-all ${
               theme === 'light' ? 'bg-white border-[#5b52e0] ring-4 ring-indigo-500/20' : 'bg-white border-gray-200 opacity-70 hover:opacity-100'
             }`}

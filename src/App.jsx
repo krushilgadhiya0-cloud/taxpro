@@ -50,6 +50,13 @@ export default function App() {
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
 
+  // GLOBAL DARK MODE INJECTOR ON BOOTUP
+  useEffect(() => {
+    if (localStorage.getItem('taxpro_theme') === 'dark') {
+      document.documentElement.classList.add('dark-mode-global');
+    }
+  }, []);
+
   useEffect(() => {
     // Ensure hovering # is removed on mount regardless
     if (window.location.href.endsWith('#')) {

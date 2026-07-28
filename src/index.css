@@ -342,3 +342,26 @@ body {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+
+/* ==============================================================
+   GLOBAL DARK MODE MACRO INVERSION ENGINE 
+   ============================================================== */
+html.dark-mode-global {
+  /* Invert all luminosity, then instantly rotate hue 180deg back to preserve brand colors perfectly! */
+  filter: invert(1) hue-rotate(180deg) contrast(0.95);
+  background-color: #f3f3f3; /* Inverts to extremely dark rich gray #0c0c0c */
+}
+
+/* Double-invert media resources so images/svgs don't look like x-rays */
+html.dark-mode-global img,
+html.dark-mode-global svg,
+html.dark-mode-global video,
+html.dark-mode-global .no-invert,
+html.dark-mode-global iframe {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+/* Fix some intense shadows that invert into bright halos */
+html.dark-mode-global * {
+  box-shadow: none !important;
+}
