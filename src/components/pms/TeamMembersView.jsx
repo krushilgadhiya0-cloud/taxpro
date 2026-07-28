@@ -88,7 +88,7 @@ export default function TeamMembersView({ onShowToast }) {
           phone: formData.phone ? purePhone : '',
           role: formData.role,
           department: formData.department,
-          status: 'Active'
+          status: 'Pending Invite'
         }
       ]).select();
       
@@ -142,24 +142,21 @@ export default function TeamMembersView({ onShowToast }) {
   const executeDelete = async () => {
     if (!deleteData) return;
     
-    if (deleteData.type === 'Invitations') {
-       setInvitations(prev => prev.filter(x => x.id !== deleteData.id));
+    const { error } = await supabase.from('team_members').delete().eq('id', deleteData.id);
+    if (error) {
+       if (onShowToast) onShowToast(`Failed to delete: ${error.message}`, 'error');
+       return;
     }
     
-    if (deleteData.type === 'Members') {
-       const { error } = await supabase.from('team_members').delete().eq('id', deleteData.id);
-       if (error) {
-          if (onShowToast) onShowToast(`Failed to delete member: ${error.message}`, 'error');
-          return;
-       }
-       setMembers(prev => prev.filter(x => x.id !== deleteData.id));
-    }
-    
+    setMembers(prev => prev.filter(x => x.id !== deleteData.id));
     setDeleteData(null);
     if (onShowToast) onShowToast('Record successfully removed.', 'info');
   };
 
-  const currentList = activeTab === 'Members' ? members : activeTab === 'Invitations' ? invitations : [];
+  const activeMembers = members.filter(m => m.status === 'Active');
+  const pendingMembers = members.filter(m => m.status === 'Pending Invite');
+  
+  const currentList = activeTab === 'Members' ? activeMembers : activeTab === 'Invitations' ? pendingMembers : [];
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -265,7 +262,7 @@ export default function TeamMembersView({ onShowToast }) {
                  activeTab === 'Members' ? 'bg-white text-emerald-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
                }`}
              >
-               <User className="w-4 h-4" /> Members <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Members' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{members.length}</span>
+               <User className="w-4 h-4" /> Members <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Members' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{activeMembers.length}</span>
              </button>
              <button 
                onClick={() => setActiveTab('Guests')}
@@ -281,7 +278,7 @@ export default function TeamMembersView({ onShowToast }) {
                  activeTab === 'Invitations' ? 'bg-white text-emerald-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
                }`}
              >
-               <Send className="w-4 h-4" /> Invitations <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Invitations' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{invitations.length}</span>
+               <Send className="w-4 h-4" /> Invitations <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Invitations' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{pendingMembers.length}</span>
              </button>
           </div>
         </div>

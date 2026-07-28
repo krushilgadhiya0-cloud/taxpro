@@ -399,12 +399,24 @@ export default function App() {
       <ProfileSetupModal
         isOpen={isProfileSetupOpen}
         onClose={() => setIsProfileSetupOpen(false)}
-        onComplete={(data) => {
+        onComplete={async (data) => {
           setIsAuthenticated(true);
           const destination = pendingTab || 'dashboard';
+          
+          // Securely upgrade Pending Invite to Active Member in Postgres
+          const { data: sessionData } = await supabase.auth.getSession();
+          const trueEmail = sessionData?.session?.user?.email;
+          
+          if (trueEmail) {
+             await supabase.from('team_members').update({
+                status: 'Active',
+                department: data.department
+             }).eq('email', trueEmail);
+          }
+          
           showToast(`✓ Profile complete! Welcome, ${data.profession}!`, 'success');
           setTimeout(() => {
-            showToast(`📧 Welcome Email dispatched to ${userEmail || 'krushilgadhiya0@gmail.com'}!`, 'info');
+            showToast(`📧 Welcome Email dispatched to ${trueEmail || 'krushilgadhiya0@gmail.com'}!`, 'info');
           }, 1200);
           setActiveTab(destination);
           setPendingTab(null);
