@@ -78,9 +78,14 @@ export default function App() {
          }
       }
       if (session) {
-        if (session.user?.email) {
-          setUserEmail(session.user.email);
+        const userMail = session.user?.email?.toLowerCase().trim();
+        if (userMail) setUserEmail(userMail);
+        
+        if (userMail === 'workforcepro09@gmail.com') {
+           setIsAuthenticated(true);
+           return;
         }
+        
         if (session.user?.user_metadata?.profile_completed) {
           localStorage.setItem('taxpro_profile_completed', 'true');
         }
@@ -96,9 +101,14 @@ export default function App() {
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        if (session?.user?.email) {
-          setUserEmail(session.user.email);
+        const userMail = session?.user?.email?.toLowerCase().trim();
+        if (userMail) setUserEmail(userMail);
+
+        if (userMail === 'workforcepro09@gmail.com') {
+           setIsAuthenticated(true);
+           return;
         }
+
         if (session?.user?.user_metadata?.profile_completed) {
           localStorage.setItem('taxpro_profile_completed', 'true');
         }
@@ -171,7 +181,7 @@ export default function App() {
 
   // When Authenticated: Render Full 1:1 Main PMS Application Suite
   if (isAuthenticated) {
-    if (userEmail === 'workforcepro09@gmail.com') {
+    if (userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com') {
        return <SuperAdminShell onLogout={handleLogout} onShowToast={showToast} />;
     }
 
