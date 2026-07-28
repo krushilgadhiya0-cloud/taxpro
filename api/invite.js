@@ -1,7 +1,15 @@
 import { Resend } from 'resend';
+import { createClient } from '@supabase/supabase-js';
 
 // Initialize Resend via Secure Vercel Environment Variable
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Initialize Supabase Admin strictly for Backend Override operations
+const supabaseAdmin = createClient(
+  process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 export default async function handler(req, res) {
   // CORS Headers for secure cross-origin requests
@@ -32,6 +40,24 @@ export default async function handler(req, res) {
   }
 
   try {
+
+    // 1. [ADMIN ENGINE] If manual password provided, physically create the Supabase Auth login!
+    if (generatedPassword && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+       const { error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email: targetEmail,
+          password: generatedPassword,
+          email_confirm: true,
+          user_metadata: { name: memberName, role: role }
+       });
+       
+       if (authError) {
+          console.warn("[Admin Auth Error] User may already exist, or keys missing:", authError.message);
+       } else {
+          console.log(`[Admin Success] Account credentials forcefully activated for ${targetEmail}`);
+       }
+    }
+
+    // 2. Dispatch the Welcome Email
     const data = await resend.emails.send({
       from: 'TaxPro Teams <onboarding@resend.dev>', // Resend's verified test domain. To use a custom one, add it to Resend dashboard.
       to: targetEmail,
