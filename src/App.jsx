@@ -330,25 +330,6 @@ export default function App() {
         </button>
       </div>
 
-      {/* FLOATING AI ORB BUTTON */}
-      {!isAIAssistantOpen && (
-        <button
-          onClick={() => setIsAIAssistantOpen(true)}
-          className="fixed bottom-6 right-6 z-40 p-4 rounded-full bg-gradient-to-tr from-cyan-500 via-blue-600 to-purple-600 text-white shadow-2xl shadow-cyan-500/40 hover:scale-110 transition-transform group"
-          title="Launch Neural AI"
-        >
-          <Bot className="w-6 h-6 group-hover:rotate-12 transition-transform" />
-          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-black animate-ping"></span>
-        </button>
-      )}
-
-      {/* FLOATING AI ASSISTANT WINDOW */}
-      <AIAssistant
-        isOpen={isAIAssistantOpen}
-        onClose={() => setIsAIAssistantOpen(false)}
-        onShowToast={showToast}
-        onLogout={handleLogout}
-      />
 
       {/* PWA INSTALLATION MODAL */}
       <PWAModal
