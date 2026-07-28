@@ -48,10 +48,6 @@ export default function DepartmentsView({ onShowToast }) {
     depts.map(d => d.manager).filter(m => m && m !== 'Not assigned' && m !== 'Unassigned')
   ).size;
 
-  const uniqueManagersCount = new Set(
-    depts.map(d => d.manager).filter(m => m && m !== 'Not assigned' && m !== 'Unassigned')
-  ).size;
-
   const [deleteId, setDeleteId] = useState(null);
 
   const handleAddDept = async (e) => {
