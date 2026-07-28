@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Users2, RotateCcw, Upload, Send, Plus, Trash2, X, Shield, Mail, Phone, Building, Briefcase, KeyRound, Download, AlertCircle } from 'lucide-react';
+import { User, Users2, RotateCcw, Upload, Send, Plus, Trash2, X, Shield, Mail, Phone, Building, Briefcase, KeyRound, Download, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function TeamMembersView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Members');
@@ -22,7 +22,9 @@ export default function TeamMembersView({ onShowToast }) {
     password: ''
   });
 
-  const handleInviteSubmit = (e) => {
+  const [isInviting, setIsInviting] = useState(false);
+
+  const handleInviteSubmit = async (e) => {
     e.preventDefault();
     if (!formData.email || !formData.name) {
       if (onShowToast) onShowToast('Email and Name are required.', 'error');
@@ -52,14 +54,40 @@ export default function TeamMembersView({ onShowToast }) {
     ]);
     
     // Close and reset
-    setIsInviteModalOpen(false);
+    setIsInviting(true);
+    let emailSent = false;
     
-    if (onShowToast) {
-      if (formData.password) {
-        onShowToast(`Welcome Mail sent to ${formData.email} with ID: ${formData.email} and Pass: ${formData.password}!`, 'success');
+    try {
+      const smtpRaw = localStorage.getItem('taxpro_smtp');
+      const smtpConfig = smtpRaw ? JSON.parse(smtpRaw) : null;
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      
+      const response = await fetch(`${baseUrl}/api/integrations/invite`, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+            smtpConfig,
+            memberName: formData.name,
+            targetEmail: formData.email,
+            generatedPassword: formData.password || 'password123',
+            role: formData.role
+         })
+      });
+      
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error || 'Dispatch Failed');
+      
+      emailSent = true;
+      if (smtpConfig) {
+         if (onShowToast) onShowToast(`Real invitation efficiently delivered to ${formData.email}! User Registered.`, 'success');
       } else {
-        onShowToast(`Invitation link sent to ${formData.email}!`, 'success');
+         if (onShowToast) onShowToast(`User Registered successfully. (Hint: Setup SMTP in Integrations to send real emails)`, 'info');
       }
+    } catch (err) {
+      if (onShowToast) onShowToast(`Registration Failed: ${err.message}`, 'error');
+    } finally {
+      setIsInviting(false);
+      setIsInviteModalOpen(false);
     }
     
     setFormData({ name: '', email: '', phone: '', role: 'Employee', department: 'General', password: '' });
@@ -423,9 +451,11 @@ export default function TeamMembersView({ onShowToast }) {
               <button 
                 form="invite-form"
                 type="submit"
-                className="px-6 py-2.5 bg-gray-900 text-white text-sm font-bold rounded-xl shadow-lg hover:shadow-xl hover:bg-black transition-all"
+                disabled={isInviting}
+                className={`px-6 py-2.5 text-white text-sm font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${isInviting ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black hover:shadow-xl'}`}
               >
-                Send Invitation
+                {isInviting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {isInviting ? 'Sending...' : 'Send Invitation'}
               </button>
             </div>
 

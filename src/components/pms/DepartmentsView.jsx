@@ -16,11 +16,24 @@ export default function DepartmentsView({ onShowToast }) {
 
   const [availableManagers] = useState(() => {
     try {
-      const saved = localStorage.getItem('taxpro_workload_team');
+      const saved = localStorage.getItem('taxpro_workload_team'); // wait, the user's workload Team managers
+      // Actually there's some managers from team_members maybe?
       if (saved) return JSON.parse(saved) || [];
     } catch(e) {}
     return [];
   });
+
+  const [teamMembers] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_team_members');
+      if (saved) return JSON.parse(saved) || [];
+    } catch(e) {}
+    return [];
+  });
+
+  const uniqueManagersCount = new Set(
+    depts.map(d => d.manager).filter(m => m && m !== 'Not assigned' && m !== 'Unassigned')
+  ).size;
 
   React.useEffect(() => {
     localStorage.setItem('taxpro_departments', JSON.stringify(depts));
@@ -110,11 +123,11 @@ export default function DepartmentsView({ onShowToast }) {
               <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">DEPARTMENTS</div>
             </div>
             <div>
-              <div className="text-xl font-black text-gray-900">0</div>
+              <div className="text-xl font-black text-gray-900">{uniqueManagersCount}</div>
               <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">MANAGERS</div>
             </div>
             <div>
-              <div className="text-xl font-black text-gray-900">0</div>
+              <div className="text-xl font-black text-gray-900">{teamMembers.length}</div>
               <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">MEMBERS</div>
             </div>
           </div>
@@ -353,12 +366,12 @@ export default function DepartmentsView({ onShowToast }) {
 
                  <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
                     <div className="text-gray-400 text-[9px] font-bold uppercase tracking-widest mb-1">Total Tasks</div>
-                    <div className="text-2xl font-black text-indigo-600 leading-none">{((activeDeptStat.id * 7) % 60) + 20}</div>
+                    <div className="text-2xl font-black text-indigo-600 leading-none">0</div>
                  </div>
 
                  <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-center">
                     <div className="text-gray-400 text-[9px] font-bold uppercase tracking-widest mb-1">Previous</div>
-                    <div className="text-2xl font-black text-emerald-500 leading-none">{((activeDeptStat.id * 4) % 40) + 10}</div>
+                    <div className="text-2xl font-black text-emerald-500 leading-none">0</div>
                  </div>
 
                  <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-center bg-gray-50/50">
@@ -385,9 +398,9 @@ export default function DepartmentsView({ onShowToast }) {
                     className="w-full bg-white px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 outline-none focus:border-indigo-500 shadow-sm appearance-none cursor-pointer"
                   >
                     <option value="">Leave Unassigned</option>
-                    <option value="Krushil Gadhiya">Krushil Gadhiya</option>
-                    <option value="Priya Sharma">Priya Sharma</option>
-                    <option value="Alex Sterling">Alex Sterling</option>
+                    {availableManagers.map(m => (
+                      <option key={m.id} value={m.name}>{m.name}</option>
+                    ))}
                   </select>
                 </div>
                 <p className="text-[10px] text-gray-500 mt-2 font-medium">Managers have elevated permissions to dispatch bulk assignations to members within this department scope.</p>

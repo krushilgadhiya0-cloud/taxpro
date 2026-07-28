@@ -2,6 +2,7 @@ import express from 'express';
 import nodemailer from 'nodemailer';
 import axios from 'axios';
 import { google } from 'googleapis';
+import { registerInvitedUser } from './auth.js';
 
 const router = express.Router();
 
@@ -45,6 +46,61 @@ router.post('/test-smtp', async (req, res) => {
     res.status(500).json({ success: false, error: `SMTP Handshake Failed: ${error.message}` });
   }
 });
+
+// POST /api/integrations/invite
+router.post('/invite', async (req, res) => {
+  const { smtpConfig, memberName, targetEmail, generatedPassword, role } = req.body;
+
+  try {
+    if (!targetEmail) {
+       return res.status(400).json({ success: false, error: 'Target email is required.' });
+    }
+
+    // 1. ALWAYS Register the member into the database so they can log in immediately:
+    registerInvitedUser(targetEmail, generatedPassword, memberName, role);
+
+    // 2. Check if SMTP configuration is provided from the frontend
+    if (!smtpConfig || !smtpConfig.host || !smtpConfig.user || !smtpConfig.pass) {
+       console.log(`[TaxPro Integrations] No SMTP Config. Mock invite sent & User registered for ${targetEmail}`);
+       return res.json({ success: true, message: `Mock Email Sent & User Registered.` });
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: smtpConfig.host,
+      port: smtpConfig.port || 587,
+      secure: smtpConfig.port === 465 || smtpConfig.port === '465',
+      auth: { user: smtpConfig.user, pass: smtpConfig.pass }
+    });
+
+    const mailOptions = {
+      from: `"${smtpConfig.sender_email || 'TaxPro TMS'}" <${smtpConfig.user}>`,
+      to: targetEmail,
+      subject: `Invitation to join TaxPro Workspace`,
+      text: `Hello ${memberName},\n\nYou have been invited to join the TaxPro Workspace as a ${role}.\n\nYour Login ID: ${targetEmail}\n${generatedPassword ? `Your Temporary Password: ${generatedPassword}` : ''}\n\nPlease login to access your dashboard.`,
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; text-align: center; color: #1e1e2d; border-radius: 12px; background: #f9fafb; max-width: 500px; margin: auto;">
+           <h2 style="color: #0f766e;">Welcome to TaxPro 🚀</h2>
+           <p>Hello <b>${memberName}</b>,</p>
+           <p>You have been invited to join the TaxPro Workspace as a <b>${role}</b>.</p>
+           <div style="background: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; text-align: left; margin: 20px 0;">
+             <p><b>Login ID:</b> ${targetEmail}</p>
+             ${generatedPassword ? `<p><b>Password:</b> ${generatedPassword}</p>` : `<p><i>Please use the invitation link attached to define your own secure password.</i></p>`}
+           </div>
+           <p>Looking forward to collaborating with you!</p>
+        </div>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[TaxPro Integrations] Invitation Email sent to ${targetEmail}: ${info.messageId}`);
+    
+    res.json({ success: true, message: `Invitation successfully emailed to ${targetEmail}!` });
+  } catch (error) {
+    console.error(`[TaxPro Integrations] Invitation Email Failure:`, error.message);
+    res.status(500).json({ success: false, error: `Could not send invite email: ${error.message}` });
+  }
+});
+
 
 // POST /api/integrations/test-whatsapp
 router.post('/test-whatsapp', async (req, res) => {

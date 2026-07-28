@@ -35,7 +35,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
   const [teamMembers, setTeamMembers] = useState([]);
   const [departmentsList, setDepartmentsList] = useState([]);
 
-  React.useEffect(() => {
+  const loadData = () => {
     const dept = localStorage.getItem('taxpro_user_department');
     if (dept) setUserDepartment(dept);
 
@@ -58,9 +58,15 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
         if (Array.isArray(parsed)) setDepartmentsList(parsed);
       }
     } catch (e) {}
+  };
 
-    // Initialize clock
+  React.useEffect(() => {
+    loadData();
     setCurrentTime(new Date().toLocaleString());
+
+    // Auto-refresh every 2 seconds to instantly reflect changes from other PMS tabs
+    const intervalId = window.setInterval(loadData, 2000);
+    return () => window.clearInterval(intervalId);
   }, []);
 
   // Update clock periodically (optional, manual refresh sets it too)
@@ -183,7 +189,10 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
             <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/20 border border-white/20 backdrop-blur-md text-xs font-medium">
               <span>Last Refreshed: {currentTime}</span>
               <button 
-                onClick={() => setCurrentTime(new Date().toLocaleString())}
+                onClick={() => {
+                  loadData();
+                  setCurrentTime(new Date().toLocaleString());
+                }}
                 className="hover:rotate-180 transition-transform duration-500"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-white" />

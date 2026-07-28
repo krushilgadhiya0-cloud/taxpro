@@ -57,6 +57,24 @@ export const isEmailRegistered = (email) => {
   return registeredUsers.some(u => u.email.toLowerCase() === cleanEmail);
 };
 
+export const registerInvitedUser = (email, password, name, role) => {
+  const cleanEmail = email.trim().toLowerCase();
+  if (registeredUsers.some(u => u.email.toLowerCase() === cleanEmail)) {
+     return false;
+  }
+  const newUser = {
+    id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
+    email: cleanEmail,
+    password: password || 'password123',
+    name: name || 'Invited Member',
+    role: role || 'Employee',
+    company: 'TaxPro Enterprise Client',
+    createdAt: new Date().toISOString()
+  };
+  registeredUsers.push(newUser);
+  return true;
+};
+
 // Mail Engine Helper: Send Welcome Email
 export const sendWelcomeEmail = (email, name) => {
   const targetEmail = (email || 'krushilgadhiya0@gmail.com').trim().toLowerCase();

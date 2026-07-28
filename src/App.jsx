@@ -80,6 +80,13 @@ export default function App() {
         }
         if (localStorage.getItem('taxpro_profile_completed')) {
           setIsAuthenticated(true);
+        } else {
+          setIsProfileSetupOpen(true);
+        }
+
+        // Supabase often leaves a trailing '#' after parsing implicit OAuth hashes. Clean it up:
+        if (window.location.href.endsWith('#')) {
+          window.history.replaceState(null, null, window.location.pathname + window.location.search);
         }
       } else if (event === 'SIGNED_OUT') {
         setIsAuthenticated(false);
