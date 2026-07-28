@@ -58,8 +58,9 @@ import OwnerPaymentsView from './pms/OwnerPaymentsView';
 import PrivateChatView from './pms/PrivateChatView';
 import IntegrationsView from './pms/IntegrationsView';
 import SupportHelpView from './pms/SupportHelpView';
+import VoiceAIEngine from './VoiceAIEngine';
 
-export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
+export default function MainPMSShell({ onLogout, onShowToast }) {
   const [activeItem, setActiveItem] = useState('Dashboard');
   const [liveClock, setLiveClock] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -772,6 +773,7 @@ export default function MainPMSShell({ onLogout, onTriggerAI, onShowToast }) {
         </div>
       )}
 
+      <VoiceAIEngine onShowToast={onShowToast} />
     </div>
   );
 }

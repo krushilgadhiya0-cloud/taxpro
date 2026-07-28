@@ -15,7 +15,9 @@ import {
   ServerCrash,
   Download,
   Printer,
-  X
+  X,
+  ShieldCheck,
+  HelpCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -25,9 +27,14 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
   const [members, setMembers] = useState([]);
   const [activeDetailModal, setActiveDetailModal] = useState(null); // 'admins' | 'workers' | 'revenue'
   const [metricDataList, setMetricDataList] = useState([]);
+  const [aiLogs, setAiLogs] = useState([]);
   
   useEffect(() => {
     fetchGlobalStats();
+    try {
+      const logs = localStorage.getItem('taxpro_ai_training_logs');
+      if (logs) setAiLogs(JSON.parse(logs));
+    } catch(e) {}
   }, []);
 
   const fetchGlobalStats = async () => {
@@ -288,6 +295,35 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
                   View Full Audit Log
                 </button>
               </div>
+
+              {/* NEW BOX: AI TRAINING & UNHANDLED INTENTS */}
+              <div className="flex items-center justify-between mt-8">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-amber-400" /> AI Training & Failed Intents
+                </h3>
+              </div>
+              <div className="bg-[#09090b] border border-amber-500/20 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                 <p className="text-xs text-gray-400 mb-4 font-bold border-b border-white/5 pb-4">
+                   These commands were spoken by users globally but the NLP parser failed to execute them. Review them to upgrade the Voice Assistant dictionary.
+                 </p>
+                 <div className="space-y-3 overflow-y-auto max-h-64 pr-2">
+                   {aiLogs.length === 0 ? (
+                     <div className="text-center py-6">
+                       <HelpCircle className="w-8 h-8 text-gray-700 mx-auto mb-2" />
+                       <p className="text-xs font-bold text-gray-500">No failed voice intents logged.</p>
+                     </div>
+                   ) : aiLogs.map(log => (
+                     <div key={log.id} className="p-3 rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-between">
+                       <div>
+                         <p className="text-sm font-black text-amber-500 font-mono">"{log.transcript}"</p>
+                         <p className="text-[10px] uppercase font-bold text-gray-500 mt-1">{log.date} @ {log.time}</p>
+                       </div>
+                       <span className="px-2 py-1 bg-red-500/10 text-red-500 text-[10px] font-black rounded-lg">FAILED</span>
+                     </div>
+                   ))}
+                 </div>
+              </div>
+
             </div>
 
           </div>
