@@ -11,6 +11,7 @@ export default function TeamMembersView({ onShowToast }) {
   
   // Advanced State Formulation
   const [members, setMembers] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -20,6 +21,12 @@ export default function TeamMembersView({ onShowToast }) {
     if (!error && data) {
        setMembers(data);
     }
+    
+    const { data: taskData } = await supabase.from('global_tasks').select('*');
+    if (taskData) {
+       setTasks(taskData);
+    }
+    
     setIsLoading(false);
   };
 
@@ -560,57 +567,57 @@ export default function TeamMembersView({ onShowToast }) {
             {/* Stats Body */}
             <div className="px-6 pb-6 -mt-6">
               
-              <div className="grid grid-cols-2 gap-3 mb-6 relative z-10">
-                 
-                 <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
-                    <div>
-                      <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Today's Tasks</div>
-                      <div className="text-2xl font-black text-gray-900 leading-none">
-                         {((activeMemberStat.id * 3) % 8) + 1}
-                      </div>
-                    </div>
-                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
-                      <Briefcase className="w-5 h-5 text-blue-500" />
-                    </div>
-                 </div>
+              {(() => {
+                 const memberTasks = tasks.filter(t => t.assignee === activeMemberStat.name);
+                 const completed = memberTasks.filter(t => t.status === 'Completed').length;
+                 const pending = memberTasks.filter(t => t.status === 'Pending').length;
+                 const todays = memberTasks.filter(t => t.due_date === new Date().toISOString().split('T')[0]).length;
+                 const total = memberTasks.length;
 
-                 <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
-                    <div>
-                      <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Total Tasks</div>
-                      <div className="text-2xl font-black text-gray-900 leading-none">
-                         {((activeMemberStat.id * 7) % 45) + 12}
-                      </div>
+                 return (
+                  <div className="grid grid-cols-2 gap-3 mb-6 relative z-10">
+                    <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
+                        <div>
+                          <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Today's Tasks</div>
+                          <div className="text-2xl font-black text-gray-900 leading-none">{todays}</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
+                          <Briefcase className="w-5 h-5 text-blue-500" />
+                        </div>
                     </div>
-                    <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center">
-                      <Briefcase className="w-5 h-5 text-purple-500" />
-                    </div>
-                 </div>
 
-                 <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
-                    <div>
-                      <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Pending</div>
-                      <div className="text-2xl font-black text-amber-500 leading-none">
-                         {((activeMemberStat.id * 5) % 15) + 2}
-                      </div>
+                    <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
+                        <div>
+                          <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Total Tasks</div>
+                          <div className="text-2xl font-black text-gray-900 leading-none">{total}</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center">
+                          <Briefcase className="w-5 h-5 text-purple-500" />
+                        </div>
                     </div>
-                    <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
-                      <Briefcase className="w-5 h-5 text-amber-500" />
-                    </div>
-                 </div>
 
-                 <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
-                    <div>
-                      <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Completed</div>
-                      <div className="text-2xl font-black text-emerald-500 leading-none">
-                         {((activeMemberStat.id * 2) % 30) + 10}
-                      </div>
+                    <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
+                        <div>
+                          <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Pending</div>
+                          <div className="text-2xl font-black text-amber-500 leading-none">{pending}</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+                          <Briefcase className="w-5 h-5 text-amber-500" />
+                        </div>
                     </div>
-                    <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
-                      <Briefcase className="w-5 h-5 text-emerald-500" />
-                    </div>
-                 </div>
 
-              </div>
+                    <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
+                        <div>
+                          <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Completed</div>
+                          <div className="text-2xl font-black text-emerald-500 leading-none">{completed}</div>
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
+                          <Briefcase className="w-5 h-5 text-emerald-500" />
+                        </div>
+                    </div>
+                  </div>
+                 );
+              })()}
 
               {/* Task Mini-List */}
               <div>
@@ -618,9 +625,18 @@ export default function TeamMembersView({ onShowToast }) {
                   <User className="w-4 h-4 text-emerald-600" /> Recent Active Assignments
                 </h4>
                 <div className="flex flex-col gap-2">
-                   <div className="text-[10px] text-gray-400 font-bold bg-gray-50 border border-gray-100 p-4 rounded-xl text-center italic">
-                     No active task assignments for this member yet.
-                   </div>
+                   {tasks.filter(t => t.assignee === activeMemberStat.name).length > 0 ? (
+                      tasks.filter(t => t.assignee === activeMemberStat.name).slice(0, 3).map(task => (
+                        <div key={task.id} className="flex justify-between items-center p-3 rounded-lg border border-gray-100 bg-gray-50">
+                          <span className="text-sm font-bold text-gray-800">{task.title}</span>
+                          <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded ${task.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{task.status}</span>
+                        </div>
+                      ))
+                   ) : (
+                     <div className="text-[10px] text-gray-400 font-bold bg-gray-50 border border-gray-100 p-4 rounded-xl text-center italic">
+                       No active task assignments for this member yet.
+                     </div>
+                   )}
                 </div>
               </div>
 
