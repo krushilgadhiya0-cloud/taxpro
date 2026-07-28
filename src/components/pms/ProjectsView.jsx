@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check, Printer, Paperclip } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function ProjectsView({ onShowToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -33,8 +34,20 @@ export default function ProjectsView({ onShowToast }) {
       } catch (e) {}
     };
     window.addEventListener('storage', handleStorageChange);
+    
+    // Fetch live team members for the Assignee Dropdown
+    const fetchLiveMembers = async () => {
+      const { data, error } = await supabase.from('team_members').select('name');
+      if (!error && data) {
+         setAvailableMembers(data.map(m => m.name));
+      }
+    };
+    fetchLiveMembers();
+    
     return () => window.removeEventListener('storage', handleStorageChange);
   }, [projectsList]);
+  
+  const [availableMembers, setAvailableMembers] = useState([]);
   const [activeFilter, setActiveFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [openProject, setOpenProject] = useState(null);
@@ -554,12 +567,10 @@ export default function ProjectsView({ onShowToast }) {
                   <select 
                     value={newTaskAssignee}
                     onChange={e => setNewTaskAssignee(e.target.value)}
-                    className="px-2 py-2 text-xs border border-gray-200 rounded-lg outline-none bg-gray-50 text-gray-700 font-bold"
+                    className="px-2 py-2 text-xs border border-gray-200 rounded-lg outline-none bg-gray-50 text-gray-700 font-bold max-w-[140px] truncate"
                   >
                     <option value="Unassigned">Unassigned</option>
-                    <option value="Krushil Gadhiya">Krushil</option>
-                    <option value="Sarah Jenkins">Sarah</option>
-                    <option value="Alex Sterling">Alex</option>
+                    {availableMembers.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <button type="submit" disabled={!newTaskTitle.trim()} className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors">
                     Add

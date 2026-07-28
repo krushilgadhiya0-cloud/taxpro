@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lightbulb, Plus, Filter, ThumbsUp, ThumbsDown, MessageSquare, Paperclip, Lock, Globe, RefreshCcw, User, Tag, X, Trash2 } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function IdeasView({ onShowToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -13,17 +14,29 @@ export default function IdeasView({ onShowToast }) {
     return [];
   });
 
-  const [availableDepts] = useState(() => {
-    try {
-      const saved = localStorage.getItem('taxpro_departments');
-      if (saved) return JSON.parse(saved) || [];
-    } catch(e) {}
-    return [];
-  });
+  const [availableDepts, setAvailableDepts] = useState([]);
+  const [availableMembers, setAvailableMembers] = useState([]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     localStorage.setItem('taxpro_ideas', JSON.stringify(ideas));
   }, [ideas]);
+
+  useEffect(() => {
+    const fetchLiveMocks = async () => {
+      const { data: deptData } = await supabase.from('departments').select('name');
+      if (deptData) {
+        setAvailableDepts(deptData.map(d => d.name));
+      } else {
+        setAvailableDepts(['General', 'Sales', 'Admin']);
+      }
+      
+      const { data: memData } = await supabase.from('team_members').select('name');
+      if (memData) {
+        setAvailableMembers(memData.map(m => m.name));
+      }
+    };
+    fetchLiveMocks();
+  }, []);
 
   const [formData, setFormData] = useState({
     content: '',
@@ -352,7 +365,7 @@ export default function IdeasView({ onShowToast }) {
                          >
                            <option value="All">All</option>
                            {availableDepts.map(d => (
-                             <option key={d.id} value={d.name}>{d.name}</option>
+                             <option key={d} value={d}>{d}</option>
                            ))}
                          </select>
                        </div>
@@ -535,8 +548,9 @@ export default function IdeasView({ onShowToast }) {
                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-bold text-sm text-gray-700"
                    >
                      <option value="Unassigned">Unassigned</option>
-                     <option value="Krushil Gadhiya">Krushil Gadhiya</option>
-                     <option value="Alex Sterling">Alex Sterling</option>
+                     {availableMembers.map(m => (
+                       <option key={m} value={m}>{m}</option>
+                     ))}
                    </select>
                  </div>
                  <div>
