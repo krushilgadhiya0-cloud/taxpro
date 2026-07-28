@@ -30,6 +30,8 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
   const [activeCategory, setActiveCategory] = useState('All');
   const [dateRangeFilter, setDateRangeFilter] = useState('All Time');
   const [tempDateRange, setTempDateRange] = useState('All Time');
+  const [selectedDepts, setSelectedDepts] = useState([]);
+  const [tempSelectedDepts, setTempSelectedDepts] = useState([]);
   const [currentTime, setCurrentTime] = useState('');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [taskDetailType, setTaskDetailType] = useState(null);
@@ -46,8 +48,8 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
       // Pull tasks strictly for metrics
       const [tasksRes, membersRes, deptsRes] = await Promise.all([
          supabase.from('global_tasks').select('*'),
-         supabase.from('team_members').select('id'),
-         supabase.from('departments').select('id')
+         supabase.from('team_members').select('*'),
+         supabase.from('departments').select('*')
       ]);
       
       if (tasksRes.data) {
@@ -137,13 +139,23 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
         qEndMonth = lastQ * 3;
         return tDate.getFullYear() === y && (tDate.getMonth() + 1) >= qStartMonth && (tDate.getMonth() + 1) <= qEndMonth;
       }
-      else if (dateRangeFilter === 'Year to Date') {
-        return tDate.getFullYear() === currentYear;
+      if (dateRangeFilter === 'Year to Date') {
+        if (tDate.getFullYear() !== currentYear) return false;
       }
       return true;
     });
 
-    filteredByRange.forEach(t => {
+    const finalFiltered = filteredByRange.filter(t => {
+      // If no departments explicitly filtered, show all
+      if (selectedDepts.length === 0) return true;
+      
+      // Determine task department from assignee 
+      const taskAssignee = teamMembers.find(m => m.name === t.assignee);
+      const tDept = (taskAssignee && taskAssignee.department) ? taskAssignee.department : 'General';
+      return selectedDepts.includes(tDept);
+    });
+
+    finalFiltered.forEach(t => {
        if (t.status === 'Completed') return;    
        
        if (t.dueDate) {
@@ -174,31 +186,41 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
       overdueMoreThan7Days: ovMore7,
       dueTotal: dTotal
     });
-  }, [tasks, dateRangeFilter]);
+  }, [tasks, dateRangeFilter, selectedDepts, teamMembers]);
 
   const activeFilteredTasks = tasks.filter(t => {
-      if (dateRangeFilter === 'All Time') return true;
-      
-      const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.created_at || new Date());
-      const currentMonth = new Date().getMonth() + 1;
-      const currentYear = new Date().getFullYear();
-      
-      if (dateRangeFilter.includes('This Quarter')) {
-        const qStart = (Math.ceil(currentMonth / 3) - 1) * 3 + 1;
-        return tDate.getFullYear() === currentYear && (tDate.getMonth() + 1) >= qStart && (tDate.getMonth() + 1) <= qStart + 2;
-      } 
-      else if (dateRangeFilter.includes('Last Quarter')) {
-        let lastQ = Math.ceil(currentMonth / 3) - 1;
-        let y = currentYear;
-        if (lastQ === 0) { lastQ = 4; y = currentYear - 1; }
-        const qStart = (lastQ - 1) * 3 + 1;
-        return tDate.getFullYear() === y && (tDate.getMonth() + 1) >= qStart && (tDate.getMonth() + 1) <= qStart + 2;
+      // Date Filter Layer
+      let passesDate = true;
+      if (dateRangeFilter !== 'All Time') {
+        const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.created_at || new Date());
+        const currentMonth = new Date().getMonth() + 1;
+        const currentYear = new Date().getFullYear();
+        
+        if (dateRangeFilter.includes('This Quarter')) {
+          const qStart = (Math.ceil(currentMonth / 3) - 1) * 3 + 1;
+          passesDate = tDate.getFullYear() === currentYear && (tDate.getMonth() + 1) >= qStart && (tDate.getMonth() + 1) <= qStart + 2;
+        } 
+        else if (dateRangeFilter.includes('Last Quarter')) {
+          let lastQ = Math.ceil(currentMonth / 3) - 1;
+          let y = currentYear;
+          if (lastQ === 0) { lastQ = 4; y = currentYear - 1; }
+          const qStart = (lastQ - 1) * 3 + 1;
+          passesDate = tDate.getFullYear() === y && (tDate.getMonth() + 1) >= qStart && (tDate.getMonth() + 1) <= qStart + 2;
+        }
+        else if (dateRangeFilter === 'Year to Date') {
+          passesDate = tDate.getFullYear() === currentYear;
+        }
       }
-      else if (dateRangeFilter === 'Year to Date') {
-        return tDate.getFullYear() === currentYear;
-      }
-      return true;
+      if (!passesDate) return false;
+
+      // Department Layer Filter
+      if (selectedDepts.length === 0) return true;
+      const taskAssignee = teamMembers.find(m => m.name === t.assignee);
+      const tDept = (taskAssignee && taskAssignee.department) ? taskAssignee.department : 'General';
+      return selectedDepts.includes(tDept);
   });
+      
+
 
   const unassignedTasks = activeFilteredTasks.filter(t => !t.assignee || t.assignee === 'None' || t.assignee === 'Unassigned').length;
   const totalTasks = activeFilteredTasks.length;
