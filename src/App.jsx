@@ -50,20 +50,8 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
 
   useEffect(() => {
-    // Check for Supabase OAuth Callback Errors in URL Hash
-    const hash = window.location.hash;
-    if (hash && hash.includes('error=')) {
-      const params = new URLSearchParams(hash.substring(1));
-      const errorDesc = params.get('error_description')?.replace(/\+/g, ' ') || params.get('error');
-      
-      setTimeout(() => {
-         showToast(`✕ Login Failed: ${errorDesc}`, 'error');
-         if (errorDesc && errorDesc.toLowerCase().includes('provider')) {
-            showToast('⚠️ Please ensure the Google Auth Provider is strictly enabled in your Supabase Dashboard.', 'warning');
-         }
-      }, 600);
-
-      // Clean up the dirty URL
+    // Ensure hovering # is removed on mount regardless
+    if (window.location.href.endsWith('#')) {
       window.history.replaceState(null, null, window.location.pathname + window.location.search);
     }
 
@@ -75,7 +63,19 @@ export default function App() {
 
     // Supabase Global Auth Listener
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error) {
+         setTimeout(() => {
+           showToast(`✕ Auth Error: ${error.message}`, 'error');
+           if (error.message.toLowerCase().includes('provider')) {
+              showToast('⚠️ Please ensure the Google Auth Provider is strictly enabled in your Supabase Dashboard.', 'warning');
+           }
+         }, 500);
+         if (window.location.href.endsWith('#')) {
+            window.history.replaceState(null, null, window.location.pathname + window.location.search);
+         }
+      }
       if (session) {
         if (session.user?.user_metadata?.profile_completed) {
           localStorage.setItem('taxpro_profile_completed', 'true');
