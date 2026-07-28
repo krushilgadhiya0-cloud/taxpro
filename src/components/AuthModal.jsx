@@ -297,19 +297,6 @@ export default function AuthModal({ isOpen, mode, onClose, onSwitchMode, onOpenO
         </form>
 
 
-        {/* Footer Link */}
-        <div className="mt-6 text-center text-xs text-gray-400">
-          <span>Need Gmail verification code? </span>
-          <button
-            onClick={() => {
-              onClose();
-              if (onOpenOTP) onOpenOTP(email || 'krushilgadhiya0@gmail.com');
-            }}
-            className="text-emerald-400 font-bold hover:underline"
-          >
-            Verify Gmail via OTP Ring
-          </button>
-        </div>
 
       </div>
     </div>
