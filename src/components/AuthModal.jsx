@@ -114,7 +114,7 @@ export default function AuthModal({ isOpen, mode, onClose, onSwitchMode, onOpenO
       }
 
       if (data.user?.user_metadata?.profile_completed) {
-        localStorage.setItem('taxpro_profile_completed', 'true');
+        sessionStorage.setItem('taxpro_profile_completed', 'true');
       }
 
       onShowToast('✓ Login successful! Redirecting to your dashboard...', 'success');

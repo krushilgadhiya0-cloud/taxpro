@@ -40,8 +40,8 @@ export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
       } catch(e) {}
     }
 
-    localStorage.setItem('taxpro_profile_completed', 'true');
-    localStorage.setItem('taxpro_user_department', department);
+    sessionStorage.setItem('taxpro_profile_completed', 'true');
+    sessionStorage.setItem('taxpro_user_department', department);
     
     // Save to Supabase User Metadata to prevent asking on other devices
     supabase.auth.updateUser({

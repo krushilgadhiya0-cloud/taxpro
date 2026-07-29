@@ -7,18 +7,28 @@ export default function SettingsPMSView({ onShowToast }) {
   const [activeLang, setActiveLang] = useState('en');
   const [resetting, setResetting] = useState(false);
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     const confirmEmail = window.prompt("Confirm the email address for password reset:", "krushilgadhiya0@gmail.com");
     if (!confirmEmail) return;
     
     setResetting(true);
     if (onShowToast) onShowToast('Contacting authorization provider...', 'info');
 
-    // Safe mock to prevent undefined Supabase session errors in preview
-    setTimeout(() => {
-      if (onShowToast) onShowToast(`✓ Password reset link dispatched securely to ${confirmEmail}. Check your inbox!`, 'success');
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(confirmEmail, {
+        redirectTo: window.location.origin
+      });
+
+      if (error) {
+        if (onShowToast) onShowToast(`Error: ${error.message}`, 'error');
+      } else {
+        if (onShowToast) onShowToast(`✓ Password reset link dispatched securely to ${confirmEmail}. Check your inbox!`, 'success');
+      }
+    } catch (err) {
+      if (onShowToast) onShowToast('Failed to contact provider.', 'error');
+    } finally {
       setResetting(false);
-    }, 1500);
+    }
   };
 
   const triggerPrint = () => {

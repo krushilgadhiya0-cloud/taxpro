@@ -8,6 +8,8 @@ export default function VoiceAIEngine({ onShowToast }) {
   const recognitionRef = useRef(null);
   const shouldContinueListening = useRef(false);
 
+  const isActiveMode = useRef(false);
+
   useEffect(() => {
     // Only initialize WebSpeech if supported
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -18,23 +20,55 @@ export default function VoiceAIEngine({ onShowToast }) {
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
-    // We want final statements not partial gibberish
-    recognition.interimResults = false; 
+    // We want interim results for ultra-fast wake word detection
+    recognition.interimResults = true; 
     recognition.maxAlternatives = 1;
 
     recognition.onresult = async (event) => {
-      const resultTranscript = event.results[event.results.length - 1][0].transcript;
-      setTranscript(resultTranscript);
-      
-      try {
-        const result = await executeVoiceIntent(resultTranscript);
-        if (result.success && onShowToast) {
-          onShowToast(`🤖 Voice AI: ${result.message}`, 'success');
-        } else if (!result.success && onShowToast) {
-          onShowToast(`🤖 Voice Fallback: ${result.message}`, 'error');
-        }
-      } catch (err) {
-        console.error("Voice execution failed:", err);
+      let runTranscript = '';
+      let isFinal = false;
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        runTranscript += event.results[i][0].transcript;
+        if (event.results[i].isFinal) isFinal = true;
+      }
+
+      const lowerTrans = runTranscript.toLowerCase();
+      const hasWakeWord = lowerTrans.includes('hi taxpro') || lowerTrans.includes('hey taxpro') || lowerTrans.includes('high taxpro');
+
+      // 1. Wake word detected! Activate instantly.
+      if (hasWakeWord && !isActiveMode.current) {
+         isActiveMode.current = true;
+         setIsListening(true);
+      }
+
+      // 2. If Active Mode (either via Wake Word or Manual Click)
+      if (isActiveMode.current) {
+         // Clean the transcript for execution by stripping the wake word
+         let displayTrans = lowerTrans.replace(/hi taxpro|hey taxpro|high taxpro/g, '').trim();
+         
+         if (displayTrans) {
+            setTranscript(displayTrans);
+         }
+
+         if (isFinal) {
+           isActiveMode.current = false;
+           setIsListening(false);
+           
+           if (displayTrans.length > 0) {
+              setTranscript('');
+              try {
+                const result = await executeVoiceIntent(displayTrans);
+                if (result.success && onShowToast) {
+                  onShowToast(`🤖 Voice AI: ${result.message}`, 'success');
+                } else if (!result.success && onShowToast) {
+                  onShowToast(`🤖 Voice Fallback: ${result.message}`, 'warning');
+                }
+              } catch (err) {
+                console.error("Voice execution failed:", err);
+              }
+           }
+         }
       }
     };
 
@@ -42,7 +76,11 @@ export default function VoiceAIEngine({ onShowToast }) {
       // no-speech just means they paused. Let it restart natively below.
       if (event.error !== 'no-speech' && event.error !== 'aborted') {
         console.error('Speech recognition error:', event.error);
-        if (onShowToast) onShowToast(`Microphone signal disrupted: ${event.error}`, 'error');
+        // Only toast if it's a critical mic error, not just silence
+        if (event.error === 'not-allowed' && onShowToast) {
+           onShowToast(`Microphone access denied. Wake word disabled.`, 'error');
+           shouldContinueListening.current = false;
+        }
       }
     };
 
@@ -52,14 +90,21 @@ export default function VoiceAIEngine({ onShowToast }) {
         try {
           recognition.start();
         } catch (e) {
-          console.error("Error restarting listener:", e);
+          // Ignore state collision errors
         }
       } else {
         setIsListening(false);
+        isActiveMode.current = false;
       }
     };
 
     recognitionRef.current = recognition;
+
+    // Auto-start background wake word listener
+    shouldContinueListening.current = true;
+    try {
+       recognition.start();
+    } catch(e) {}
 
     return () => {
       shouldContinueListening.current = false;
@@ -74,21 +119,23 @@ export default function VoiceAIEngine({ onShowToast }) {
     }
 
     if (isListening) {
-      // Turn OFF
+      // Turn OFF Active Mode AND Background Loop
       shouldContinueListening.current = false;
+      isActiveMode.current = false;
       setIsListening(false);
       recognitionRef.current.abort();
-      if (onShowToast) onShowToast("Voice AI deactivated.", "info");
+      if (onShowToast) onShowToast("Voice System fully deactivated.", "info");
     } else {
-      // Turn ON
+      // Turn ON Active Mode manually (bypass wake word)
       shouldContinueListening.current = true;
+      isActiveMode.current = true;
       setIsListening(true);
       setTranscript('');
       try {
+        // Just in case it was fully stopped
         recognitionRef.current.start();
-        if (onShowToast) onShowToast("Next-Level Voice AI online. Speak commands clearly.", "success");
       } catch (e) {
-        console.error(e);
+        // It might already be running in background, which is fine
       }
     }
   };

@@ -94,9 +94,9 @@ export default function App() {
         }
         
         if (session.user?.user_metadata?.profile_completed) {
-          localStorage.setItem('taxpro_profile_completed', 'true');
+          sessionStorage.setItem('taxpro_profile_completed', 'true');
         }
-        if (localStorage.getItem('taxpro_profile_completed')) {
+        if (sessionStorage.getItem('taxpro_profile_completed')) {
           setIsAuthenticated(true);
           setActiveTab((prev) => ['home', 'pricing'].includes(prev) ? 'dashboard' : prev);
         } else {
@@ -117,9 +117,9 @@ export default function App() {
         }
 
         if (session?.user?.user_metadata?.profile_completed) {
-          localStorage.setItem('taxpro_profile_completed', 'true');
+          sessionStorage.setItem('taxpro_profile_completed', 'true');
         }
-        if (localStorage.getItem('taxpro_profile_completed')) {
+        if (sessionStorage.getItem('taxpro_profile_completed')) {
           setIsAuthenticated(true);
         } else {
           setIsProfileSetupOpen(true);
@@ -176,7 +176,7 @@ export default function App() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    localStorage.removeItem('taxpro_profile_completed');
+    sessionStorage.removeItem('taxpro_profile_completed');
     setIsAuthenticated(false);
     setActiveTab('home');
     showToast('Signed out of TaxPro AI session.', 'info');
@@ -200,6 +200,7 @@ export default function App() {
           onLogout={handleLogout}
           onTriggerAI={() => setIsAIAssistantOpen(true)}
           onShowToast={showToast}
+          userEmail={userEmail}
         />
 
         {/* FLOATING AI ORB BUTTON */}
@@ -357,7 +358,7 @@ export default function App() {
             setIsAuthenticated(true);
             return;
           }
-          if (localStorage.getItem('taxpro_profile_completed')) {
+          if (sessionStorage.getItem('taxpro_profile_completed')) {
             setIsAuthenticated(true);
             setActiveTab(pendingTab || 'dashboard');
             setPendingTab(null);
@@ -389,7 +390,7 @@ export default function App() {
             setIsAuthenticated(true);
             return;
           }
-          if (localStorage.getItem('taxpro_profile_completed')) {
+          if (sessionStorage.getItem('taxpro_profile_completed')) {
             setIsAuthenticated(true);
             setActiveTab(pendingTab || 'dashboard');
             setPendingTab(null);
