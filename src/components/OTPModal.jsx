@@ -128,20 +128,6 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
     setVerificationStatus('verifying');
     setErrorMessage('');
 
-    // OPTION 2 BYPASS: Magic code for development when SMTP fails
-    if (code === '123456') {
-      setTimeout(() => {
-        setVerificationStatus('success');
-        if (window.confetti) window.confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-        setTimeout(() => {
-          onSuccessRedirect();
-          onClose();
-          resetState();
-        }, 2200);
-      }, 1000);
-      return;
-    }
-
     const { data, error } = await supabase.auth.verifyOtp({
       email: activeEmail,
       token: code,
@@ -294,7 +280,7 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
                 <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
                 {errorMessage || 'Invalid Verification Code.'}
               </span>
-              <span className="text-[10px] text-gray-400">DEV MODE: Enter 123456 to bypass SMTP errors</span>
+              <span className="text-[10px] text-gray-400">Please provide a valid code sent to your inbox.</span>
             </div>
           )}
 

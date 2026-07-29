@@ -76,14 +76,6 @@ export default function AuthModal({ isOpen, mode, onClose, onSwitchMode, onOpenO
           setAlreadyRegisteredAlert(true);
           setIsSubmitting(false);
           return;
-        } else if (error.status === 500 || error.message.includes('FetchError') || error.message.toLowerCase().includes('disabled')) {
-          onShowToast('⚠️ Supabase Email Error: Bypassing into Demo Mode for development.', 'warning');
-          setTimeout(() => {
-            onClose();
-            if (onOpenOTP) onOpenOTP(cleanEmail);
-          }, 1500);
-          setIsSubmitting(false);
-          return;
         } else {
           onShowToast(`✕ Registration Error: ${error.message}`, 'error');
           setIsSubmitting(false);
