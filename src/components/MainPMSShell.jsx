@@ -59,10 +59,8 @@ import PrivateChatView from './pms/PrivateChatView';
 import IntegrationsView from './pms/IntegrationsView';
 import SupportHelpView from './pms/SupportHelpView';
 import VoiceAIEngine from './VoiceAIEngine';
-import { supabase } from '../lib/supabaseClient';
 
-export default function MainPMSShell({ onLogout, onShowToast, userEmail, onTriggerAI }) {
-  const [userRole, setUserRole] = useState('Employee');
+export default function MainPMSShell({ onLogout, onShowToast }) {
   const [activeItem, setActiveItem] = useState('Dashboard');
   const [liveClock, setLiveClock] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -87,34 +85,9 @@ export default function MainPMSShell({ onLogout, onShowToast, userEmail, onTrigg
   const [isSubmittingComplain, setIsSubmittingComplain] = useState(false);
 
   useEffect(() => {
-    const dept = sessionStorage.getItem('taxpro_user_department');
+    const dept = localStorage.getItem('taxpro_user_department');
     if (dept) setUserDepartment(dept);
-    
-    // Fetch User Role for RBAC
-    const fetchUserRole = async () => {
-      let currentEmail = userEmail;
-      if (!currentEmail) {
-        const tokenRaw = sessionStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token');
-        if (tokenRaw) {
-          const token = JSON.parse(tokenRaw);
-          currentEmail = token?.user?.email;
-        }
-      }
-
-      if (currentEmail) {
-        const { data, error } = await supabase
-          .from('team_members')
-          .select('role')
-          .eq('email', currentEmail)
-          .single();
-        
-        if (data && !error) {
-          setUserRole(data.role || 'Employee');
-        }
-      }
-    };
-    fetchUserRole();
-  }, [userEmail]);
+  }, []);
 
   // Live Digital Clock
   useEffect(() => {
@@ -165,8 +138,8 @@ export default function MainPMSShell({ onLogout, onShowToast, userEmail, onTrigg
     setIsSubmittingComplain(true);
     
     try {
-       const userSessionToken = sessionStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token') 
-          ? JSON.parse(sessionStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token'))?.user?.email 
+       const userEmail = localStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token') 
+          ? JSON.parse(localStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token'))?.user?.email 
           : 'Anonymous';
        
        const baseUrl = window.location.origin;
@@ -174,7 +147,7 @@ export default function MainPMSShell({ onLogout, onShowToast, userEmail, onTrigg
           method: 'POST',
           headers:{'Content-Type': 'application/json'},
           body: JSON.stringify({
-            reporterEmail: userSessionToken,
+            reporterEmail: userEmail,
             reporterName: 'Authorized Employee',
             complaintText: complainText
           })
@@ -194,7 +167,7 @@ export default function MainPMSShell({ onLogout, onShowToast, userEmail, onTrigg
     setComplainText('');
   };
 
-  const allSidebarItems = [
+  const sidebarItems = [
     { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
     { name: 'Clients', icon: Users, hasSub: true },
     { name: 'Contact Person', icon: UserCheck, hasSub: true },
@@ -215,34 +188,6 @@ export default function MainPMSShell({ onLogout, onShowToast, userEmail, onTrigg
     { name: 'Support & Help', icon: LifeBuoy, hasSub: false },
     { name: 'Settings', icon: Settings, hasSub: true },
   ];
-
-  // RBAC Permission Logic
-  const getSidebarItems = () => {
-    const roleLower = userRole.toLowerCase();
-    
-    if (roleLower.includes('admin')) {
-      return allSidebarItems;
-    } 
-    
-    if (roleLower.includes('manager')) {
-      return allSidebarItems.filter(item => 
-        !['Settings', 'Owner Payments', 'Integrations', 'Fees Tracking'].includes(item.name)
-      );
-    }
-    
-    if (roleLower.includes('associate')) {
-      return allSidebarItems.filter(item => 
-        ['Dashboard', 'Clients', 'Tasks', 'To Do', 'Workload', 'Receipts & Payments', 'Communication', 'Private Chat'].includes(item.name)
-      );
-    }
-    
-    // Default to Employee
-    return allSidebarItems.filter(item => 
-      ['Dashboard', 'To Do', 'Communication', 'Private Chat', 'Ideas', 'Support & Help'].includes(item.name)
-    );
-  };
-
-  const sidebarItems = getSidebarItems();
 
   return (
     <div className="h-screen overflow-hidden bg-[#f3f4f6] text-gray-800 flex flex-col font-sans selection:bg-[#5b52e0] selection:text-white">
@@ -764,7 +709,7 @@ export default function MainPMSShell({ onLogout, onShowToast, userEmail, onTrigg
                   <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-widest">Department / Title</label>
                   <input type="text" defaultValue={userDepartment || "Admin"} onChange={(e) => { 
                       setUserDepartment(e.target.value); 
-                      sessionStorage.setItem('taxpro_user_department', e.target.value); 
+                      localStorage.setItem('taxpro_user_department', e.target.value); 
                   }} className="w-full text-sm border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-semibold text-gray-800" placeholder="e.g. Finance & Tax" />
                 </div>
                 

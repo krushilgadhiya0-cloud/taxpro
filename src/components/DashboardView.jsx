@@ -41,7 +41,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
   const [departmentsList, setDepartmentsList] = useState([]);
 
   const loadData = async () => {
-    const dept = sessionStorage.getItem('taxpro_user_department');
+    const dept = localStorage.getItem('taxpro_user_department');
     if (dept) setUserDepartment(dept);
 
     try {

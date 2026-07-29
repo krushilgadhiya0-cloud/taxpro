@@ -77,12 +77,7 @@ export default function AuthModal({ isOpen, mode, onClose, onSwitchMode, onOpenO
           setIsSubmitting(false);
           return;
         } else {
-          // DEMO OVERRIDE: Proceed to OTP anyway for testing purposes if SMTP crashes
-          onShowToast('Backend SMTP timeout. Bypassing into Demo Mode.', 'info');
-          setTimeout(() => {
-            onClose();
-            if (onOpenOTP) onOpenOTP(cleanEmail);
-          }, 1500);
+          onShowToast(`✕ Registration Error: ${error.message}`, 'error');
           setIsSubmitting(false);
           return;
         }
@@ -107,14 +102,14 @@ export default function AuthModal({ isOpen, mode, onClose, onSwitchMode, onOpenO
       });
 
       if (error) {
-        setLoginError(`✕ ${error.message}`);
-        onShowToast(`✕ Login Failed: ${error.message}`, 'error');
+        setLoginError('✕ Incorrect Email or Password. Please try again.');
+        onShowToast(`✕ Login Failed`, 'error');
         setIsSubmitting(false);
         return;
       }
 
       if (data.user?.user_metadata?.profile_completed) {
-        sessionStorage.setItem('taxpro_profile_completed', 'true');
+        localStorage.setItem('taxpro_profile_completed', 'true');
       }
 
       onShowToast('✓ Login successful! Redirecting to your dashboard...', 'success');

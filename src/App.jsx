@@ -46,7 +46,7 @@ export default function App() {
   const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [authMode, setAuthMode] = useState('login');
-  const [userEmail, setUserEmail] = useState('krushilgadhiya0@gmail.com');
+  const [userEmail, setUserEmail] = useState('');
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
 
@@ -94,9 +94,9 @@ export default function App() {
         }
         
         if (session.user?.user_metadata?.profile_completed) {
-          sessionStorage.setItem('taxpro_profile_completed', 'true');
+          localStorage.setItem('taxpro_profile_completed', 'true');
         }
-        if (sessionStorage.getItem('taxpro_profile_completed')) {
+        if (localStorage.getItem('taxpro_profile_completed')) {
           setIsAuthenticated(true);
           setActiveTab((prev) => ['home', 'pricing'].includes(prev) ? 'dashboard' : prev);
         } else {
@@ -117,9 +117,9 @@ export default function App() {
         }
 
         if (session?.user?.user_metadata?.profile_completed) {
-          sessionStorage.setItem('taxpro_profile_completed', 'true');
+          localStorage.setItem('taxpro_profile_completed', 'true');
         }
-        if (sessionStorage.getItem('taxpro_profile_completed')) {
+        if (localStorage.getItem('taxpro_profile_completed')) {
           setIsAuthenticated(true);
         } else {
           setIsProfileSetupOpen(true);
@@ -176,7 +176,7 @@ export default function App() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    sessionStorage.removeItem('taxpro_profile_completed');
+    localStorage.removeItem('taxpro_profile_completed');
     setIsAuthenticated(false);
     setActiveTab('home');
     showToast('Signed out of TaxPro AI session.', 'info');
@@ -200,7 +200,6 @@ export default function App() {
           onLogout={handleLogout}
           onTriggerAI={() => setIsAIAssistantOpen(true)}
           onShowToast={showToast}
-          userEmail={userEmail}
         />
 
         {/* FLOATING AI ORB BUTTON */}
@@ -358,7 +357,7 @@ export default function App() {
             setIsAuthenticated(true);
             return;
           }
-          if (sessionStorage.getItem('taxpro_profile_completed')) {
+          if (localStorage.getItem('taxpro_profile_completed')) {
             setIsAuthenticated(true);
             setActiveTab(pendingTab || 'dashboard');
             setPendingTab(null);
@@ -390,7 +389,7 @@ export default function App() {
             setIsAuthenticated(true);
             return;
           }
-          if (sessionStorage.getItem('taxpro_profile_completed')) {
+          if (localStorage.getItem('taxpro_profile_completed')) {
             setIsAuthenticated(true);
             setActiveTab(pendingTab || 'dashboard');
             setPendingTab(null);
@@ -434,7 +433,7 @@ export default function App() {
           
           showToast(`✓ Profile complete! Welcome, ${data.profession}!`, 'success');
           setTimeout(() => {
-            showToast(`📧 Welcome Email dispatched to ${trueEmail || 'krushilgadhiya0@gmail.com'}!`, 'info');
+            showToast(`📧 Welcome Email dispatched to ${trueEmail || 'you'}!`, 'info');
           }, 1200);
           setActiveTab(destination);
           setPendingTab(null);
