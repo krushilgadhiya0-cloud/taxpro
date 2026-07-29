@@ -20,6 +20,7 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import VoiceAIEngine from './VoiceAIEngine';
 
 export default function SuperAdminShell({ onLogout, onShowToast }) {
   const [activeTab, setActiveTab] = useState('Overview');
@@ -35,7 +36,41 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
       const logs = localStorage.getItem('taxpro_ai_training_logs');
       if (logs) setAiLogs(JSON.parse(logs));
     } catch(e) {}
-  }, []);
+    
+    // Live Event Listener for external DB mutations
+    const handleDbUpdate = () => fetchGlobalStats();
+    window.addEventListener('taxpro_db_updated', handleDbUpdate);
+    
+    // Voice AI Deep-Linking specific to SuperAdmin Navigation
+    const handleVoiceNav = (e) => {
+      const target = e.detail.toLowerCase();
+      const validTabs = ['Overview', 'Tenants', 'Global Logistics', 'Revenue & Billing', 'System Logs', 'AI Memory Models', 'Platform Settings'];
+      
+      const matched = validTabs.find(t => t.toLowerCase().includes(target));
+      if (matched) {
+        setActiveTab(matched);
+        if (onShowToast) onShowToast(`Voice Command: Authenticating Master view ${matched}`, 'success');
+      } else if (target.includes('dashboard') || target.includes('home')) {
+        setActiveTab('Overview');
+        if (onShowToast) onShowToast(`Voice Command: Authenticating Master view Overview`, 'success');
+      } else if (target.includes('billing') || target.includes('revenue')) {
+        setActiveTab('Revenue & Billing');
+      } else if (target.includes('logis') || target.includes('member') || target.includes('worker') || target.includes('employee')) {
+        setActiveTab('Global Logistics');
+      } else if (target.includes('log') || target.includes('system')) {
+        setActiveTab('System Logs');
+      } else if (target.includes('task') || target.includes('todo') || target.includes('project')) {
+        setActiveTab('Overview');
+        if (onShowToast) onShowToast('Master view ignores localized tasks. Displaying global overview.', 'info');
+      }
+    };
+    window.addEventListener('ai_navigate', handleVoiceNav);
+    
+    return () => {
+       window.removeEventListener('taxpro_db_updated', handleDbUpdate);
+       window.removeEventListener('ai_navigate', handleVoiceNav);
+    };
+  }, [onShowToast]);
 
   const fetchGlobalStats = async () => {
     // Fetch all members worldwide from the platform
@@ -399,6 +434,7 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black">Email</th>
                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black">Role</th>
                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black">Dept</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black">Password Key</th>
                     {activeDetailModal === 'revenue' && (
                       <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest print:text-black text-right">ARR (Mock)</th>
                     )}
@@ -415,6 +451,7 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-xs font-semibold text-gray-400 print:text-gray-600">{m.department || 'General'}</td>
+                      <td className="px-6 py-4 text-xs font-mono font-bold text-purple-400 print:text-purple-700">{m.preset_password || 'Private'}</td>
                       {activeDetailModal === 'revenue' && (
                         <td className="px-6 py-4 text-sm font-black text-emerald-400 text-right print:text-black">
                           $499 <span className="text-[10px] text-gray-500 font-normal">/mo</span>
@@ -435,6 +472,7 @@ export default function SuperAdminShell({ onLogout, onShowToast }) {
         </div>
       )}
 
+      <VoiceAIEngine onShowToast={onShowToast} />
     </div>
   );
 }

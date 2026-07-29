@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { User, Users2, RotateCcw, Upload, Send, Plus, Trash2, X, Shield, Mail, Phone, Building, Briefcase, KeyRound, Download, AlertCircle, Loader2, Printer } from 'lucide-react';
+import { User, Users2, RotateCcw, Upload, Send, Plus, Trash2, X, Shield, Mail, Phone, Building, Briefcase, KeyRound, Download, AlertCircle, Loader2, Printer, Archive } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
-export default function TeamMembersView({ onShowToast }) {
+export default function TeamMembersView({ userRole, onShowToast }) {
   const [activeTab, setActiveTab] = useState('Members');
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [activeMemberStat, setActiveMemberStat] = useState(null);
@@ -38,6 +38,30 @@ export default function TeamMembersView({ onShowToast }) {
 
   useEffect(() => {
     fetchMembers();
+    
+    const handleAITx = () => {
+       fetchMembers();
+       if (onShowToast) onShowToast('Team Directory instantly synced with Voice Engine.', 'info');
+    };
+    const handleAiDownload = () => {
+       const btn = document.getElementById('ai-trigger-csv');
+       if (btn) btn.click();
+    };
+    const handleInnerNav = (e) => {
+       if (e.detail) setActiveTab(e.detail);
+    };
+    
+    window.addEventListener('ai_member_added', handleAITx);
+    window.addEventListener('taxpro_db_updated', handleAITx); // Also catch generic updates
+    window.addEventListener('ai_download', handleAiDownload);
+    window.addEventListener('ai_inner_tab', handleInnerNav);
+    
+    return () => {
+      window.removeEventListener('ai_member_added', handleAITx);
+      window.removeEventListener('taxpro_db_updated', handleAITx);
+      window.removeEventListener('ai_download', handleAiDownload);
+      window.removeEventListener('ai_inner_tab', handleInnerNav);
+    };
   }, []);
 
   // Form states
@@ -65,6 +89,11 @@ export default function TeamMembersView({ onShowToast }) {
       return;
     }
     
+    if (formData.password && formData.password.length < 6) {
+      if (onShowToast) onShowToast('Preset Password must be strictly at least 6 characters.', 'warning');
+      return;
+    }
+    
     // Close and reset
     setIsInviting(true);
     let emailSent = false;
@@ -74,11 +103,11 @@ export default function TeamMembersView({ onShowToast }) {
       const { data: dbData, error: dbError } = await supabase.from('team_members').insert([
         {
           name: formData.name,
-          email: formData.email,
+          email: formData.email.toLowerCase().trim(),
           phone: formData.phone ? purePhone : '',
           role: formData.role,
           department: formData.department,
-          status: formData.password ? 'Active' : 'Pending Invite',
+          status: 'Pending Invite',
           preset_password: formData.password || null
         }
       ]).select();
@@ -149,8 +178,24 @@ export default function TeamMembersView({ onShowToast }) {
 
   const activeMembers = members.filter(m => m.status === 'Active');
   const pendingMembers = members.filter(m => m.status === 'Pending Invite');
+  const pastMembers = members.filter(m => m.status === 'Old' || m.status === 'Past');
   
-  const currentList = activeTab === 'Members' ? activeMembers : activeTab === 'Invitations' ? pendingMembers : [];
+  const currentList = activeTab === 'Members' ? activeMembers : activeTab === 'Invitations' ? pendingMembers : activeTab === 'Past' ? pastMembers : [];
+
+  const handleArchive = async (e, obj) => {
+     e.stopPropagation();
+     if (!window.confirm(`Are you sure you want to mark ${obj.name} as a Past Employee?\n\nTheir access will be revoked but all their historical data, tasks, and payments will remain safely archived.`)) return;
+     
+     const { error } = await supabase.from('team_members').update({ status: 'Past' }).eq('id', obj.id);
+     if (error) {
+        if (onShowToast) onShowToast(`Failed to archive: ${error.message}`, 'error');
+        return;
+     }
+
+     setMembers(prev => prev.map(m => m.id === obj.id ? { ...m, status: 'Past' } : m));
+     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+     if (onShowToast) onShowToast(`${obj.name} successfully moved to Past Employees.`, 'info');
+  };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -193,6 +238,14 @@ export default function TeamMembersView({ onShowToast }) {
     if (onShowToast) onShowToast(`${activeTab} list downloaded securely.`, 'success');
   };
 
+  // Used strictly as a target for Voice AI dispatch execution without closure issues
+  useEffect(() => {
+    const handleInvisibleClick = () => handleDownloadCSV();
+    const btn = document.getElementById('ai-trigger-csv');
+    if (btn) btn.addEventListener('click', handleInvisibleClick);
+    return () => { if (btn) btn.removeEventListener('click', handleInvisibleClick); }
+  }, [currentList, activeTab, onShowToast]);
+
   const triggerPrint = () => {
     if (onShowToast) onShowToast('Preparing printable Team hierarchy view...', 'info');
     setTimeout(() => window.print(), 500);
@@ -200,6 +253,9 @@ export default function TeamMembersView({ onShowToast }) {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-gray-50/50 min-h-screen text-gray-800 relative pb-24 border-t border-gray-100">
+      
+      {/* Invisible anchor for Voice Download Trigger */}
+      <button id="ai-trigger-csv" className="hidden"></button>
       
       {/* Header section */}
       <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-6 mb-8">
@@ -231,7 +287,7 @@ export default function TeamMembersView({ onShowToast }) {
         </div>
 
         {/* Right Actions & Tabs area */}
-        <div className="flex flex-col items-end gap-5 w-full xl:w-auto">
+        <div className="flex flex-col items-end gap-5 w-full xl:w-auto print:hidden">
           <div className="flex flex-wrap items-center gap-3 w-full xl:justify-end">
             <button 
               onClick={handleRefresh}
@@ -252,12 +308,14 @@ export default function TeamMembersView({ onShowToast }) {
             >
               <Download className="w-4 h-4" /> Download List
             </button>
-            <button 
-              onClick={() => setIsInviteModalOpen(true)}
-              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-sm shadow-md transition-all w-full sm:w-auto"
-            >
-              <Send className="w-4 h-4" /> Invite Member
-            </button>
+            {userRole === 'Admin' && (
+              <button 
+                onClick={() => setIsInviteModalOpen(true)}
+                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-sm shadow-md transition-all w-full sm:w-auto"
+              >
+                <Send className="w-4 h-4" /> Invite Member
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 w-full sm:w-auto overflow-x-auto">
@@ -270,20 +328,20 @@ export default function TeamMembersView({ onShowToast }) {
                <User className="w-4 h-4" /> Members <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Members' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{activeMembers.length}</span>
              </button>
              <button 
-               onClick={() => setActiveTab('Guests')}
-               className={`flex items-center justify-center min-w-[120px] gap-2 px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all ${
-                 activeTab === 'Guests' ? 'bg-white text-emerald-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
-               }`}
-             >
-               <Users2 className="w-4 h-4" /> Guests <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Guests' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>0</span>
-             </button>
-             <button 
                onClick={() => setActiveTab('Invitations')}
                className={`flex items-center justify-center min-w-[130px] gap-2 px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all ${
                  activeTab === 'Invitations' ? 'bg-white text-emerald-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
                }`}
              >
                <Send className="w-4 h-4" /> Invitations <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Invitations' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{pendingMembers.length}</span>
+             </button>
+             <button 
+               onClick={() => setActiveTab('Past')}
+               className={`flex items-center justify-center min-w-[120px] gap-2 px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+                 activeTab === 'Past' ? 'bg-white text-orange-600 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
+               }`}
+             >
+               <Archive className="w-4 h-4" /> Past <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Past' ? 'bg-orange-100 text-orange-700' : 'bg-gray-200'}`}>{pastMembers.length}</span>
              </button>
           </div>
         </div>
@@ -341,19 +399,33 @@ export default function TeamMembersView({ onShowToast }) {
                 <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded flex items-center gap-1 ${
                   obj.status.includes('Pending') ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600'
                 }`}>
-                  {obj.hasPresetPass && <KeyRound className="w-3 h-3" title="Has generated credentials" />}
+                  {obj.preset_password && <KeyRound className="w-3 h-3" title="Has secure generated credentials" />}
                   {obj.status}
                 </span>
 
-                 <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteData({ id: obj.id, type: activeTab });
-                  }}
-                  className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors z-10 relative"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                 {userRole === 'Admin' && (
+                   <div className="flex items-center gap-1">
+                     {activeTab !== 'Past' && (
+                       <button 
+                         onClick={(e) => handleArchive(e, obj)}
+                         className="p-1.5 text-gray-400 hover:bg-orange-50 hover:text-orange-500 rounded-lg transition-colors z-10 relative"
+                         title="Archive to Past Employees"
+                       >
+                         <Archive className="w-4 h-4" />
+                       </button>
+                     )}
+                     <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteData({ id: obj.id, type: activeTab });
+                      }}
+                      className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors z-10 relative"
+                      title="Permanently Delete"
+                     >
+                      <Trash2 className="w-4 h-4" />
+                     </button>
+                   </div>
+                 )}
               </div>
 
             </div>
@@ -362,12 +434,14 @@ export default function TeamMembersView({ onShowToast }) {
       )}
       
       {/* Persistent FAB */}
-      <button 
-        onClick={() => setIsInviteModalOpen(true)}
-        className="fixed bottom-6 right-6 z-40 w-14 h-14 bg-[#0f766e] text-white rounded-full flex items-center justify-center shadow-xl hover:shadow-2xl hover:scale-105 transition-all"
-      >
-        <Plus className="w-6 h-6" />
-      </button>
+      {userRole === 'Admin' && (
+        <button 
+          onClick={() => setIsInviteModalOpen(true)}
+          className="fixed bottom-6 right-6 z-40 w-14 h-14 bg-[#0f766e] text-white rounded-full flex items-center justify-center shadow-xl hover:shadow-2xl hover:scale-105 transition-all print:hidden"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      )}
 
       {/* 
         ========================================================================
@@ -548,7 +622,7 @@ export default function TeamMembersView({ onShowToast }) {
       {activeMemberStat && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in" onClick={() => setActiveMemberStat(null)}>
           <div 
-            className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-gray-100 flex flex-col transform transition-all scale-100 opacity-100"
+            className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-gray-100 flex flex-col transform transition-all scale-100 opacity-100 max-h-[90vh] overflow-y-auto custom-scrollbar-hide"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
@@ -647,53 +721,131 @@ export default function TeamMembersView({ onShowToast }) {
               </div>
 
               {/* Security & Access Controls */}
-              <div className="mt-6 border-t border-gray-100 pt-5">
-                <h4 className="text-xs font-bold text-gray-800 mb-3 uppercase tracking-wider flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-indigo-600" /> Security & Access Controls
-                </h4>
-                <div className="flex flex-col gap-3">
-                   <div>
-                     <label className="text-[10px] font-bold text-gray-400 uppercase">Login ID (Email)</label>
-                     <div className="relative mt-1">
-                       <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                       <input 
-                         type="text" 
-                         value={activeMemberStat.email || ''}
-                         onChange={(e) => setActiveMemberStat({...activeMemberStat, email: e.target.value})}
-                         className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:bg-white focus:border-indigo-300 transition-colors"
-                       />
-                     </div>
-                   </div>
-                   <div>
-                     <label className="text-[10px] font-bold text-gray-400 uppercase">Current Password</label>
-                     <div className="relative mt-1 flex gap-2">
-                       <div className="relative flex-1">
-                         <KeyRound className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              {userRole === 'Admin' && (
+                <div className="mt-6 border-t border-gray-100 pt-5">
+                  <h4 className="text-xs font-bold text-gray-800 mb-3 uppercase tracking-wider flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-indigo-600" /> Security & Access Controls
+                  </h4>
+                  <div className="flex flex-col gap-3">
+                     <div>
+                       <label className="text-[10px] font-bold text-gray-400 uppercase">Login ID (Email)</label>
+                       <div className="relative mt-1">
+                         <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                          <input 
-                           type={activeMemberStat.preset_password ? "text" : "password"}
-                           value={activeMemberStat.preset_password || ''}
-                           placeholder={activeMemberStat.preset_password ? '********' : 'User secured password privately'}
+                           type="text" 
+                           value={activeMemberStat.email || ''}
+                           onChange={(e) => setActiveMemberStat({...activeMemberStat, email: e.target.value})}
                            className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:bg-white focus:border-indigo-300 transition-colors"
-                           disabled
                          />
                        </div>
-                       <button 
-                         onClick={() => {
-                           if (activeTab === 'Members') {
-                             setMembers(prev => prev.map(m => m.id === activeMemberStat.id ? activeMemberStat : m));
-                           } else {
-                             setInvitations(prev => prev.map(m => m.id === activeMemberStat.id ? activeMemberStat : m));
-                           }
-                           if (onShowToast) onShowToast(`Credentials successfully updated for ${activeMemberStat.name}!`, 'success');
-                         }}
-                         className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition-colors border border-indigo-100 whitespace-nowrap shadow-sm"
-                       >
-                         Update
-                       </button>
                      </div>
-                   </div>
-                </div>
-              </div>
+                     <div>
+                       <label className="text-[10px] font-bold text-gray-400 uppercase">Phone Number</label>
+                       <div className="relative mt-1">
+                         <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                         <input 
+                           type="tel"
+                           maxLength="10"
+                           value={activeMemberStat.phone || ''}
+                           onChange={(e) => setActiveMemberStat({...activeMemberStat, phone: e.target.value.replace(/[^0-9]/g, '')})}
+                           className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:bg-white focus:border-indigo-300 transition-colors"
+                         />
+                       </div>
+                     </div>
+                     <div>
+                       <label className="text-[10px] font-bold text-gray-400 uppercase">Current Password</label>
+                       <div className="relative mt-1 flex gap-2">
+                         <div className="relative flex-1">
+                           <KeyRound className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                           <input 
+                             type={activeMemberStat.preset_password ? "text" : "password"}
+                             value={activeMemberStat.preset_password || ''}
+                             placeholder={activeMemberStat.preset_password ? '********' : 'User secured password privately'}
+                             className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:bg-white focus:border-indigo-300 transition-colors"
+                             disabled
+                           />
+                         </div>
+                         <button 
+                           onClick={async () => {
+                             if (activeTab === 'Members') {
+                               setMembers(prev => prev.map(m => m.id === activeMemberStat.id ? activeMemberStat : m));
+                             } else {
+                               setInvitations(prev => prev.map(m => m.id === activeMemberStat.id ? activeMemberStat : m));
+                             }
+  
+                             // Update Postgres DB
+                             const { error } = await supabase.from('team_members').update({
+                               email: activeMemberStat.email,
+                               phone: activeMemberStat.phone
+                             }).eq('id', activeMemberStat.id);
+                             
+                             if (error) {
+                               if (onShowToast) onShowToast(`Failed to update details: ${error.message}`, 'error');
+                               return;
+                             }
+  
+                             if (onShowToast) onShowToast(`Details successfully updated for ${activeMemberStat.name}!`, 'success');
+                           }}
+                           className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition-colors border border-indigo-100 whitespace-nowrap shadow-sm"
+                         >
+                           Update
+                         </button>
+                      </div>
+                    </div>
+
+                    {/* INVITATION LINK SHARING BLOCK */}
+                    {activeMemberStat.preset_password && (
+                      <div className="mt-4 p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex flex-col gap-2">
+                         <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest block">Quick Share Invitation</label>
+                         <p className="text-[11px] text-emerald-700 font-medium leading-relaxed">
+                           Share these credentials with the employee. They can use the link below to securely join the firm workspace.
+                         </p>
+                         
+                         <div className="bg-white/90 p-3 rounded-lg border border-emerald-200/60 text-xs font-mono text-gray-800 space-y-1.5 select-all mt-2 shadow-inner">
+                            <div className="truncate"><span className="text-emerald-700 font-bold">Portal:</span> https://taxpro-nine.vercel.app</div>
+                            <div className="truncate"><span className="text-emerald-700 font-bold">Login ID:</span> {activeMemberStat.email}</div>
+                            <div className="truncate"><span className="text-emerald-700 font-bold">Password:</span> {activeMemberStat.preset_password}</div>
+                         </div>
+
+                         <div className="mt-2 grid grid-cols-3 gap-2">
+                           <button
+                             onClick={() => {
+                               const text = `You've been invited to the TaxPro Cloud Workspace!\n\nPortal: https://taxpro-nine.vercel.app\nLogin ID: ${activeMemberStat.email}\nPassword: ${activeMemberStat.preset_password}\n\nPlease login safely to check in.`;
+                               navigator.clipboard.writeText(text);
+                               if (onShowToast) onShowToast('Credentials securely copied to clipboard!', 'success');
+                             }}
+                             className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-emerald-500/20 active:scale-95"
+                           >
+                             Copy
+                           </button>
+                           <button
+                             onClick={() => {
+                               const text = `You've been invited to the TaxPro Cloud Workspace!\n\nPortal: https://taxpro-nine.vercel.app\nLogin ID: ${activeMemberStat.email}\nPassword: ${activeMemberStat.preset_password}\n\nPlease login safely to check in.`;
+                               const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+                               window.open(whatsappUrl, '_blank');
+                             }}
+                             className="py-2.5 bg-[#25D366] hover:bg-[#1ebd5a] text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-emerald-500/20 active:scale-95 flex items-center justify-center gap-1.5"
+                           >
+                             WhatsApp
+                           </button>
+                           <button
+                             onClick={() => {
+                               const subject = `Your Account for TaxPro Workspace`;
+                               const body = `You've been invited to the TaxPro Cloud Workspace!\n\nPortal: https://taxpro-nine.vercel.app\nLogin ID: ${activeMemberStat.email}\nPassword: ${activeMemberStat.preset_password}\n\nPlease login safely to check in.`;
+                               const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(activeMemberStat.email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                               window.open(gmailUrl, '_blank');
+                             }}
+                             className="py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-blue-500/20 active:scale-95 flex items-center justify-center"
+                           >
+                             Email
+                           </button>
+                         </div>
+                      </div>
+                    )}
+
+                 </div>
+               </div>
+             )}
 
             </div>
 

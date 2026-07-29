@@ -6,19 +6,12 @@ export default function SettingsPMSView({ onShowToast }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('taxpro_theme') || 'light');
   const [activeLang, setActiveLang] = useState('en');
   const [resetting, setResetting] = useState(false);
+  
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetForm, setResetForm] = useState({ otp: '', newPassword: '' });
 
   const handleResetPassword = () => {
-    const confirmEmail = window.prompt("Confirm the email address for password reset:", "krushilgadhiya0@gmail.com");
-    if (!confirmEmail) return;
-    
-    setResetting(true);
-    if (onShowToast) onShowToast('Contacting authorization provider...', 'info');
-
-    // Safe mock to prevent undefined Supabase session errors in preview
-    setTimeout(() => {
-      if (onShowToast) onShowToast(`✓ Password reset link dispatched securely to ${confirmEmail}. Check your inbox!`, 'success');
-      setResetting(false);
-    }, 1500);
+    setIsResetModalOpen(true);
   };
 
   const triggerPrint = () => {
@@ -140,7 +133,11 @@ export default function SettingsPMSView({ onShowToast }) {
                 { id: 'en', lbl: 'English', sub: 'Global' },
                 { id: 'hi', lbl: 'हिंदी', sub: 'Hindi' },
                 { id: 'gu', lbl: 'ગુજરાતી', sub: 'Gujarati' },
-                { id: 'es', lbl: 'Español', sub: 'Spanish' }
+                { id: 'mr', lbl: 'मराठी', sub: 'Marathi' },
+                { id: 'ta', lbl: 'தமிழ்', sub: 'Tamil' },
+                { id: 'es', lbl: 'Español', sub: 'Spanish' },
+                { id: 'fr', lbl: 'Français', sub: 'French' },
+                { id: 'zh-CN', lbl: '中文', sub: 'Chinese' }
               ].map(lang => (
                 <button
                   key={lang.id}
@@ -184,6 +181,70 @@ export default function SettingsPMSView({ onShowToast }) {
           .print-hidden { display: none !important; }
         }
       `}} />
+
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in z-[100]">
+          <div className={`rounded-3xl w-full max-w-md p-6 shadow-2xl border transition-colors ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            <h3 className={`text-xl font-black mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Security Verification</h3>
+            <p className={`text-xs mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Enter your verification code and strictly new password to override your secure credentials.</p>
+            
+            <form onSubmit={async (e) => {
+               e.preventDefault();
+               if (!resetForm.otp) {
+                  onShowToast && onShowToast("Please enter the verification code.", "warning"); return;
+               }
+               if (resetForm.newPassword.length < 6) {
+                  onShowToast && onShowToast("Password must be at least 6 characters.", "warning"); return;
+               }
+               
+               setResetting(true);
+               try {
+                  const { error } = await supabase.auth.updateUser({ password: resetForm.newPassword });
+                  if (error) throw error;
+                  onShowToast && onShowToast("Password successfully changed and synced.", "success");
+                  setIsResetModalOpen(false);
+                  setResetForm({ otp: '', newPassword: '' });
+               } catch (err) {
+                  onShowToast && onShowToast(`Failed: ${err.message}`, "error");
+               } finally {
+                  setResetting(false);
+               }
+            }} className="flex flex-col gap-4">
+               <div>
+                  <label className={`block text-xs font-bold mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>4-Digit OTP Code</label>
+                  <input 
+                    type="text" 
+                    maxLength={4}
+                    value={resetForm.otp}
+                    onChange={e => setResetForm({...resetForm, otp: e.target.value.replace(/[^0-9]/g, '')})}
+                    placeholder="e.g. 1234"
+                    className={`w-full px-4 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#5b52e0]/50 font-mono tracking-widest ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
+                    required
+                  />
+               </div>
+               <div>
+                  <label className={`block text-xs font-bold mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>New Password</label>
+                  <input 
+                    type="password" 
+                    value={resetForm.newPassword}
+                    onChange={e => setResetForm({...resetForm, newPassword: e.target.value})}
+                    placeholder="Minimum 6 characters"
+                    className={`w-full px-4 py-2.5 rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#5b52e0]/50 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`}
+                    required
+                  />
+               </div>
+               
+               <div className="flex justify-end gap-3 mt-4">
+                  <button type="button" onClick={() => setIsResetModalOpen(false)} className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-colors ${theme === 'dark' ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}>Cancel</button>
+                  <button disabled={resetting} type="submit" className="px-6 py-2.5 text-xs font-bold text-white bg-[#5b52e0] hover:bg-[#4c44cf] rounded-xl shadow-md transition-all flex items-center gap-2">
+                    {resetting ? 'Encrypting...' : 'Override Password'}
+                  </button>
+               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

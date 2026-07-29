@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Building2, Plus, Bot, Users, HelpCircle, UserCog, CheckSquare, Edit, Trash2, ChevronLeft, ChevronRight, X, Download, Printer } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
-export default function DepartmentsView({ onShowToast }) {
+export default function DepartmentsView({ userRole, onShowToast }) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [activeDeptStat, setActiveDeptStat] = useState(null);
   const [newDeptForm, setNewDeptForm] = useState({ name: 'Compliance', customName: '', isOther: false, desc: '', manager: '' });
@@ -171,12 +171,14 @@ export default function DepartmentsView({ onShowToast }) {
           >
             <Download className="w-4 h-4" /> Download All
           </button>
-          <button 
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-sm shadow-md transition-all"
-          >
-            <Plus className="w-4 h-4" /> Add
-          </button>
+          {userRole === 'Admin' && (
+            <button 
+              onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-sm shadow-md transition-all"
+            >
+              <Plus className="w-4 h-4" /> Add
+            </button>
+          )}
         </div>
       </div>
 
@@ -230,9 +232,11 @@ export default function DepartmentsView({ onShowToast }) {
                  </button>
                </div>
                
-               <button onClick={(e) => { e.stopPropagation(); setDeleteId(d.id); }} className="p-1.5 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50">
-                 <Trash2 className="w-4 h-4" />
-               </button>
+               {userRole === 'Admin' && (
+                 <button onClick={(e) => { e.stopPropagation(); setDeleteId(d.id); }} className="p-1.5 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50">
+                   <Trash2 className="w-4 h-4" />
+                 </button>
+               )}
             </div>
           </div>
         ))}
@@ -254,9 +258,11 @@ export default function DepartmentsView({ onShowToast }) {
       </div>
 
       {/* Persistent FAB */}
-      <button onClick={() => setIsAddModalOpen(true)} className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-[#0f766e] text-white rounded-full flex items-center justify-center shadow-xl hover:shadow-2xl hover:scale-105 transition-all">
-        <Plus className="w-6 h-6" />
-      </button>
+      {userRole === 'Admin' && (
+        <button onClick={() => setIsAddModalOpen(true)} className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-[#0f766e] text-white rounded-full flex items-center justify-center shadow-xl hover:shadow-2xl hover:scale-105 transition-all">
+          <Plus className="w-6 h-6" />
+        </button>
+      )}
 
       {/* CREATE NEW DEPARTMENT MODAL */}
       {isAddModalOpen && (
@@ -413,29 +419,31 @@ export default function DepartmentsView({ onShowToast }) {
               </div>
 
               {/* Manager Assignment UI */}
-              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
-                <label className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-2 mb-3">
-                  <UserCog className="w-4 h-4 text-indigo-600" /> Assign Manager
-                </label>
-                <div className="relative">
-                  <select 
-                    value={activeDeptStat.manager || ''}
-                    onChange={(e) => {
-                      const newManager = e.target.value;
-                      setDepts(prev => prev.map(d => d.id === activeDeptStat.id ? { ...d, manager: newManager } : d));
-                      setActiveDeptStat({...activeDeptStat, manager: newManager});
-                      if (onShowToast) onShowToast(`Manager updated to ${newManager || 'Unassigned'}`, 'success');
-                    }}
-                    className="w-full bg-white px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 outline-none focus:border-indigo-500 shadow-sm appearance-none cursor-pointer"
-                  >
-                    <option value="">Leave Unassigned</option>
-                    {availableManagers.map(m => (
-                      <option key={m.id} value={m.name}>{m.name}</option>
-                    ))}
-                  </select>
+              {userRole === 'Admin' && (
+                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
+                  <label className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-2 mb-3">
+                    <UserCog className="w-4 h-4 text-indigo-600" /> Assign Manager
+                  </label>
+                  <div className="relative">
+                    <select 
+                      value={activeDeptStat.manager || ''}
+                      onChange={(e) => {
+                        const newManager = e.target.value;
+                        setDepts(prev => prev.map(d => d.id === activeDeptStat.id ? { ...d, manager: newManager } : d));
+                        setActiveDeptStat({...activeDeptStat, manager: newManager});
+                        if (onShowToast) onShowToast(`Manager updated to ${newManager || 'Unassigned'}`, 'success');
+                      }}
+                      className="w-full bg-white px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 outline-none focus:border-indigo-500 shadow-sm appearance-none cursor-pointer"
+                    >
+                      <option value="">Leave Unassigned</option>
+                      {availableManagers.map(m => (
+                        <option key={m.id} value={m.name}>{m.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-2 font-medium">Managers have elevated permissions to dispatch bulk assignations to members within this department scope.</p>
                 </div>
-                <p className="text-[10px] text-gray-500 mt-2 font-medium">Managers have elevated permissions to dispatch bulk assignations to members within this department scope.</p>
-              </div>
+              )}
 
             </div>
 

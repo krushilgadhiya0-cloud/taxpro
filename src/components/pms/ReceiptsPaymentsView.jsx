@@ -8,12 +8,33 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
     return [];
   });
   
+  const [payrollPayments, setPayrollPayments] = useState([]);
+  const [pendingDelete, setPendingDelete] = useState(null);
+
+  useEffect(() => {
+    try {
+      const pHistory = JSON.parse(localStorage.getItem('taxpro_payroll_history')) || [];
+      const settledPayroll = pHistory.filter(h => h.status === 'Paid').map(h => ({
+        id: h.id,
+        type: 'Payment',
+        client: `Payroll: ${h.memberName} (${h.description || 'Salary'})`,
+        mode: h.method || 'System',
+        amount: `₹${parseFloat(h.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        date: h.date.split('T')[0],
+        isAuto: true
+      }));
+      setPayrollPayments(settledPayroll);
+    } catch(e) {}
+  }, []);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newEntry, setNewEntry] = useState({ type: 'Receipt', client: '', mode: 'UPI', amount: '' });
 
   useEffect(() => {
     localStorage.setItem('taxpro_fin_entries', JSON.stringify(entries));
   }, [entries]);
+
+  const allLedgerEntries = [...entries, ...payrollPayments].sort((a,b) => new Date(b.date) - new Date(a.date));
 
   const handleAddEntry = (e) => {
     e.preventDefault();
@@ -40,8 +61,30 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
   };
 
   const handleDelete = (id) => {
+    const entryToDelete = entries.find(e => e.id === id);
+    if (!entryToDelete) return;
+
     setEntries(entries.filter(e => e.id !== id));
-    onShowToast && onShowToast('Entry removed from ledger.', 'info');
+    
+    // Clear any existing timer if user deletes something else rapidly
+    if (pendingDelete && pendingDelete.timer) {
+      clearTimeout(pendingDelete.timer);
+    }
+    
+    const timerId = setTimeout(() => {
+      setPendingDelete(null);
+    }, 4000);
+    
+    setPendingDelete({ entry: entryToDelete, timer: timerId });
+  };
+
+  const handleUndo = () => {
+    if (pendingDelete && pendingDelete.entry) {
+      clearTimeout(pendingDelete.timer);
+      setEntries([pendingDelete.entry, ...entries].sort((a,b) => new Date(b.date) - new Date(a.date)));
+      setPendingDelete(null);
+      if (onShowToast) onShowToast('Deletion undone successfully.', 'success');
+    }
   };
 
   return (
@@ -79,7 +122,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
           <div>
             <span className="text-xs font-bold text-gray-500 uppercase">Total Fee Receipts</span>
             <div className="text-2xl font-black text-emerald-600 font-outfit mt-1">
-              ₹{entries.filter(e => e.type === 'Receipt').reduce((acc, curr) => acc + parseFloat(curr.amount.replace(/[^0-9.-]+/g,"")), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₹{allLedgerEntries.filter(e => e.type === 'Receipt').reduce((acc, curr) => acc + parseFloat(curr.amount.replace(/[^0-9.-]+/g,"")), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
@@ -91,7 +134,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
           <div>
             <span className="text-xs font-bold text-gray-500 uppercase">Total Firm Payments</span>
             <div className="text-2xl font-black text-rose-600 font-outfit mt-1">
-              ₹{entries.filter(e => e.type === 'Payment').reduce((acc, curr) => acc + parseFloat(curr.amount.replace(/[^0-9.-]+/g,"")), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₹{allLedgerEntries.filter(e => e.type === 'Payment').reduce((acc, curr) => acc + parseFloat(curr.amount.replace(/[^0-9.-]+/g,"")), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center">
@@ -115,7 +158,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 font-medium">
-            {entries.map(e => (
+            {allLedgerEntries.map(e => (
               <tr key={e.id} className="hover:bg-gray-50">
                 <td className="p-4 font-mono text-gray-500">{e.id}</td>
                 <td className="p-4">
@@ -132,9 +175,13 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                   {e.amount}
                 </td>
                 <td className="p-4 text-center">
-                  <button onClick={() => handleDelete(e.id)} className="p-2 text-rose-200 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {!e.isAuto ? (
+                    <button onClick={() => handleDelete(e.id)} className="p-2 text-rose-200 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded uppercase border border-gray-200">Auto Sync</span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -186,6 +233,21 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
               </button>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* 4-Second Undo Toast */}
+      {pendingDelete && (
+        <div className="fixed bottom-6 right-6 bg-[#1e1e2d] border border-gray-700 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-6 z-50 animate-slide-up">
+          <div>
+            <p className="text-sm font-bold flex items-center gap-2"><Trash2 className="w-4 h-4 text-rose-400" /> Entry Deleted</p>
+          </div>
+          <button 
+            onClick={handleUndo} 
+            className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-black text-xs rounded-xl shadow-md transition-colors"
+          >
+            UNDO
+          </button>
         </div>
       )}
 

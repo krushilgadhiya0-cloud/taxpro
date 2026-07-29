@@ -38,6 +38,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pendingTab, setPendingTab] = useState(null);
+  const [userRole, setUserRole] = useState('Employee');
 
   const [isOTPModalOpen, setIsOTPModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -71,6 +72,16 @@ export default function App() {
 
     // Supabase Global Auth Listener
     const checkSession = async () => {
+      
+      // 1. Check for secret backdoor FIRST
+      const secretEmail = localStorage.getItem('taxpro_secret_superadmin');
+      if (secretEmail) {
+         setUserEmail(secretEmail);
+         setUserRole('Super Admin');
+         setIsAuthenticated(true);
+         return;
+      }
+      
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
@@ -93,10 +104,40 @@ export default function App() {
            return;
         }
         
-        if (session.user?.user_metadata?.profile_completed) {
-          localStorage.setItem('taxpro_profile_completed', 'true');
+        const { data: memberCheck } = await supabase.from('team_members').select('id, role, status').ilike('email', userMail).single();
+        
+        // Strict Authorization Layer (Securing firm from deleted employees & randoms)
+        const allowedAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com'];
+        const isAuthorizedAdmin = allowedAdmins.includes(userMail) || localStorage.getItem('taxpro_secret_superadmin') === userMail;
+
+        if ((!memberCheck && !isAuthorizedAdmin) || (memberCheck && memberCheck.status === 'Past')) {
+           await supabase.auth.signOut();
+           showToast('Access Revoked: Your account has been disabled. You are no longer authorized to enter the firm.', 'error');
+           setIsAuthenticated(false);
+           return;
         }
+
+        const isNewUser = session.user?.created_at 
+           ? (new Date() - new Date(session.user.created_at)) < (5 * 60 * 1000) 
+           : false;
+           
+        if (memberCheck || session.user?.user_metadata?.profile_completed || !isNewUser) {
+          localStorage.setItem('taxpro_profile_completed', 'true');
+          
+          let role = 'Employee';
+          if (isAuthorizedAdmin) {
+            role = 'Admin';
+          } else if (memberCheck) {
+            role = memberCheck.role === 'Administrator' ? 'Admin' : 'Employee';
+            await supabase.from('team_members').update({ status: 'Active' }).ilike('email', userMail);
+          }
+          
+          localStorage.setItem('taxpro_user_role', role);
+          setUserRole(role);
+        }
+        
         if (localStorage.getItem('taxpro_profile_completed')) {
+          setUserRole(localStorage.getItem('taxpro_user_role') || 'Admin');
           setIsAuthenticated(true);
           setActiveTab((prev) => ['home', 'pricing'].includes(prev) ? 'dashboard' : prev);
         } else {
@@ -106,7 +147,17 @@ export default function App() {
     };
     checkSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+    const handleSecretSuperadminLogin = () => {
+       const secretEmail = localStorage.getItem('taxpro_secret_superadmin');
+       if (secretEmail) {
+          setUserEmail(secretEmail);
+          setUserRole('Super Admin');
+          setIsAuthenticated(true);
+       }
+    };
+    window.addEventListener('taxpro_superadmin_login', handleSecretSuperadminLogin);
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         const userMail = session?.user?.email?.toLowerCase().trim();
         if (userMail) setUserEmail(userMail);
@@ -116,10 +167,42 @@ export default function App() {
            return;
         }
 
-        if (session?.user?.user_metadata?.profile_completed) {
-          localStorage.setItem('taxpro_profile_completed', 'true');
+        const { data: memberCheck } = await supabase.from('team_members').select('id, role, status').ilike('email', userMail).single();
+        
+        // Strict Authorization Layer (Securing firm from deleted employees & randoms)
+        const allowedAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com'];
+        const isAuthorizedAdmin = allowedAdmins.includes(userMail) || localStorage.getItem('taxpro_secret_superadmin') === userMail;
+
+        if ((!memberCheck && !isAuthorizedAdmin) || (memberCheck && memberCheck.status === 'Past')) {
+           await supabase.auth.signOut();
+           showToast('Access Revoked: Your account has been disabled. You are no longer authorized to enter the firm.', 'error');
+           setIsAuthenticated(false);
+           return;
         }
+
+        const isNewUser = session?.user?.created_at 
+           ? (new Date() - new Date(session.user.created_at)) < (5 * 60 * 1000) 
+           : false;
+           
+        if (memberCheck || session?.user?.user_metadata?.profile_completed || !isNewUser) {
+          localStorage.setItem('taxpro_profile_completed', 'true');
+          
+          let role = 'Employee';
+          if (isAuthorizedAdmin) {
+             role = 'Admin';
+          } else if (memberCheck) {
+             role = memberCheck.role === 'Administrator' ? 'Admin' : 'Employee';
+             if (event === 'SIGNED_IN') {
+                 await supabase.from('team_members').update({ status: 'Active' }).ilike('email', userMail);
+             }
+          }
+          
+          localStorage.setItem('taxpro_user_role', role);
+          setUserRole(role);
+        }
+        
         if (localStorage.getItem('taxpro_profile_completed')) {
+          setUserRole(localStorage.getItem('taxpro_user_role') || 'Admin');
           setIsAuthenticated(true);
         } else {
           setIsProfileSetupOpen(true);
@@ -130,13 +213,16 @@ export default function App() {
           window.history.replaceState(null, null, window.location.pathname + window.location.search);
         }
       } else if (event === 'SIGNED_OUT') {
-        setIsAuthenticated(false);
-        setActiveTab('home');
+        if (!localStorage.getItem('taxpro_secret_superadmin')) {
+           setIsAuthenticated(false);
+           setActiveTab('home');
+        }
       }
     });
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('taxpro_superadmin_login', handleSecretSuperadminLogin);
       if (authListener && authListener.subscription) {
         authListener.subscription.unsubscribe();
       }
@@ -177,6 +263,8 @@ export default function App() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     localStorage.removeItem('taxpro_profile_completed');
+    localStorage.removeItem('taxpro_user_role');
+    localStorage.removeItem('taxpro_secret_superadmin');
     setIsAuthenticated(false);
     setActiveTab('home');
     showToast('Signed out of TaxPro AI session.', 'info');
@@ -188,7 +276,12 @@ export default function App() {
 
   // When Authenticated: Render Full 1:1 Main PMS Application Suite
   if (isAuthenticated) {
-    if (userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com') {
+    const isMasterAdmin = 
+      userRole === 'Super Admin' || 
+      userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com' || 
+      userEmail?.toLowerCase().trim() === 'superadmin@taxpro.com';
+
+    if (isMasterAdmin) {
        return <SuperAdminShell onLogout={handleLogout} onShowToast={showToast} />;
     }
 
@@ -197,6 +290,7 @@ export default function App() {
         <ToastContainer toasts={toasts} onCloseToast={closeToast} />
         
         <MainPMSShell 
+          userRole={userRole}
           onLogout={handleLogout}
           onTriggerAI={() => setIsAIAssistantOpen(true)}
           onShowToast={showToast}
@@ -351,12 +445,25 @@ export default function App() {
         isOpen={isOTPModalOpen}
         email={userEmail}
         onClose={() => setIsOTPModalOpen(false)}
-        onSuccessRedirect={() => {
+        onSuccessRedirect={async () => {
           showToast('✓ Gmail OTP Verification Successful!', 'success');
           if (userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com') {
             setIsAuthenticated(true);
             return;
           }
+          
+          const { data: memberCheck } = await supabase.from('team_members').select('id, role').eq('email', userEmail).single();
+          if (memberCheck) {
+            localStorage.setItem('taxpro_profile_completed', 'true');
+            const role = memberCheck.role === 'Administrator' ? 'Admin' : 'Employee';
+            localStorage.setItem('taxpro_user_role', role);
+            setUserRole(role);
+            await supabase.from('team_members').update({ status: 'Active' }).eq('email', userEmail);
+          } else {
+            localStorage.setItem('taxpro_user_role', 'Admin');
+            setUserRole('Admin');
+          }
+
           if (localStorage.getItem('taxpro_profile_completed')) {
             setIsAuthenticated(true);
             setActiveTab(pendingTab || 'dashboard');
@@ -383,12 +490,25 @@ export default function App() {
           setIsAuthModalOpen(false);
           setIsForgotPasswordModalOpen(true);
         }}
-        onLoginSuccess={() => {
+        onLoginSuccess={async () => {
           showToast('✓ Authentication successful!', 'success');
           if (userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com') {
             setIsAuthenticated(true);
             return;
           }
+
+          const { data: memberCheck } = await supabase.from('team_members').select('id, role').eq('email', userEmail).single();
+          if (memberCheck) {
+            localStorage.setItem('taxpro_profile_completed', 'true');
+            const role = memberCheck.role === 'Administrator' ? 'Admin' : 'Employee';
+            localStorage.setItem('taxpro_user_role', role);
+            setUserRole(role);
+            await supabase.from('team_members').update({ status: 'Active' }).eq('email', userEmail);
+          } else {
+            localStorage.setItem('taxpro_user_role', 'Admin');
+            setUserRole('Admin');
+          }
+
           if (localStorage.getItem('taxpro_profile_completed')) {
             setIsAuthenticated(true);
             setActiveTab(pendingTab || 'dashboard');

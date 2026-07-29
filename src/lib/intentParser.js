@@ -42,14 +42,28 @@ export const executeVoiceIntent = async (transcript, showToastCallback) => {
   const navMatch = text.match(/(?:go to|open|show|navigate to)\s+(.+)/);
   if (navMatch && navMatch[1]) {
     let rawTarget = navMatch[1].trim();
+    const originalTarget = rawTarget;
+    
     // Special cleanups
     if (rawTarget.includes('to do') || rawTarget.includes('todo')) rawTarget = 'Todo';
-    if (rawTarget.includes('team member')) rawTarget = 'Team Members';
     if (rawTarget.includes('client')) rawTarget = 'Clients';
+    
+    // Advanced Directory Mapping with Sub-TAB Deep-Routing
+    if (rawTarget.includes('member') || rawTarget.includes('employee') || rawTarget.includes('staff') || rawTarget.includes('director')) {
+       rawTarget = 'Team Members';
+       
+       if (originalTarget.includes('past') || originalTarget.includes('old') || originalTarget.includes('archive')) {
+         setTimeout(() => window.dispatchEvent(new CustomEvent('ai_inner_tab', { detail: 'Past' })), 150);
+       } else if (originalTarget.includes('invite') || originalTarget.includes('pending') || originalTarget.includes('request')) {
+         setTimeout(() => window.dispatchEvent(new CustomEvent('ai_inner_tab', { detail: 'Invitations' })), 150);
+       } else {
+         setTimeout(() => window.dispatchEvent(new CustomEvent('ai_inner_tab', { detail: 'Members' })), 150);
+       }
+    }
     
     const target = rawTarget.replace(/\b\w/g, c => c.toUpperCase());
     window.dispatchEvent(new CustomEvent('ai_navigate', { detail: target }));
-    return { success: true, message: `Navigating to ${target} module.` };
+    return { success: true, message: `Navigating to ${target} view.` };
   }
 
   // ==========================================
@@ -128,13 +142,27 @@ export const executeVoiceIntent = async (transcript, showToastCallback) => {
   }
 
   // ==========================================
-  // UNHANDLED INTENT / FAILURE / AI TRAINING
+  // UNHANDLED INTENT -> CLOUD LLM FALLBACK
   // ==========================================
-  // If it reaches here, the AI failed to map it safely. Learn from old data!
+  // If no internal system command matched, route the query to the Global Neural Network
   logUnhandledIntent(transcript);
+  
+  try {
+    const prompt = encodeURIComponent(`You are TaxPro AI, an elite assistant. Answer this in exactly 1 crisp sentence without pleasantries: ${transcript}`);
+    const res = await fetch(`https://text.pollinations.ai/${prompt}`, { signal: AbortSignal.timeout(8000) });
+    
+    if (res.ok) {
+       const textResponse = await res.text();
+       if (!textResponse.includes('<html>') && !textResponse.includes('<title>')) {
+           return { success: true, message: textResponse };
+       }
+    }
+  } catch (err) {
+    // Drop down to generic error if network fails
+  }
   
   return { 
     success: false, 
-    message: `Pattern unrecognized. Logged "${transcript}" to SuperAdmin Training Core.` 
+    message: `Sorry, I didn't quite catch that. Could you say it again?` 
   };
 };

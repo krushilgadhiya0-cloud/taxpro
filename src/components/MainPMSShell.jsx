@@ -59,9 +59,36 @@ import PrivateChatView from './pms/PrivateChatView';
 import IntegrationsView from './pms/IntegrationsView';
 import SupportHelpView from './pms/SupportHelpView';
 import VoiceAIEngine from './VoiceAIEngine';
+import MembersPaymentView from './pms/MembersPaymentView';
+import OurPaymentView from './pms/OurPaymentView';
 
-export default function MainPMSShell({ onLogout, onShowToast }) {
-  const [activeItem, setActiveItem] = useState('Dashboard');
+export default function MainPMSShell({ userRole, onLogout, onShowToast, onTriggerAI }) {
+  const [activeItem, setActiveItem] = useState(() => {
+    return localStorage.getItem('taxpro_active_nav') || 'Dashboard';
+  });
+  const [userEmail, setUserEmail] = useState('');
+  
+  useEffect(() => {
+    const secretEmail = localStorage.getItem('taxpro_secret_superadmin');
+    if (secretEmail) {
+       setUserEmail(secretEmail);
+    } else {
+       const sbToken = localStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token');
+       if (sbToken) {
+          try {
+             const parsed = JSON.parse(sbToken);
+             if (parsed?.user?.email) setUserEmail(parsed.user.email);
+          } catch(e) {}
+       }
+    }
+  }, []);
+  
+  const profileName = userEmail ? userEmail.split('@')[0].replace(/[^a-zA-Z]/g, ' ') : 'Administrator';
+  const profileInitials = profileName.substring(0, 2).toUpperCase() || 'AD';
+  
+  useEffect(() => {
+    localStorage.setItem('taxpro_active_nav', activeItem);
+  }, [activeItem]);
   const [liveClock, setLiveClock] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -167,7 +194,7 @@ export default function MainPMSShell({ onLogout, onShowToast }) {
     setComplainText('');
   };
 
-  const sidebarItems = [
+  let sidebarItems = [
     { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
     { name: 'Clients', icon: Users, hasSub: true },
     { name: 'Contact Person', icon: UserCheck, hasSub: true },
@@ -180,6 +207,8 @@ export default function MainPMSShell({ onLogout, onShowToast }) {
     { name: 'Fees Tracking', icon: DollarSign, hasSub: true },
     { name: 'Receipts & Payments', icon: Receipt, hasSub: true },
     { name: 'Owner Payments', icon: DollarSign, hasSub: true },
+    { name: 'Members Payment', icon: DollarSign, hasSub: false },
+    { name: 'Our Payment', icon: FileText, hasSub: false },
     { name: 'Communication', icon: MessageSquare, hasSub: true },
     { name: 'Private Chat', icon: MessageSquare, hasSub: false },
     { name: 'Reports', icon: FileText, hasSub: true },
@@ -189,11 +218,17 @@ export default function MainPMSShell({ onLogout, onShowToast }) {
     { name: 'Settings', icon: Settings, hasSub: true },
   ];
 
+  if (userRole === 'Employee') {
+    sidebarItems = sidebarItems.filter(item => !['Integrations', 'Owner Payments', 'Receipts & Payments', 'Members Payment'].includes(item.name));
+  } else {
+    sidebarItems = sidebarItems.filter(item => !['Our Payment'].includes(item.name));
+  }
+
   return (
     <div className="h-screen overflow-hidden bg-[#f3f4f6] text-gray-800 flex flex-col font-sans selection:bg-[#5b52e0] selection:text-white">
       
       {/* PMS WHITE TOP HEADER */}
-      <header className="bg-white border-b border-gray-200 py-2.5 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40 shadow-xs">
+      <header className="bg-white border-b border-gray-200 py-2.5 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40 shadow-xs print:hidden">
         
         {/* Logo */}
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveItem('Dashboard')}>
@@ -268,8 +303,8 @@ export default function MainPMSShell({ onLogout, onShowToast }) {
               onClick={() => setIsProfileOpen(!isProfileOpen)}
               className="flex items-center gap-2"
             >
-              <div className="w-8 h-8 rounded-full bg-[#1e40af] flex items-center justify-center font-extrabold text-xs text-white shadow-sm ring-2 ring-white hover:ring-indigo-100 transition-all">
-                KG
+              <div className="w-8 h-8 rounded-full bg-[#1e40af] flex items-center justify-center font-extrabold text-xs text-white shadow-sm ring-2 ring-white hover:ring-indigo-100 transition-all uppercase">
+                {profileInitials}
               </div>
             </button>
 
@@ -281,26 +316,26 @@ export default function MainPMSShell({ onLogout, onShowToast }) {
                   
                   {/* Header */}
                   <div className="flex items-center gap-3 p-3 bg-indigo-50/50 rounded-xl mb-2">
-                    <div className="w-10 h-10 rounded-full bg-[#1e40af] flex items-center justify-center font-extrabold text-sm text-white shadow-sm">
-                      KG
+                    <div className="w-10 h-10 rounded-full bg-[#1e40af] flex items-center justify-center font-extrabold text-sm text-white shadow-sm uppercase">
+                      {profileInitials}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold text-gray-900 truncate">krushil gadhiya</div>
-                      <div className="text-xs text-gray-500 truncate">krushilgadhiya138@gmail.com</div>
+                      <div className="text-sm font-bold text-gray-900 truncate capitalize">{profileName}</div>
+                      <div className="text-xs text-gray-500 truncate">{userEmail || 'System Administrator'}</div>
                     </div>
                   </div>
 
                   {/* Top Level Item */}
                   <div className="flex items-center justify-between px-3 py-2 mb-2 border border-gray-100 rounded-xl bg-gray-50/50">
                     <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded bg-[#0f766e] flex items-center justify-center text-white font-bold text-xs">
-                        K
+                      <div className="w-7 h-7 rounded bg-[#0f766e] flex items-center justify-center text-white font-bold text-xs uppercase">
+                        {profileInitials[0] || 'A'}
                       </div>
-                      <span className="text-sm font-medium text-gray-700">krushil</span>
+                      <span className="text-sm font-medium text-gray-700 capitalize">{profileName}</span>
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap justify-end pl-2">
-                       <span className="px-2 py-1 bg-[#d1fae5] text-[#0f766e] text-[10px] font-bold rounded-lg leading-none">
-                         Admin
+                       <span className={`px-2 py-1 text-[10px] font-bold rounded-lg leading-none ${userRole === 'Super Admin' ? 'bg-purple-100 text-purple-700 shadow-sm border border-purple-200/50' : 'bg-[#d1fae5] text-[#0f766e]'}`}>
+                         {userRole || 'Admin'}
                        </span>
                        {userDepartment && (
                          <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg leading-none truncate max-w-[100px]">
@@ -363,7 +398,7 @@ export default function MainPMSShell({ onLogout, onShowToast }) {
       <div className="flex flex-1 relative overflow-hidden">
         
         {/* LEFT NAVY SIDEBAR (Hover to expand) */}
-        <aside className="group w-16 hover:w-64 bg-[#181c32] text-gray-300 flex flex-col py-4 px-3 flex-shrink-0 h-full overflow-y-auto overflow-x-hidden transition-all duration-300 z-30 relative custom-scrollbar-hide">
+        <aside className="group w-16 hover:w-64 bg-[#181c32] text-gray-300 flex flex-col py-4 px-3 flex-shrink-0 h-full overflow-y-auto overflow-x-hidden transition-all duration-300 z-30 relative custom-scrollbar-hide print:hidden">
           <div className="flex flex-col gap-1 w-56">
             {sidebarItems.map((item) => {
               const Icon = item.icon;
@@ -407,8 +442,8 @@ export default function MainPMSShell({ onLogout, onShowToast }) {
               }} 
             />
           </div>
-          <div className={activeItem === 'Team Members' ? 'block' : 'hidden'}><TeamMembersView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Departments' ? 'block' : 'hidden'}><DepartmentsView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Team Members' ? 'block' : 'hidden'}><TeamMembersView userRole={userRole} onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Departments' ? 'block' : 'hidden'}><DepartmentsView userRole={userRole} onShowToast={onShowToast} /></div>
           <div className={activeItem === 'Ideas' ? 'block' : 'hidden'}><IdeasView onShowToast={onShowToast} /></div>
           <div className={activeItem === 'Tasks' ? 'block' : 'hidden'}><TasksView onShowToast={onShowToast} /></div>
           <div className={activeItem === 'Clients' ? 'block' : 'hidden'}><ClientsView onShowToast={onShowToast} /></div>
@@ -418,6 +453,8 @@ export default function MainPMSShell({ onLogout, onShowToast }) {
           <div className={activeItem === 'Communication' ? 'block' : 'hidden'}><CommunicationView onShowToast={onShowToast} /></div>
           <div className={activeItem === 'Private Chat' ? 'block' : 'hidden'}><PrivateChatView onShowToast={onShowToast} preSelectedUser={activeChatUser} /></div>
           <div className={activeItem === 'Owner Payments' ? 'block' : 'hidden'}><OwnerPaymentsView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Members Payment' ? 'block' : 'hidden'}><MembersPaymentView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Our Payment' ? 'block' : 'hidden'}><OurPaymentView onShowToast={onShowToast} /></div>
           <div className={activeItem === 'Fees Tracking' ? 'block' : 'hidden'}><FeesTrackingView onShowToast={onShowToast} /></div>
           <div className={activeItem === 'Integrations' ? 'block' : 'hidden'}><IntegrationsView onShowToast={onShowToast} /></div>
           <div className={activeItem === 'Reports' ? 'block' : 'hidden'}><ReportsPMSView onShowToast={onShowToast} /></div>

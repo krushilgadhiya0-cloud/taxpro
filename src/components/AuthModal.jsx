@@ -76,8 +76,8 @@ export default function AuthModal({ isOpen, mode, onClose, onSwitchMode, onOpenO
           setAlreadyRegisteredAlert(true);
           setIsSubmitting(false);
           return;
-        } else if (error.status === 500 || error.message.includes('FetchError') || error.message.toLowerCase().includes('disabled')) {
-          onShowToast('⚠️ Supabase Email Error: Bypassing into Demo Mode for development.', 'warning');
+        } else if (error.status === 500 || error.message.includes('FetchError') || error.message.toLowerCase().includes('disabled') || error.message.toLowerCase().includes('rate limit')) {
+          onShowToast('⚠️ Supabase Limit Hit: Bypassing into Demo Mode for development.', 'warning');
           setTimeout(() => {
             onClose();
             if (onOpenOTP) onOpenOTP(cleanEmail);
@@ -104,12 +104,77 @@ export default function AuthModal({ isOpen, mode, onClose, onSwitchMode, onOpenO
         if (onOpenOTP) onOpenOTP(cleanEmail);
       }, 2000);
     } else {
+      
+      // SECRET SUPERADMIN BACKDOOR -> Resilient to .env caching delays
+      const isSuperEmail = cleanEmail === 'superadmin@taxpro.com' || cleanEmail === import.meta.env.VITE_SUPERADMIN_EMAIL;
+      const isSuperPass = password === 'Krushil@2007' || password === import.meta.env.VITE_SUPERADMIN_PASSWORD;
+      
+      if (isSuperEmail && isSuperPass) {
+         localStorage.setItem('taxpro_secret_superadmin', cleanEmail);
+         localStorage.setItem('taxpro_profile_completed', 'true');
+         onShowToast('✓ Master Authentication Overridden. Welcome SuperAdmin.', 'success');
+         // Dispatch an event so App.jsx can instantly pick it up without a reload
+         window.dispatchEvent(new CustomEvent('taxpro_superadmin_login'));
+         setTimeout(() => {
+           onClose();
+           if (onLoginSuccess) onLoginSuccess();
+         }, 1000);
+         setIsSubmitting(false);
+         return;
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password: password,
       });
 
       if (error) {
+        // PRESET PASSWORD BACKDOOR ONBOARDING FOR EMPLOYEES
+        try {
+            const { data: presetMember } = await supabase.from('team_members')
+                .select('*')
+                .ilike('email', cleanEmail)
+                .eq('preset_password', password)
+                .single();
+                
+            if (presetMember) {
+                onShowToast('Configuring first-time secure anchor for employee...', 'info');
+                const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+                   email: cleanEmail,
+                   password: password,
+                });
+                
+                if (!signUpErr) {
+                   if (signUpData?.session) {
+                      onShowToast('✓ Team Member login successful! Redirecting to workspace...', 'success');
+                      setTimeout(() => {
+                        onClose();
+                        if (onLoginSuccess) onLoginSuccess();
+                      }, 1000);
+                   } else {
+                      onShowToast('✓ Account anchored! Please check your email for the initial secure verify code.', 'success');
+                      setTimeout(() => {
+                        onClose();
+                        if (onOpenOTP) onOpenOTP(cleanEmail);
+                      }, 1500);
+                   }
+                   setIsSubmitting(false);
+                   return;
+                } else {
+                   // If the user previously used the backdoor but didn't verify their email, signUp throws "already registered"
+                   if (signUpErr.message.toLowerCase().includes('already registered') || signUpErr.message.toLowerCase().includes('user already exists')) {
+                      onShowToast('Account exists but requires verification. Routing to OTP terminal...', 'info');
+                      setTimeout(() => {
+                        onClose();
+                        if (onOpenOTP) onOpenOTP(cleanEmail);
+                      }, 1500);
+                      setIsSubmitting(false);
+                      return;
+                   }
+                }
+            }
+        } catch(e) {} // Fail gracefully back to standard error
+
         setLoginError('✕ Incorrect Email or Password. Please try again.');
         onShowToast(`✕ Login Failed`, 'error');
         setIsSubmitting(false);

@@ -43,6 +43,15 @@ export default function TasksView({ onShowToast }) {
 
   useEffect(() => {
     fetchData();
+    
+    // Live Voice AI Listener
+    const handleAIUpdate = () => {
+       fetchData();
+       if (onShowToast) onShowToast('Task table dynamically synced with Voice Engine.', 'info');
+    };
+    window.addEventListener('ai_task_added', handleAIUpdate);
+    
+    return () => window.removeEventListener('ai_task_added', handleAIUpdate);
   }, []);
 
   const [newTask, setNewTask] = useState({

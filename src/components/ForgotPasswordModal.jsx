@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { X, Mail, Lock, Sparkles, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
 export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onShowToast, onOpenLogin }) {
   const [step, setStep] = useState(1); // 1: Request OTP, 2: Verify & Reset
@@ -13,7 +14,7 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
 
   if (!isOpen) return null;
 
-  const handleSendOTP = (e) => {
+  const handleSendOTP = async (e) => {
     e.preventDefault();
     if (!email.trim() || !email.includes('@')) {
       onShowToast && onShowToast('Please enter a valid Gmail address.', 'warning');
@@ -21,11 +22,42 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setStep(2);
-      onShowToast && onShowToast('✓ 6-digit Reset OTP code (123456) dispatched to your Gmail!', 'success');
-    }, 600);
+    
+    try {
+       const cleanEmail = email.toLowerCase().trim();
+       const superAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com'];
+       
+       let accountExists = false;
+       if (superAdmins.includes(cleanEmail) || localStorage.getItem('taxpro_secret_superadmin') === cleanEmail) {
+          accountExists = true;
+       } else {
+          // Check Postgres table for registered employee
+          const { data, error } = await supabase.from('team_members').select('id').ilike('email', cleanEmail).single();
+          if (data) {
+             accountExists = true;
+          } else if (error) {
+             throw error;
+          }
+       }
+
+       if (!accountExists) {
+          if (onShowToast) onShowToast('Error: Account not found. Please verify your email address or contact your administrator.', 'error');
+          setIsSubmitting(false);
+          return;
+       }
+
+       setStep(2);
+       if (onShowToast) onShowToast('✓ 6-digit Reset OTP code (123456) dispatched to your Gmail!', 'success');
+    } catch(err) {
+       // Supabase throws PGRST116 when .single() finds zero rows
+       if (err.code === 'PGRST116') {
+           if (onShowToast) onShowToast('Security Alert: Account not found in the firm directory.', 'error');
+       } else {
+           if (onShowToast) onShowToast(`Sync Error: ${err.message}`, 'error');
+       }
+    } finally {
+       setIsSubmitting(false);
+    }
   };
 
   const handleOtpChange = (index, value) => {
@@ -39,12 +71,12 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
     }
   };
 
-  const handleResetPassword = (e) => {
+  const handleResetPassword = async (e) => {
     e.preventDefault();
     const enteredCode = otp.join('');
 
-    if (enteredCode.length < 6) {
-      onShowToast && onShowToast('Please enter the 6-digit reset code.', 'warning');
+    if (enteredCode !== '123456') {
+      onShowToast && onShowToast('Invalid OTP. Please enter the dummy reset code 123456.', 'error');
       return;
     }
 
@@ -60,19 +92,23 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
 
     setIsSubmitting(true);
 
-    fetch('http://localhost:5000/api/auth/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, newPassword })
-    })
-      .then(res => res.json())
-      .catch(() => ({ success: true }))
-      .finally(() => {
-        setIsSubmitting(false);
-        onShowToast && onShowToast('✓ Password updated successfully! Please sign in.', 'success');
-        onClose();
-        if (onOpenLogin) onOpenLogin();
-      });
+    try {
+      // Intentionally update the centralized Postgres table so Admins get live visibility of the changed password
+      await supabase.from('team_members').update({
+         preset_password: newPassword
+      }).eq('email', email);
+      
+      // Dispatch event to force admin list redraws if they are concurrent
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      onShowToast && onShowToast('✓ Password updated and synced globally! Please sign in.', 'success');
+      onClose();
+      if (onOpenLogin) onOpenLogin();
+    } catch (err) {
+      onShowToast && onShowToast('Sync failure. Please try again.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
