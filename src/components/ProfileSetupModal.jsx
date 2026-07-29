@@ -6,7 +6,9 @@ export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
   const [profession, setProfession] = useState('');
   const [otherProfession, setOtherProfession] = useState('');
   const [department, setDepartment] = useState('');
+  const [deptCount, setDeptCount] = useState('');
   const [language, setLanguage] = useState('');
+  const [countryCode, setCountryCode] = useState('+91');
   const [mobile, setMobile] = useState('');
 
   if (!isOpen) return null;
@@ -43,16 +45,26 @@ export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
     sessionStorage.setItem('taxpro_profile_completed', 'true');
     sessionStorage.setItem('taxpro_user_department', department);
     
+    const fullPhone = `${countryCode} ${purePhone}`;
+
     // Save to Supabase User Metadata to prevent asking on other devices
     supabase.auth.updateUser({
-      data: { profile_completed: true, profession: profession === 'Other' ? otherProfession : profession, department, language, mobile: purePhone }
+      data: { 
+        profile_completed: true, 
+        profession: profession === 'Other' ? otherProfession : profession, 
+        department, 
+        department_count: deptCount,
+        language, 
+        mobile: fullPhone 
+      }
     });
 
     if (onComplete) onComplete({
       profession: profession === 'Other' ? otherProfession : profession,
       department,
+      department_count: deptCount,
       language,
-      mobile: purePhone
+      mobile: fullPhone
     });
     onClose();
   };
@@ -118,7 +130,7 @@ export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
           )}
 
           <div>
-            <label className="text-xs font-semibold text-gray-300 block mb-1">Department / Division</label>
+            <label className="text-xs font-semibold text-gray-300 block mb-1">Your Department / Division</label>
             <div className="relative">
               <Briefcase className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-400" />
               <select
@@ -136,6 +148,25 @@ export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
                 <option value="HR & Operations" className="text-gray-200 bg-gray-900">HR & Operations</option>
                 <option value="Management / Partners" className="text-gray-200 bg-gray-900">Management / Partners</option>
                 <option value="Other" className="text-gray-200 bg-gray-900">Other / Independent</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-gray-300 block mb-1">How many departments do you need?</label>
+            <div className="relative">
+              <Box className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-400" />
+              <select
+                value={deptCount}
+                onChange={(e) => setDeptCount(e.target.value)}
+                className="w-full glass-input pl-10 pr-4 py-2.5 text-xs text-white appearance-none bg-black/50"
+                required
+              >
+                <option value="" disabled className="text-gray-500 bg-gray-900">Select number of departments...</option>
+                <option value="1" className="text-gray-200 bg-gray-900">1 (Single Department)</option>
+                <option value="2-4" className="text-gray-200 bg-gray-900">2 - 4 Departments</option>
+                <option value="5-10" className="text-gray-200 bg-gray-900">5 - 10 Departments</option>
+                <option value="10+" className="text-gray-200 bg-gray-900">10+ Departments (Enterprise)</option>
               </select>
             </div>
           </div>
@@ -165,17 +196,35 @@ export default function ProfileSetupModal({ isOpen, onClose, onComplete }) {
 
           <div>
             <label className="text-xs font-semibold text-gray-300 block mb-1">Mobile Number (10 Digits)</label>
-            <div className="relative">
-              <Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-400" />
-              <input
-                type="tel"
-                maxLength="10"
-                placeholder="9999900000"
-                value={mobile}
-                onChange={(e) => setMobile(e.target.value.replace(/[^0-9]/g, ''))}
-                className="w-full glass-input pl-10 pr-4 py-2.5 text-xs text-white bg-black/50 font-mono"
-                required
-              />
+            <div className="flex gap-2">
+              <div className="relative w-1/3">
+                <Globe className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-400" />
+                <select
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                  className="w-full glass-input pl-9 pr-2 py-2.5 text-xs text-white appearance-none bg-black/50"
+                  required
+                >
+                  <option value="+91">🇮🇳 IN (+91)</option>
+                  <option value="+1">🇺🇸 US (+1)</option>
+                  <option value="+44">🇬🇧 UK (+44)</option>
+                  <option value="+61">🇦🇺 AU (+61)</option>
+                  <option value="+971">🇦🇪 AE (+971)</option>
+                  <option value="+65">🇸🇬 SG (+65)</option>
+                </select>
+              </div>
+              <div className="relative w-2/3">
+                <Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-indigo-400" />
+                <input
+                  type="tel"
+                  maxLength="10"
+                  placeholder="9999900000"
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="w-full glass-input pl-10 pr-4 py-2.5 text-xs text-white bg-black/50 font-mono"
+                  required
+                />
+              </div>
             </div>
           </div>
 

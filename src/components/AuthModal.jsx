@@ -107,8 +107,8 @@ export default function AuthModal({ isOpen, mode, onClose, onSwitchMode, onOpenO
       });
 
       if (error) {
-        setLoginError('✕ Incorrect Email or Password. Please try again.');
-        onShowToast(`✕ Login Failed`, 'error');
+        setLoginError(`✕ ${error.message}`);
+        onShowToast(`✕ Login Failed: ${error.message}`, 'error');
         setIsSubmitting(false);
         return;
       }

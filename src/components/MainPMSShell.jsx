@@ -61,7 +61,7 @@ import SupportHelpView from './pms/SupportHelpView';
 import VoiceAIEngine from './VoiceAIEngine';
 import { supabase } from '../lib/supabaseClient';
 
-export default function MainPMSShell({ onLogout, onShowToast, userEmail }) {
+export default function MainPMSShell({ onLogout, onShowToast, userEmail, onTriggerAI }) {
   const [userRole, setUserRole] = useState('Employee');
   const [activeItem, setActiveItem] = useState('Dashboard');
   const [liveClock, setLiveClock] = useState('');
