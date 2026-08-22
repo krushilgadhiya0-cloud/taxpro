@@ -1,29 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Send, Plus, X, Printer, History, Mail, AlertCircle, FileText, Download } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function FeesTrackingView({ onShowToast }) {
-  const [fees, setFees] = useState(() => {
+  const [fees, setFees] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchFeesData = async () => {
+    setIsLoading(true);
     try {
-      const saved = localStorage.getItem('taxpro_fees');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      const [feesRes, clientsRes] = await Promise.all([
+        supabase.from('fees').select('*').order('created_at', { ascending: false }),
+        supabase.from('clients').select('name').order('created_at', { ascending: false })
+      ]);
+
+      if (feesRes.data) {
+        setFees(feesRes.data.map(f => ({
+          id: f.id,
+          client: f.client_name || f.client || 'Client',
+          totalFee: Number(f.amount || 0),
+          paid: Number(f.paid || 0),
+          history: [
+            { date: (f.created_at || new Date().toISOString()).split('T')[0], desc: f.service || 'Professional Advisory & Compliance Fee', amount: Number(f.paid || 0) }
+          ]
+        })));
       }
-    } catch (e) {}
-    return [];
-  });
+
+      if (clientsRes.data) {
+        setClients(clientsRes.data.map(c => c.name));
+      }
+    } catch (e) {
+      console.error('[Fees Fetch Error]:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    localStorage.setItem('taxpro_fees', JSON.stringify(fees));
-  }, [fees]);
-
-  const [clients] = useState(() => {
-    try {
-      const saved = localStorage.getItem('taxpro_clients');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [];
-  });
+    fetchFeesData();
+  }, []);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newFee, setNewFee] = useState({ client: '', totalFee: '', paid: '' });
@@ -40,7 +56,7 @@ export default function FeesTrackingView({ onShowToast }) {
 
   const formatINR = (amount) => `₹${Number(amount).toLocaleString('en-IN')}`;
 
-  const handleAddFee = (e) => {
+  const handleAddFee = async (e) => {
     e.preventDefault();
     if (!newFee.client.trim()) return;
     
@@ -58,10 +74,26 @@ export default function FeesTrackingView({ onShowToast }) {
       ]
     };
 
-    setFees([newRecord, ...fees]);
+    setFees(prev => [newRecord, ...prev]);
+
+    try {
+      await supabase.from('fees').insert([{
+        id: nextId,
+        client_name: newFee.client,
+        invoice_no: `INV-${Date.now().toString().slice(-4)}`,
+        amount: total,
+        paid: paid,
+        service: 'Tax & Compliance Retainer',
+        status: getStatus(total, paid)
+      }]);
+    } catch (err) {}
+
+    window.dispatchEvent(new CustomEvent('taxpro_financial_updated'));
+    window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
     setNewFee({ client: '', totalFee: '', paid: '' });
     setIsAddModalOpen(false);
-    if (onShowToast) onShowToast('New client billing record actively registered!', 'success');
+    if (onShowToast) onShowToast('New client billing record actively registered & synced with Calendar!', 'success');
   };
 
   const handleSendReminder = (e, clientName) => {
@@ -163,63 +195,101 @@ export default function FeesTrackingView({ onShowToast }) {
 
       {/* CREATE RECORD MODAL */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full border border-gray-200 shadow-2xl relative">
-            <button onClick={() => setIsAddModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className="text-xl font-extrabold font-outfit text-gray-900 mb-2">Register Billing Ledger</h3>
-            <p className="text-xs text-gray-500 mb-6">Manually log a client fee to begin tracking pending settlement balances.</p>
-            
-            <form onSubmit={handleAddFee} className="flex flex-col gap-4 text-xs font-semibold">
-              <div>
-                <label className="text-gray-700 block mb-1">Client Business Name *</label>
-                <select 
-                  value={newFee.client}
-                  onChange={e => setNewFee({...newFee, client: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-[#5b52e0] bg-gray-50 focus:bg-white"
-                  required
-                >
-                  <option value="">-- Select Client --</option>
-                  {clients.map((c, i) => (
-                    <option key={i} value={c.name}>{c.name} {c.fileNo ? `(${c.fileNo})` : ''}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-gray-700 block mb-1">Total Billed Amt (₹)</label>
-                  <input 
-                    type="number" 
-                    placeholder="e.g. 50000"
-                    value={newFee.totalFee}
-                    onChange={e => setNewFee({...newFee, totalFee: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-[#5b52e0] font-mono"
-                    min="0"
-                  />
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsAddModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-2xl">
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                  <DollarSign className="w-5 h-5" />
                 </div>
                 <div>
-                  <label className="text-gray-700 block mb-1">Received So Far (₹)</label>
-                  <input 
-                    type="number" 
-                    placeholder="e.g. 10000"
-                    value={newFee.paid}
-                    onChange={e => setNewFee({...newFee, paid: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-[#5b52e0] font-mono"
-                    min="0"
-                  />
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Register Billing Ledger
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Log a client fee to begin tracking pending settlement balances
+                  </p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setIsAddModalOpen(false)} 
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddFee} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-gray-700 block mb-1">Client Business Name <span className="text-red-500">*</span></label>
+                  <select 
+                    value={newFee.client}
+                    onChange={e => setNewFee({...newFee, client: e.target.value})}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 bg-gray-50 cursor-pointer text-xs"
+                    required
+                  >
+                    <option value="">-- Select Client --</option>
+                    {clients.map((c, i) => (
+                      <option key={i} value={c.name}>{c.name} {c.fileNo ? `(${c.fileNo})` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-gray-700 block mb-1">Total Fee (₹)</label>
+                    <input 
+                      type="number" 
+                      placeholder="50000"
+                      value={newFee.totalFee}
+                      onChange={e => setNewFee({...newFee, totalFee: e.target.value})}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 font-mono text-xs bg-gray-50"
+                      min="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-gray-700 block mb-1">Paid (₹)</label>
+                    <input 
+                      type="number" 
+                      placeholder="10000"
+                      value={newFee.paid}
+                      onChange={e => setNewFee({...newFee, paid: e.target.value})}
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 font-mono text-xs bg-gray-50"
+                      min="0"
+                    />
+                  </div>
                 </div>
               </div>
               
-              <div className="bg-blue-50 text-blue-800 p-3 rounded-xl border border-blue-100 flex items-start gap-2 mt-2">
-                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                 <p className="text-[10px] leading-tight">The system will automatically calculate the pending balance required for notifications.</p>
+              <div className="bg-indigo-50/70 text-indigo-900 p-3.5 rounded-xl border border-indigo-100 flex items-start gap-2.5 mt-1">
+                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-indigo-600" />
+                 <p className="text-[11px] leading-tight">The system will automatically compute the outstanding balance and generate ledger statements.</p>
               </div>
 
-              <button type="submit" className="mt-2 py-3 bg-[#1e1e2d] text-white font-black text-sm rounded-xl hover:bg-gray-800 shadow-xl transition-all">
-                Commit Entry to Record
-              </button>
+              {/* Bottom Sticky Actions */}
+              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  Save Ledger Entry
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -227,8 +297,11 @@ export default function FeesTrackingView({ onShowToast }) {
 
       {/* DETAILED STATS & PRINT MODAL */}
       {activeFeeStat && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs print:bg-white print:static print:p-0">
-          <div className="bg-white rounded-2xl p-6 md:p-8 max-w-2xl w-full border border-gray-200 shadow-2xl relative print:border-none print:shadow-none print:max-w-full">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setActiveFeeStat(null); }}
+          className="modal-overlay-backdrop print:bg-white print:static print:p-0"
+        >
+          <div className="modal-content-box max-w-2xl p-6 md:p-8 relative print:border-none print:shadow-none print:max-w-full">
             <button onClick={() => setActiveFeeStat(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 print:hidden hidden sm:block">
               <X className="w-5 h-5" />
             </button>

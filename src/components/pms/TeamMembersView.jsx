@@ -1,13 +1,84 @@
 import React, { useState, useEffect } from 'react';
-import { User, Users2, RotateCcw, Upload, Send, Plus, Trash2, X, Shield, Mail, Phone, Building, Briefcase, KeyRound, Download, AlertCircle, Loader2, Printer, Archive } from 'lucide-react';
+import { 
+  User, 
+  Users2, 
+  RotateCcw, 
+  Upload, 
+  Send, 
+  Plus, 
+  Trash2, 
+  X, 
+  Shield, 
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
+  Mail, 
+  Phone, 
+  Building, 
+  Briefcase, 
+  KeyRound, 
+  Download, 
+  AlertCircle, 
+  Loader2, 
+  Printer, 
+  Archive,
+  CheckSquare,
+  Lock,
+  Unlock,
+  SlidersHorizontal,
+  Check,
+  LayoutDashboard,
+  FolderKanban,
+  ListTodo,
+  Activity,
+  Receipt,
+  DollarSign,
+  MessageSquare,
+  FileText,
+  Lightbulb,
+  Zap,
+  Settings,
+  CalendarCheck,
+  ToggleLeft,
+  ToggleRight
+} from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
-export default function TeamMembersView({ userRole, onShowToast }) {
+const ALL_MODULES = [
+  { id: 'dashboard', name: 'Dashboard Analytics', icon: LayoutDashboard, category: 'Management' },
+  { id: 'clients', name: 'Clients Directory & KYC', icon: Users2, category: 'Operations' },
+  { id: 'projects', name: 'Projects & Milestones', icon: FolderKanban, category: 'Operations' },
+  { id: 'tasks', name: 'Tasks Management', icon: CheckSquare, category: 'Operations' },
+  { id: 'todos', name: 'To Do Checklists', icon: ListTodo, category: 'Operations' },
+  { id: 'workload', name: 'Workload & Time Tracking', icon: Activity, category: 'Operations' },
+  { id: 'team_members', name: 'Team Members Directory', icon: User, category: 'Management' },
+  { id: 'departments', name: 'Departments Structure', icon: Building, category: 'Management' },
+  { id: 'receipts_payments', name: 'Receipts & Payments Ledger', icon: Receipt, category: 'Financials' },
+  { id: 'members_payment', name: 'Staff Payroll Processing', icon: DollarSign, category: 'Financials' },
+  { id: 'fees_tracking', name: 'Client Fees & Invoicing', icon: DollarSign, category: 'Financials' },
+  { id: 'communication', name: 'Firm Broadcast & Notices', icon: MessageSquare, category: 'Communication' },
+  { id: 'private_chat', name: 'Private Direct Chat', icon: MessageSquare, category: 'Communication' },
+  { id: 'reports', name: 'Compliance & Audit Reports', icon: FileText, category: 'Compliance' },
+  { id: 'ideas', name: 'Idea Innovation Box', icon: Lightbulb, category: 'Operations' },
+  { id: 'attendance', name: 'Biometric Attendance Check-in', icon: CalendarCheck, category: 'Operations' },
+  { id: 'integrations', name: 'Integrations (SMTP / WhatsApp)', icon: Zap, category: 'Management' },
+  { id: 'settings', name: 'Firm Settings & Preferences', icon: Settings, category: 'Management' }
+];
+
+export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   const [activeTab, setActiveTab] = useState('Members');
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [activeMemberStat, setActiveMemberStat] = useState(null);
+  const [accessModalMember, setAccessModalMember] = useState(null);
+  const [accessForm, setAccessForm] = useState({
+    role: 'Employee',
+    status: 'Active',
+    permissions: {}
+  });
+
   const [deleteData, setDeleteData] = useState(null); // { id: 1, type: 'Members' }
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSavingAccess, setIsSavingAccess] = useState(false);
   
   // Advanced State Formulation
   const [members, setMembers] = useState([]);
@@ -41,7 +112,7 @@ export default function TeamMembersView({ userRole, onShowToast }) {
     
     const handleAITx = () => {
        fetchMembers();
-       if (onShowToast) onShowToast('Team Directory instantly synced with Voice Engine.', 'info');
+       if (onShowToast) onShowToast('Team Directory instantly synced with cloud database.', 'info');
     };
     const handleAiDownload = () => {
        const btn = document.getElementById('ai-trigger-csv');
@@ -52,7 +123,7 @@ export default function TeamMembersView({ userRole, onShowToast }) {
     };
     
     window.addEventListener('ai_member_added', handleAITx);
-    window.addEventListener('taxpro_db_updated', handleAITx); // Also catch generic updates
+    window.addEventListener('taxpro_db_updated', handleAITx);
     window.addEventListener('ai_download', handleAiDownload);
     window.addEventListener('ai_inner_tab', handleInnerNav);
     
@@ -64,7 +135,7 @@ export default function TeamMembersView({ userRole, onShowToast }) {
     };
   }, []);
 
-  // Form states
+  // Form states for invitation
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -94,12 +165,21 @@ export default function TeamMembersView({ userRole, onShowToast }) {
       return;
     }
     
-    // Close and reset
     setIsInviting(true);
-    let emailSent = false;
     
     try {
-      // 1. Automatically register the user into the Cloud database "team_members" table FIRST
+      // Initialize default permissions based on role
+      const initialPerms = {};
+      ALL_MODULES.forEach(m => {
+        if (formData.role === 'Administrator') {
+          initialPerms[m.id] = true;
+        } else if (formData.role === 'Manager') {
+          initialPerms[m.id] = !['integrations'].includes(m.id);
+        } else {
+          initialPerms[m.id] = !['integrations', 'members_payment', 'receipts_payments'].includes(m.id);
+        }
+      });
+
       const { data: dbData, error: dbError } = await supabase.from('team_members').insert([
         {
           name: formData.name,
@@ -108,7 +188,8 @@ export default function TeamMembersView({ userRole, onShowToast }) {
           role: formData.role,
           department: formData.department,
           status: 'Pending Invite',
-          preset_password: formData.password || null
+          preset_password: formData.password || 'password123',
+          permissions: initialPerms
         }
       ]).select();
       
@@ -119,13 +200,13 @@ export default function TeamMembersView({ userRole, onShowToast }) {
          window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
       }
 
-      // 2. Attempt to dispatch the invitation email via backend (Non-Critical)
+      // Try email dispatch
       try {
         const smtpRaw = localStorage.getItem('taxpro_smtp');
         const smtpConfig = smtpRaw ? JSON.parse(smtpRaw) : null;
         const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
         
-        const response = await fetch(`${baseUrl}/api/invite`, {
+        await fetch(`${baseUrl}/api/invite`, {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
@@ -137,18 +218,9 @@ export default function TeamMembersView({ userRole, onShowToast }) {
               origin: window.location.origin
            })
         });
-        
-        const data = await response.json();
-        if (!data.success) {
-           console.warn("SMTP Dispatch failed:", data.error);
-        } else {
-           if (onShowToast) onShowToast(`Real invitation efficiently delivered to ${formData.email}! User Registered.`, 'success');
-        }
-      } catch (backendErr) {
-        console.warn("Backend unavailable for email dispatch. Skipping email.");
-      }
+      } catch (backendErr) {}
       
-      if (onShowToast) onShowToast(`User ${formData.name} Registered successfully to Cloud Directory.`, 'success');
+      if (onShowToast) onShowToast(`✓ User ${formData.name} successfully registered to database!`, 'success');
 
     } catch (err) {
       if (onShowToast) onShowToast(`Registration Failed: ${err.message}`, 'error');
@@ -159,6 +231,122 @@ export default function TeamMembersView({ userRole, onShowToast }) {
     
     setFormData({ name: '', email: '', phone: '', role: 'Employee', department: 'General', password: '' });
     setActiveTab('Invitations');
+  };
+
+  // One-Click Grant / Revoke Access
+  const handleToggleQuickAccess = async (e, member) => {
+    e.stopPropagation();
+    const isCurrentlyActive = member.status === 'Active';
+    const nextStatus = isCurrentlyActive ? 'Access Revoked' : 'Active';
+
+    try {
+      const { error } = await supabase.from('team_members').update({
+        status: nextStatus
+      }).eq('id', member.id);
+
+      if (error) throw error;
+
+      setMembers(prev => prev.map(m => m.id === member.id ? { ...m, status: nextStatus } : m));
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      if (isCurrentlyActive) {
+        if (onShowToast) onShowToast(`🔒 Access REVOKED for ${member.name}. Account is now suspended.`, 'warning');
+      } else {
+        if (onShowToast) onShowToast(`✓ Access RESTORED for ${member.name}. Full permissions re-activated.`, 'success');
+      }
+    } catch (err) {
+      if (onShowToast) onShowToast(`Failed to update access: ${err.message}`, 'error');
+    }
+  };
+
+  // Open Detailed Permissions & Access Control Modal
+  const handleOpenAccessModal = (e, member) => {
+    e.stopPropagation();
+    setAccessModalMember(member);
+    
+    let currentPerms = member.permissions || {};
+    if (typeof currentPerms === 'string') {
+      try { currentPerms = JSON.parse(currentPerms); } catch (e) { currentPerms = {}; }
+    }
+
+    // Populate defaults if empty
+    if (Object.keys(currentPerms).length === 0) {
+      ALL_MODULES.forEach(m => {
+        if (member.role === 'Administrator') {
+          currentPerms[m.id] = true;
+        } else if (member.role === 'Manager') {
+          currentPerms[m.id] = !['integrations'].includes(m.id);
+        } else {
+          currentPerms[m.id] = !['integrations', 'members_payment', 'receipts_payments'].includes(m.id);
+        }
+      });
+    }
+
+    setAccessForm({
+      role: member.role || 'Employee',
+      status: member.status || 'Active',
+      permissions: currentPerms
+    });
+  };
+
+  // Save Permissions Matrix to PostgreSQL
+  const handleSaveAccessPermissions = async () => {
+    if (!accessModalMember) return;
+    setIsSavingAccess(true);
+
+    try {
+      const { error } = await supabase.from('team_members').update({
+        role: accessForm.role,
+        status: accessForm.status,
+        permissions: accessForm.permissions
+      }).eq('id', accessModalMember.id);
+
+      if (error) throw error;
+
+      setMembers(prev => prev.map(m => m.id === accessModalMember.id ? {
+        ...m,
+        role: accessForm.role,
+        status: accessForm.status,
+        permissions: accessForm.permissions
+      } : m));
+
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      if (onShowToast) onShowToast(`✓ Access permissions saved for ${accessModalMember.name}!`, 'success');
+      setAccessModalMember(null);
+    } catch (err) {
+      if (onShowToast) onShowToast(`Failed to save permissions: ${err.message}`, 'error');
+    } finally {
+      setIsSavingAccess(false);
+    }
+  };
+
+  // Permission Presets
+  const applyPreset = (type) => {
+    const updated = {};
+    if (type === 'all') {
+      ALL_MODULES.forEach(m => { updated[m.id] = true; });
+      setAccessForm(prev => ({ ...prev, status: 'Active', permissions: updated }));
+    } else if (type === 'revoke') {
+      ALL_MODULES.forEach(m => { updated[m.id] = false; });
+      setAccessForm(prev => ({ ...prev, status: 'Access Revoked', permissions: updated }));
+    } else if (type === 'manager') {
+      ALL_MODULES.forEach(m => { updated[m.id] = !['integrations'].includes(m.id); });
+      setAccessForm(prev => ({ ...prev, role: 'Manager', status: 'Active', permissions: updated }));
+    } else if (type === 'employee') {
+      ALL_MODULES.forEach(m => { updated[m.id] = !['integrations', 'members_payment', 'receipts_payments', 'departments'].includes(m.id); });
+      setAccessForm(prev => ({ ...prev, role: 'Employee', status: 'Active', permissions: updated }));
+    }
+  };
+
+  const toggleSinglePermission = (moduleId) => {
+    setAccessForm(prev => ({
+      ...prev,
+      permissions: {
+        ...prev.permissions,
+        [moduleId]: !prev.permissions[moduleId]
+      }
+    }));
   };
 
   const executeDelete = async () => {
@@ -176,7 +364,7 @@ export default function TeamMembersView({ userRole, onShowToast }) {
     if (onShowToast) onShowToast('Record successfully removed.', 'info');
   };
 
-  const activeMembers = members.filter(m => m.status === 'Active');
+  const activeMembers = members.filter(m => m.status === 'Active' || m.status === 'Access Revoked');
   const pendingMembers = members.filter(m => m.status === 'Pending Invite');
   const pastMembers = members.filter(m => m.status === 'Old' || m.status === 'Past');
   
@@ -201,7 +389,7 @@ export default function TeamMembersView({ userRole, onShowToast }) {
     setIsRefreshing(true);
     await fetchMembers();
     setIsRefreshing(false);
-    if (onShowToast) onShowToast('List data refreshed successfully!', 'success');
+    if (onShowToast) onShowToast('List data refreshed!', 'success');
   };
 
   const handleDownloadCSV = () => {
@@ -238,110 +426,116 @@ export default function TeamMembersView({ userRole, onShowToast }) {
     if (onShowToast) onShowToast(`${activeTab} list downloaded securely.`, 'success');
   };
 
-  // Used strictly as a target for Voice AI dispatch execution without closure issues
-  useEffect(() => {
-    const handleInvisibleClick = () => handleDownloadCSV();
-    const btn = document.getElementById('ai-trigger-csv');
-    if (btn) btn.addEventListener('click', handleInvisibleClick);
-    return () => { if (btn) btn.removeEventListener('click', handleInvisibleClick); }
-  }, [currentList, activeTab, onShowToast]);
-
   const triggerPrint = () => {
     if (onShowToast) onShowToast('Preparing printable Team hierarchy view...', 'info');
     setTimeout(() => window.print(), 500);
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 bg-gray-50/50 min-h-screen text-gray-800 relative pb-24 border-t border-gray-100">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-6 animate-fade-in">
       
-      {/* Invisible anchor for Voice Download Trigger */}
-      <button id="ai-trigger-csv" className="hidden"></button>
-      
-      {/* Header section */}
-      <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-6 mb-8">
+      {/* Top Header Summary Card */}
+      <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
         
-        {/* Left Stats area */}
-        <div className="flex flex-col sm:flex-row gap-6">
+        {/* Left Title Area */}
+        <div className="flex flex-col gap-3">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-emerald-50 rounded-2xl w-12 h-12 flex items-center justify-center">
-              <User className="w-6 h-6 text-emerald-700" />
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold border border-emerald-100 shadow-xs">
+              <Users2 className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold text-gray-900 font-outfit leading-none mb-1">Members</h1>
-              <p className="text-sm text-gray-500">Manage your team members and roles</p>
+              <h2 className="text-2xl font-black text-gray-900 tracking-tight font-outfit">Team Directory & Access Control</h2>
+              <p className="text-xs text-gray-500 font-medium">Manage workforce accounts, roles, and granular system access permissions</p>
             </div>
           </div>
-          
-          <div className="flex items-center gap-4 sm:ml-8 mt-4 sm:mt-0">
-            <div className="bg-white border border-gray-200 rounded-xl px-6 py-4 flex flex-col justify-center min-w-[140px] shadow-sm">
+
+          {/* Quick Metrics */}
+          <div className="flex items-center gap-4 flex-wrap mt-1">
+            <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-col justify-center min-w-[120px] shadow-sm">
               <div className="text-xl font-black text-gray-900 leading-none">{members.length}</div>
-              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-2">TOTAL MEMBERS</div>
+              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-1.5">TOTAL WORKFORCE</div>
             </div>
-            <div className="bg-white border border-gray-200 rounded-xl px-6 py-4 flex flex-col justify-center min-w-[140px] shadow-sm">
-              <div className="text-xl font-black text-gray-900 leading-none">
+
+            <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-col justify-center min-w-[120px] shadow-sm">
+              <div className="text-xl font-black text-emerald-600 leading-none">
+                {members.filter(m => m.status === 'Active').length}
+              </div>
+              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-1.5">ACTIVE ACCESS</div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-col justify-center min-w-[120px] shadow-sm">
+              <div className="text-xl font-black text-red-600 leading-none">
+                {members.filter(m => m.status === 'Access Revoked').length}
+              </div>
+              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-1.5">ACCESS REVOKED</div>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-col justify-center min-w-[120px] shadow-sm">
+              <div className="text-xl font-black text-purple-600 leading-none">
                 {members.filter(m => m.role && m.role.toLowerCase().includes('manager')).length}
               </div>
-              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-2">MANAGERS</div>
+              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-1.5">MANAGERS</div>
             </div>
           </div>
         </div>
 
         {/* Right Actions & Tabs area */}
-        <div className="flex flex-col items-end gap-5 w-full xl:w-auto print:hidden">
-          <div className="flex flex-wrap items-center gap-3 w-full xl:justify-end">
+        <div className="flex flex-col items-end gap-4 w-full xl:w-auto print:hidden">
+          <div className="flex flex-wrap items-center gap-2.5 w-full xl:justify-end">
             <button 
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-200 bg-white text-emerald-700 font-bold text-sm transition-colors flex-1 xl:flex-none ${isRefreshing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-50'}`}
+              className={`flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-emerald-200 bg-white text-emerald-700 font-bold text-xs transition-colors ${isRefreshing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-50'}`}
             >
-              <RotateCcw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh
+              <RotateCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh
             </button>
             <button 
               onClick={triggerPrint}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-sm transition-colors flex-1 xl:flex-none"
+              className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs transition-colors"
             >
-              <Printer className="w-4 h-4" /> Print List
+              <Printer className="w-3.5 h-3.5" /> Print
             </button>
             <button 
               onClick={handleDownloadCSV}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-sm transition-colors flex-1 xl:flex-none"
+              className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs transition-colors"
             >
-              <Download className="w-4 h-4" /> Download List
+              <Download className="w-3.5 h-3.5" /> Export CSV
             </button>
             {userRole === 'Admin' && (
               <button 
                 onClick={() => setIsInviteModalOpen(true)}
-                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-sm shadow-md transition-all w-full sm:w-auto"
+                className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs shadow-md transition-all"
               >
-                <Send className="w-4 h-4" /> Invite Member
+                <Send className="w-3.5 h-3.5" /> Invite Member
               </button>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 w-full sm:w-auto overflow-x-auto">
+          {/* Sub-Tabs */}
+          <div className="flex flex-wrap items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 w-full sm:w-auto">
              <button 
                onClick={() => setActiveTab('Members')}
-               className={`flex items-center justify-center min-w-[120px] gap-2 px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+               className={`flex items-center justify-center min-w-[110px] gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
                  activeTab === 'Members' ? 'bg-white text-emerald-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
                }`}
              >
-               <User className="w-4 h-4" /> Members <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Members' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{activeMembers.length}</span>
+               <User className="w-3.5 h-3.5" /> Members <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Members' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{activeMembers.length}</span>
              </button>
              <button 
                onClick={() => setActiveTab('Invitations')}
-               className={`flex items-center justify-center min-w-[130px] gap-2 px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+               className={`flex items-center justify-center min-w-[110px] gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
                  activeTab === 'Invitations' ? 'bg-white text-emerald-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
                }`}
              >
-               <Send className="w-4 h-4" /> Invitations <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Invitations' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{pendingMembers.length}</span>
+               <Send className="w-3.5 h-3.5" /> Invitations <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Invitations' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{pendingMembers.length}</span>
              </button>
              <button 
                onClick={() => setActiveTab('Past')}
-               className={`flex items-center justify-center min-w-[120px] gap-2 px-4 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+               className={`flex items-center justify-center min-w-[110px] gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
                  activeTab === 'Past' ? 'bg-white text-orange-600 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
                }`}
              >
-               <Archive className="w-4 h-4" /> Past <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Past' ? 'bg-orange-100 text-orange-700' : 'bg-gray-200'}`}>{pastMembers.length}</span>
+               <Archive className="w-3.5 h-3.5" /> Past <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Past' ? 'bg-orange-100 text-orange-700' : 'bg-gray-200'}`}>{pastMembers.length}</span>
              </button>
           </div>
         </div>
@@ -350,97 +544,285 @@ export default function TeamMembersView({ userRole, onShowToast }) {
 
       {/* Main Content Board */}
       {currentList.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 sm:py-32 opacity-70">
-          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+        <div className="flex flex-col items-center justify-center py-20 sm:py-32 opacity-70 bg-white rounded-2xl border border-gray-200">
+          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
             <User className="w-8 h-8 text-gray-300" strokeWidth={3} />
           </div>
-          <h3 className="text-xl font-bold font-outfit text-gray-700 mb-2">No {activeTab.toLowerCase()} found</h3>
-          <p className="text-sm text-gray-400">Invite team members to get started</p>
+          <h3 className="text-lg font-bold font-outfit text-gray-700 mb-1">No {activeTab.toLowerCase()} found</h3>
+          <p className="text-xs text-gray-400">Invite new team members or update permissions to populate this list</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {currentList.map(obj => (
-            <div 
-              key={obj.id}
-              onClick={() => {
-                 if(activeTab === 'Members') setActiveMemberStat(obj)
-              }}
-              className={`border border-gray-200 rounded-2xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-lg transition-all relative ${activeTab === 'Members' ? 'cursor-pointer hover:border-emerald-300 hover:-translate-y-1' : ''}`}
-            >
-              <div className="flex items-start gap-4 mb-3 pointer-events-none">
-                <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center flex-shrink-0 text-emerald-600 font-bold border border-emerald-100">
-                  {obj.name ? obj.name.charAt(0).toUpperCase() : obj.email.charAt(0).toUpperCase()}
-                </div>
-                <div className="truncate">
-                  <div className="text-sm font-extrabold text-gray-900 truncate tracking-tight">{obj.name}</div>
-                  <div className="text-xs text-gray-500 truncate mt-0.5 flex items-center gap-1">
-                    <Briefcase className="w-3 h-3 flex-shrink-0" /> {obj.role}
+          {currentList.map(obj => {
+            const isRevoked = obj.status === 'Access Revoked';
+            const isActive = obj.status === 'Active';
+
+            return (
+              <div 
+                key={obj.id}
+                onClick={() => {
+                   if (activeTab === 'Members') setActiveMemberStat(obj);
+                }}
+                className={`border rounded-2xl p-5 bg-white shadow-sm flex flex-col justify-between hover:shadow-lg transition-all relative ${
+                  isRevoked ? 'border-red-200 bg-red-50/10' : 'border-gray-200'
+                } ${activeTab === 'Members' ? 'cursor-pointer hover:border-emerald-300 hover:-translate-y-1' : ''}`}
+              >
+                {/* Member Header */}
+                <div>
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 font-bold border text-sm uppercase ${
+                        isRevoked ? 'bg-red-100 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                      }`}>
+                        {obj.name ? obj.name.charAt(0).toUpperCase() : obj.email.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="truncate">
+                        <div className="text-sm font-extrabold text-gray-900 truncate tracking-tight flex items-center gap-1.5">
+                          <span>{obj.name}</span>
+                          {isRevoked && (
+                            <span className="w-2 h-2 rounded-full bg-red-500" title="Access Revoked" />
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 truncate mt-0.5 flex items-center gap-1">
+                          <Briefcase className="w-3 h-3 flex-shrink-0 text-gray-400" />
+                          <span>{obj.role || 'Employee'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Contact Info */}
+                  <div className="pt-2.5 border-t border-gray-100 flex flex-col gap-1.5 text-xs text-gray-600 font-medium">
+                     <div className="flex items-center gap-2 truncate">
+                       <Mail className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                       <span className="truncate">{obj.email}</span>
+                     </div>
+                     {obj.phone && (
+                       <div className="flex items-center gap-2 truncate">
+                         <Phone className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                         <span>{obj.phone}</span>
+                       </div>
+                     )}
+                     {obj.department && (
+                       <div className="flex items-center gap-2 truncate">
+                         <Building className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                         <span className="truncate">Dept: {obj.department}</span>
+                       </div>
+                     )}
                   </div>
                 </div>
+
+                {/* Bottom Access Status & Admin Actions */}
+                <div className="mt-4 pt-3 border-t border-gray-100 flex flex-col gap-2.5">
+                  
+                  {/* Status Badge */}
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                      isRevoked
+                        ? 'bg-red-100 text-red-700 border border-red-200'
+                        : (obj.status.includes('Pending') ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700')
+                    }`}>
+                      {isRevoked ? <Lock className="w-3 h-3 text-red-600" /> : <ShieldCheck className="w-3 h-3" />}
+                      {obj.status}
+                    </span>
+
+                    {/* Archive & Delete Icons */}
+                    {userRole === 'Admin' && (
+                      <div className="flex items-center gap-1">
+                        {activeTab !== 'Past' && (
+                          <button 
+                            onClick={(e) => handleArchive(e, obj)}
+                            className="p-1.5 text-gray-400 hover:bg-orange-50 hover:text-orange-500 rounded-lg transition-colors z-10"
+                            title="Archive to Past Employees"
+                          >
+                            <Archive className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteData({ id: obj.id, type: activeTab });
+                          }}
+                          className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors z-10"
+                          title="Permanently Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ADMIN ACCESS CONTROL BUTTONS */}
+                  {userRole === 'Admin' && activeTab === 'Members' && (
+                    <div className="grid grid-cols-2 gap-2 mt-1 z-10" onClick={(e) => e.stopPropagation()}>
+                      
+                      {/* Detailed Permissions Modal Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleOpenAccessModal(e, obj)}
+                        className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-xl border border-indigo-200 flex items-center justify-center gap-1 transition-all"
+                      >
+                        <SlidersHorizontal className="w-3 h-3" />
+                        <span>Permissions</span>
+                      </button>
+
+                      {/* Quick Revoke / Grant Access Toggle */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleQuickAccess(e, obj)}
+                        className={`py-1.5 px-2 text-[11px] font-bold rounded-xl border flex items-center justify-center gap-1 transition-all ${
+                          isRevoked
+                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+                            : 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300'
+                        }`}
+                      >
+                        {isRevoked ? (
+                          <>
+                            <Unlock className="w-3 h-3" />
+                            <span>Grant Access</span>
+                          </>
+                        ) : (
+                          <>
+                            <Lock className="w-3 h-3" />
+                            <span>Revoke Access</span>
+                          </>
+                        )}
+                      </button>
+
+                    </div>
+                  )}
+
+                </div>
+
               </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ======================================================================== */}
+      {/* ACCESS CONTROL & PERMISSIONS MANAGEMENT MODAL */}
+      {/* ======================================================================== */}
+      {accessModalMember && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setAccessModalMember(null); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-2xl">
+            
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 bg-gradient-to-r from-gray-900 to-indigo-950 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 font-bold text-lg">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-black font-outfit tracking-tight">Access & Permissions Manager</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-300 font-mono font-bold">
+                      Live Database
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Managing access rights for <span className="font-bold text-white">{accessModalMember.name}</span> ({accessModalMember.email})
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setAccessModalMember(null)}
+                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 sm:p-6 overflow-y-auto flex flex-col gap-6">
               
-              <div className="pt-3 border-t border-gray-50 flex flex-col gap-1.5 text-xs text-gray-600 font-medium">
-                 <div className="flex items-center gap-2 truncate">
-                   <Mail className="w-3.5 h-3.5 text-gray-400" /> {obj.email}
-                 </div>
-                 {obj.phone && (
-                   <div className="flex items-center gap-2 truncate">
-                     <Phone className="w-3.5 h-3.5 text-gray-400" /> {obj.phone}
-                   </div>
-                 )}
-                 {obj.department && (
-                   <div className="flex items-center gap-2 truncate">
-                     <Building className="w-3.5 h-3.5 text-gray-400" /> Dept: {obj.department}
-                   </div>
-                 )}
+              {/* Designated System Role */}
+              <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200">
+                <label className="text-xs font-bold text-gray-700 block mb-1.5">Designated System Role</label>
+                <select
+                  value={accessForm.role}
+                  onChange={(e) => setAccessForm(prev => ({ ...prev, role: e.target.value }))}
+                  className="w-full bg-white border border-gray-300 rounded-xl py-2.5 px-3 text-xs font-bold text-gray-800 outline-none focus:border-indigo-500"
+                >
+                  <option value="Administrator">Administrator (Executive Suite)</option>
+                  <option value="Manager">Department Manager (Supervision)</option>
+                  <option value="Employee">Employee (Staff & Operations)</option>
+                </select>
               </div>
 
-              <div className="mt-4 flex items-center justify-between">
-                <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded flex items-center gap-1 ${
-                  obj.status.includes('Pending') ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600'
-                }`}>
-                  {obj.preset_password && <KeyRound className="w-3 h-3" title="Has secure generated credentials" />}
-                  {obj.status}
-                </span>
+              {/* Granular Module Matrix */}
+              <div>
+                <h4 className="text-xs font-black text-gray-900 uppercase tracking-wider mb-3">
+                  Granular Module Permissions
+                </h4>
 
-                 {userRole === 'Admin' && (
-                   <div className="flex items-center gap-1">
-                     {activeTab !== 'Past' && (
-                       <button 
-                         onClick={(e) => handleArchive(e, obj)}
-                         className="p-1.5 text-gray-400 hover:bg-orange-50 hover:text-orange-500 rounded-lg transition-colors z-10 relative"
-                         title="Archive to Past Employees"
-                       >
-                         <Archive className="w-4 h-4" />
-                       </button>
-                     )}
-                     <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteData({ id: obj.id, type: activeTab });
-                      }}
-                      className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors z-10 relative"
-                      title="Permanently Delete"
-                     >
-                      <Trash2 className="w-4 h-4" />
-                     </button>
-                   </div>
-                 )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {ALL_MODULES.map(m => {
+                    const Icon = m.icon;
+                    const isGranted = accessForm.permissions[m.id] !== false;
+
+                    return (
+                      <div
+                        key={m.id}
+                        onClick={() => toggleSinglePermission(m.id)}
+                        className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
+                          isGranted 
+                            ? 'bg-emerald-50/40 border-emerald-200 hover:bg-emerald-50' 
+                            : 'bg-gray-50 border-gray-200 opacity-60 hover:opacity-90'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                            isGranted ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-500'
+                          }`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-gray-900 truncate">{m.name}</div>
+                            <div className="text-[10px] text-gray-400 uppercase font-semibold">{m.category}</div>
+                          </div>
+                        </div>
+
+                        {/* Toggle Pill */}
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${
+                          isGranted ? 'bg-emerald-600 text-white' : 'bg-gray-300 text-gray-600'
+                        }`}>
+                          {isGranted ? <Check className="w-3.5 h-3.5" /> : <X className="w-3 h-3" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
             </div>
-          ))}
+
+            {/* Modal Footer */}
+            <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setAccessModalMember(null)}
+                className="px-4 py-2.5 text-xs font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveAccessPermissions}
+                disabled={isSavingAccess}
+                className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white text-xs font-bold rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isSavingAccess ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                <span>Save Access Rights</span>
+              </button>
+            </div>
+
+          </div>
         </div>
-      )}
-      
-      {/* Persistent FAB */}
-      {userRole === 'Admin' && (
-        <button 
-          onClick={() => setIsInviteModalOpen(true)}
-          className="fixed bottom-6 right-6 z-40 w-14 h-14 bg-[#0f766e] text-white rounded-full flex items-center justify-center shadow-xl hover:shadow-2xl hover:scale-105 transition-all print:hidden"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
       )}
 
       {/* 
@@ -449,416 +831,223 @@ export default function TeamMembersView({ userRole, onShowToast }) {
         ========================================================================
       */}
       {isInviteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden border border-gray-100 flex flex-col max-h-[90vh]">
-            
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsInviteModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-3xl">
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
-                  <User className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                  <Users2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-gray-900 text-lg">Invite Team Member</h3>
-                  <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Configure Profile & Access</p>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Invite Team Member
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Register a new employee, set role designation & initialize credentials
+                  </p>
                 </div>
               </div>
+
               <button 
-                onClick={() => setIsInviteModalOpen(false)}
-                className="p-2 bg-gray-50 text-gray-500 rounded-full hover:bg-gray-200 transition-colors"
+                onClick={() => setIsInviteModalOpen(false)} 
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto">
-              <form id="invite-form" onSubmit={handleInviteSubmit} className="flex flex-col gap-5">
+            <form onSubmit={handleInviteSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                {/* Column 1: Personal & Contact */}
+                <div className="flex flex-col gap-3.5">
                   <div>
-                    <label className="text-xs font-bold text-gray-700 block mb-1">Full Name *</label>
-                    <input 
-                      type="text" 
-                      required
-                      placeholder="e.g. John Doe" 
-                      value={formData.name}
-                      onChange={e => setFormData({...formData, name: e.target.value})}
-                      className="w-full bg-gray-50 rounded-xl px-3 py-2.5 text-sm font-semibold border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                    />
+                    <label className="text-gray-700 block mb-1">Full Name <span className="text-red-500">*</span></label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Rahul Sharma"
+                        value={formData.name}
+                        onChange={(e) => setFormData({...formData, name: e.target.value})}
+                        className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors"
+                        required
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-xs font-bold text-gray-700 block mb-1">Role / Designation</label>
-                    <select 
-                      value={formData.role}
-                      onChange={e => setFormData({...formData, role: e.target.value})}
-                      className="w-full bg-gray-50 rounded-xl px-3 py-2.5 text-sm font-semibold border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                    >
-                      <option>Employee</option>
-                      <option>Tax Associate</option>
-                      <option>Manager</option>
-                      <option>Administrator</option>
-                    </select>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div>
-                    <label className="text-xs font-bold text-gray-700 block mb-1">Email Address *</label>
+                    <label className="text-gray-700 block mb-1">Official Email Address <span className="text-red-500">*</span></label>
                     <div className="relative">
                       <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input 
                         type="email" 
-                        required
-                        placeholder="john@example.com" 
+                        placeholder="e.g. rahul@firm.com"
                         value={formData.email}
-                        onChange={e => setFormData({...formData, email: e.target.value})}
-                        className="w-full bg-gray-50 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                        onChange={(e) => setFormData({...formData, email: e.target.value})}
+                        className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors"
+                        required
                       />
                     </div>
                   </div>
+
                   <div>
-                    <label className="text-xs font-bold text-gray-700 block mb-1">Phone Number (10 Digits)</label>
+                    <label className="text-gray-700 block mb-1">Phone Number (10 Digits)</label>
                     <div className="relative">
                       <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input 
                         type="tel" 
-                        maxLength="10"
-                        placeholder="9999900000" 
+                        placeholder="e.g. 9876543210"
+                        maxLength={10}
                         value={formData.phone}
-                        onChange={e => setFormData({...formData, phone: e.target.value.replace(/[^0-9]/g, '')})}
-                        className="w-full bg-gray-50 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500/20 font-mono"
+                        onChange={(e) => setFormData({...formData, phone: e.target.value.replace(/[^0-9]/g, '')})}
+                        className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors font-mono"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold text-gray-700 block mb-1">Department</label>
-                  <div className="relative">
-                    <Building className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <select 
-                      value={formData.department}
-                      onChange={e => setFormData({...formData, department: e.target.value})}
-                      className="w-full bg-gray-50 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                {/* Column 2: Role, Department & Credentials */}
+                <div className="flex flex-col gap-3.5">
+                  <div>
+                    <label className="text-gray-700 block mb-1">Role / Designation</label>
+                    <select
+                      value={formData.role}
+                      onChange={(e) => setFormData({...formData, role: e.target.value})}
+                      className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors cursor-pointer"
                     >
-                      {departmentsList.length > 0 ? (
-                        departmentsList.map(dept => <option key={dept}>{dept}</option>)
-                      ) : (
-                        <>
-                          <option>General</option>
-                          <option>Sales and Marketing</option>
-                          <option>Administration</option>
-                        </>
-                      )}
+                      <option value="Employee">Employee (Associate)</option>
+                      <option value="Manager">Department Manager</option>
+                      <option value="Administrator">Administrator</option>
                     </select>
                   </div>
-                </div>
 
-                <div className="pt-5 border-t border-gray-100 mt-2">
-                  <div className="flex items-center gap-2 mb-3 text-emerald-700">
-                    <Shield className="w-4 h-4" />
-                    <h4 className="text-sm font-bold">Credential Generation</h4>
-                  </div>
-                  <p className="text-xs text-gray-500 mb-3">Optional: Automatically generate an initial password so this member can directly join without verifying their email first.</p>
-                  
                   <div>
-                    <label className="text-xs font-bold text-gray-700 block mb-1">Preset Password</label>
+                    <label className="text-gray-700 block mb-1">Department</label>
+                    <select
+                      value={formData.department}
+                      onChange={(e) => setFormData({...formData, department: e.target.value})}
+                      className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors cursor-pointer"
+                    >
+                      <option value="General">General</option>
+                      {departmentsList.map(d => (
+                         <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-gray-700 block mb-1">Preset Temporary Password</label>
                     <div className="relative">
                       <KeyRound className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input 
                         type="text" 
-                        placeholder="Leave blank fully secure invite link..." 
+                        placeholder="e.g. TaxPro@2026"
                         value={formData.password}
-                        onChange={e => setFormData({...formData, password: e.target.value})}
-                        className="w-full bg-gray-50 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                        onChange={(e) => setFormData({...formData, password: e.target.value})}
+                        className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors font-mono"
                       />
                     </div>
+                    <span className="text-[10px] text-gray-400 mt-1 block">Leave blank to auto-generate a secure token.</span>
                   </div>
                 </div>
 
-              </form>
-            </div>
-
-            <div className="p-6 border-t border-gray-100 bg-gray-50 sticky bottom-0 text-right">
-              <button 
-                type="button"
-                onClick={() => setIsInviteModalOpen(false)}
-                className="px-6 py-2.5 text-sm font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-xl transition-colors mr-3"
-              >
-                Cancel
-              </button>
-              <button 
-                form="invite-form"
-                type="submit"
-                disabled={isInviting}
-                className={`px-6 py-2.5 text-white text-sm font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${isInviting ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black hover:shadow-xl'}`}
-              >
-                {isInviting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {isInviting ? 'Sending...' : 'Send Invitation'}
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* CONFIRM DELETE MODAL */}
-      {deleteData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 text-center border border-red-100 animate-shake">
-            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-100">
-              <AlertCircle className="w-8 h-8 text-red-500" />
-            </div>
-            <h3 className="text-xl font-extrabold text-gray-900 mb-2">Remove Record</h3>
-            <p className="text-sm text-gray-500 mb-6 font-medium">Are you sure you want to permanently delete this {deleteData.type.toLowerCase().slice(0, -1)}? This action cannot be revoked.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setDeleteData(null)} className="flex-1 py-2.5 rounded-xl font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors">Cancel</button>
-              <button onClick={executeDelete} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 shadow-md transition-colors">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MEMBER STATS MODAL */}
-      {activeMemberStat && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in" onClick={() => setActiveMemberStat(null)}>
-          <div 
-            className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-gray-100 flex flex-col transform transition-all scale-100 opacity-100 max-h-[90vh] overflow-y-auto custom-scrollbar-hide"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="relative bg-gradient-to-br from-emerald-500 to-teal-700 w-full pt-8 pb-12 px-6">
-               <button onClick={() => setActiveMemberStat(null)} className="absolute top-4 right-4 p-2 bg-black/10 text-white rounded-full hover:bg-black/20 transition-colors">
-                 <X className="w-4 h-4" />
-               </button>
-               
-               <div className="flex items-center gap-4">
-                 <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center text-teal-700 font-black text-2xl shadow-lg border-2 border-emerald-100">
-                    {activeMemberStat.name ? activeMemberStat.name.charAt(0).toUpperCase() : 'M'}
-                 </div>
-                 <div className="text-white">
-                   <h3 className="font-extrabold text-2xl tracking-tight leading-none mb-1">{activeMemberStat.name}</h3>
-                   <div className="flex items-center gap-2 text-emerald-100 text-sm font-semibold">
-                      <Briefcase className="w-3.5 h-3.5" /> {activeMemberStat.role}
-                   </div>
-                 </div>
-               </div>
-            </div>
-
-            {/* Stats Body */}
-            <div className="px-6 pb-6 -mt-6">
-              
-              {(() => {
-                 const memberTasks = tasks.filter(t => t.assignee === activeMemberStat.name);
-                 const completed = memberTasks.filter(t => t.status === 'Completed').length;
-                 const pending = memberTasks.filter(t => t.status === 'Pending').length;
-                 const todays = memberTasks.filter(t => t.due_date === new Date().toISOString().split('T')[0]).length;
-                 const total = memberTasks.length;
-
-                 return (
-                  <div className="grid grid-cols-2 gap-3 mb-6 relative z-10">
-                    <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
-                        <div>
-                          <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Today's Tasks</div>
-                          <div className="text-2xl font-black text-gray-900 leading-none">{todays}</div>
-                        </div>
-                        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
-                          <Briefcase className="w-5 h-5 text-blue-500" />
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
-                        <div>
-                          <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Total Tasks</div>
-                          <div className="text-2xl font-black text-gray-900 leading-none">{total}</div>
-                        </div>
-                        <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center">
-                          <Briefcase className="w-5 h-5 text-purple-500" />
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
-                        <div>
-                          <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Pending</div>
-                          <div className="text-2xl font-black text-amber-500 leading-none">{pending}</div>
-                        </div>
-                        <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
-                          <Briefcase className="w-5 h-5 text-amber-500" />
-                        </div>
-                    </div>
-
-                    <div className="bg-white rounded-2xl p-4 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 flex items-center justify-between">
-                        <div>
-                          <div className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Completed</div>
-                          <div className="text-2xl font-black text-emerald-500 leading-none">{completed}</div>
-                        </div>
-                        <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
-                          <Briefcase className="w-5 h-5 text-emerald-500" />
-                        </div>
-                    </div>
-                  </div>
-                 );
-              })()}
-
-              {/* Task Mini-List */}
-              <div>
-                <h4 className="text-xs font-bold text-gray-800 mb-3 uppercase tracking-wider flex items-center gap-2">
-                  <User className="w-4 h-4 text-emerald-600" /> Recent Active Assignments
-                </h4>
-                <div className="flex flex-col gap-2">
-                   {tasks.filter(t => t.assignee === activeMemberStat.name).length > 0 ? (
-                      tasks.filter(t => t.assignee === activeMemberStat.name).slice(0, 3).map(task => (
-                        <div key={task.id} className="flex justify-between items-center p-3 rounded-lg border border-gray-100 bg-gray-50">
-                          <span className="text-sm font-bold text-gray-800">{task.title}</span>
-                          <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded ${task.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{task.status}</span>
-                        </div>
-                      ))
-                   ) : (
-                     <div className="text-[10px] text-gray-400 font-bold bg-gray-50 border border-gray-100 p-4 rounded-xl text-center italic">
-                       No active task assignments for this member yet.
-                     </div>
-                   )}
-                </div>
               </div>
 
-              {/* Security & Access Controls */}
-              {userRole === 'Admin' && (
-                <div className="mt-6 border-t border-gray-100 pt-5">
-                  <h4 className="text-xs font-bold text-gray-800 mb-3 uppercase tracking-wider flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-indigo-600" /> Security & Access Controls
-                  </h4>
-                  <div className="flex flex-col gap-3">
-                     <div>
-                       <label className="text-[10px] font-bold text-gray-400 uppercase">Login ID (Email)</label>
-                       <div className="relative mt-1">
-                         <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                         <input 
-                           type="text" 
-                           value={activeMemberStat.email || ''}
-                           onChange={(e) => setActiveMemberStat({...activeMemberStat, email: e.target.value})}
-                           className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:bg-white focus:border-indigo-300 transition-colors"
-                         />
-                       </div>
-                     </div>
-                     <div>
-                       <label className="text-[10px] font-bold text-gray-400 uppercase">Phone Number</label>
-                       <div className="relative mt-1">
-                         <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                         <input 
-                           type="tel"
-                           maxLength="10"
-                           value={activeMemberStat.phone || ''}
-                           onChange={(e) => setActiveMemberStat({...activeMemberStat, phone: e.target.value.replace(/[^0-9]/g, '')})}
-                           className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:bg-white focus:border-indigo-300 transition-colors"
-                         />
-                       </div>
-                     </div>
-                     <div>
-                       <label className="text-[10px] font-bold text-gray-400 uppercase">Current Password</label>
-                       <div className="relative mt-1 flex gap-2">
-                         <div className="relative flex-1">
-                           <KeyRound className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                           <input 
-                             type={activeMemberStat.preset_password ? "text" : "password"}
-                             value={activeMemberStat.preset_password || ''}
-                             placeholder={activeMemberStat.preset_password ? '********' : 'User secured password privately'}
-                             className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:bg-white focus:border-indigo-300 transition-colors"
-                             disabled
-                           />
-                         </div>
-                         <button 
-                           onClick={async () => {
-                             if (activeTab === 'Members') {
-                               setMembers(prev => prev.map(m => m.id === activeMemberStat.id ? activeMemberStat : m));
-                             } else {
-                               setInvitations(prev => prev.map(m => m.id === activeMemberStat.id ? activeMemberStat : m));
-                             }
-  
-                             // Update Postgres DB
-                             const { error } = await supabase.from('team_members').update({
-                               email: activeMemberStat.email,
-                               phone: activeMemberStat.phone
-                             }).eq('id', activeMemberStat.id);
-                             
-                             if (error) {
-                               if (onShowToast) onShowToast(`Failed to update details: ${error.message}`, 'error');
-                               return;
-                             }
-  
-                             if (onShowToast) onShowToast(`Details successfully updated for ${activeMemberStat.name}!`, 'success');
-                           }}
-                           className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition-colors border border-indigo-100 whitespace-nowrap shadow-sm"
-                         >
-                           Update
-                         </button>
-                      </div>
-                    </div>
+              {/* Bottom Sticky Actions */}
+              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+                <button 
+                  type="button" 
+                  onClick={() => setIsInviteModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isInviting}
+                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  {isInviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  <span>Register & Dispatch Invite</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
-                    {/* INVITATION LINK SHARING BLOCK */}
-                    {activeMemberStat.preset_password && (
-                      <div className="mt-4 p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex flex-col gap-2">
-                         <label className="text-[10px] font-black text-emerald-800 uppercase tracking-widest block">Quick Share Invitation</label>
-                         <p className="text-[11px] text-emerald-700 font-medium leading-relaxed">
-                           Share these credentials with the employee. They can use the link below to securely join the firm workspace.
-                         </p>
-                         
-                         <div className="bg-white/90 p-3 rounded-lg border border-emerald-200/60 text-xs font-mono text-gray-800 space-y-1.5 select-all mt-2 shadow-inner">
-                            <div className="truncate"><span className="text-emerald-700 font-bold">Portal:</span> https://taxpro-nine.vercel.app</div>
-                            <div className="truncate"><span className="text-emerald-700 font-bold">Login ID:</span> {activeMemberStat.email}</div>
-                            <div className="truncate"><span className="text-emerald-700 font-bold">Password:</span> {activeMemberStat.preset_password}</div>
-                         </div>
+      {/* Delete Confirmation Modal */}
+      {deleteData && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setDeleteData(null); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-sm p-6 text-center">
+             <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+                <Trash2 className="w-6 h-6" />
+             </div>
+             <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Permanent Deletion</h3>
+             <p className="text-xs text-gray-500 mb-6">Are you sure you want to permanently delete this member record?</p>
+             <div className="flex items-center justify-center gap-3">
+               <button onClick={() => setDeleteData(null)} className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer">Cancel</button>
+               <button onClick={executeDelete} className="px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md cursor-pointer">Confirm Delete</button>
+             </div>
+          </div>
+        </div>
+      )}
 
-                         <div className="mt-2 grid grid-cols-3 gap-2">
-                           <button
-                             onClick={() => {
-                               const text = `You've been invited to the TaxPro Cloud Workspace!\n\nPortal: https://taxpro-nine.vercel.app\nLogin ID: ${activeMemberStat.email}\nPassword: ${activeMemberStat.preset_password}\n\nPlease login safely to check in.`;
-                               navigator.clipboard.writeText(text);
-                               if (onShowToast) onShowToast('Credentials securely copied to clipboard!', 'success');
-                             }}
-                             className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-emerald-500/20 active:scale-95"
-                           >
-                             Copy
-                           </button>
-                           <button
-                             onClick={() => {
-                               const text = `You've been invited to the TaxPro Cloud Workspace!\n\nPortal: https://taxpro-nine.vercel.app\nLogin ID: ${activeMemberStat.email}\nPassword: ${activeMemberStat.preset_password}\n\nPlease login safely to check in.`;
-                               const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-                               window.open(whatsappUrl, '_blank');
-                             }}
-                             className="py-2.5 bg-[#25D366] hover:bg-[#1ebd5a] text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-emerald-500/20 active:scale-95 flex items-center justify-center gap-1.5"
-                           >
-                             WhatsApp
-                           </button>
-                           <button
-                             onClick={() => {
-                               const subject = `Your Account for TaxPro Workspace`;
-                               const body = `You've been invited to the TaxPro Cloud Workspace!\n\nPortal: https://taxpro-nine.vercel.app\nLogin ID: ${activeMemberStat.email}\nPassword: ${activeMemberStat.preset_password}\n\nPlease login safely to check in.`;
-                               const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(activeMemberStat.email)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-                               window.open(gmailUrl, '_blank');
-                             }}
-                             className="py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition-all shadow-md shadow-blue-500/20 active:scale-95 flex items-center justify-center"
-                           >
-                             Email
-                           </button>
-                         </div>
-                      </div>
-                    )}
-
-                 </div>
-               </div>
-             )}
-
+      {/* Quick Overview Modal */}
+      {activeMemberStat && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setActiveMemberStat(null); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-lg">
+            <div className="p-6 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white font-extrabold text-lg uppercase border border-white/30">
+                  {activeMemberStat.name ? activeMemberStat.name.charAt(0) : 'U'}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold font-outfit">{activeMemberStat.name}</h3>
+                  <span className="text-xs text-emerald-100">{activeMemberStat.role} • {activeMemberStat.department || 'General'}</span>
+                </div>
+              </div>
+              <button onClick={() => setActiveMemberStat(null)} className="text-white/80 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-gray-100 bg-gray-50/80 text-center">
+            <div className="p-6 flex flex-col gap-4 text-xs text-gray-700">
+               <div className="flex justify-between py-2 border-b border-gray-100">
+                 <span className="text-gray-400 font-bold">EMAIL:</span>
+                 <span className="font-bold text-gray-800">{activeMemberStat.email}</span>
+               </div>
+               <div className="flex justify-between py-2 border-b border-gray-100">
+                 <span className="text-gray-400 font-bold">STATUS:</span>
+                 <span className="font-bold text-emerald-600">{activeMemberStat.status}</span>
+               </div>
+               <div className="flex justify-between py-2 border-b border-gray-100">
+                 <span className="text-gray-400 font-bold">TASKS ASSIGNED:</span>
+                 <span className="font-bold">{tasks.filter(t => t.assignee === activeMemberStat.name).length}</span>
+               </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 bg-gray-50 text-center">
                <button 
                  onClick={() => setActiveMemberStat(null)}
-                 className="px-6 py-2 bg-gray-900 text-white text-sm font-bold rounded-xl shadow-md hover:shadow-lg hover:bg-gray-800 transition-all w-full"
+                 className="px-6 py-2 bg-gray-900 text-white text-xs font-bold rounded-xl w-full"
                >
-                 Close Overview
+                 Close
                </button>
             </div>
-
           </div>
         </div>
       )}

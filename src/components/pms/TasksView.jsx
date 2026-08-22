@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Filter, Calendar, CheckCircle2, Clock, AlertCircle, User, MoreVertical, X, Paperclip } from 'lucide-react';
+import { Plus, Search, Filter, Calendar, CheckCircle2, Clock, AlertCircle, User, MoreVertical, X, Paperclip, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function TasksView({ onShowToast }) {
@@ -49,9 +49,20 @@ export default function TasksView({ onShowToast }) {
        fetchData();
        if (onShowToast) onShowToast('Task table dynamically synced with Voice Engine.', 'info');
     };
+    const handleOpenAddTask = () => setIsAddModalOpen(true);
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setIsAddModalOpen(false);
+    };
+
     window.addEventListener('ai_task_added', handleAIUpdate);
+    window.addEventListener('ai_open_add_task', handleOpenAddTask);
+    window.addEventListener('keydown', handleKeyDown);
     
-    return () => window.removeEventListener('ai_task_added', handleAIUpdate);
+    return () => {
+      window.removeEventListener('ai_task_added', handleAIUpdate);
+      window.removeEventListener('ai_open_add_task', handleOpenAddTask);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const [newTask, setNewTask] = useState({
@@ -262,125 +273,175 @@ export default function TasksView({ onShowToast }) {
 
       {/* Add Task Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full border border-gray-200 shadow-2xl relative">
-            <button onClick={() => setIsAddModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsAddModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-3xl">
             
-            <h3 className="text-lg font-bold font-outfit text-gray-900 mb-4">Create New Task</h3>
-            <form onSubmit={handleAddTask} className="flex flex-col gap-4 text-xs">
-              <div>
-                <label className="font-semibold text-gray-700 block mb-1">Task Title</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. GSTR-3B Return Filing"
-                  value={newTask.title}
-                  onChange={e => setNewTask({...newTask, title: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="font-semibold text-gray-700 block mb-1">Client Name</label>
-                <select 
-                  value={newTask.client}
-                  onChange={e => setNewTask({...newTask, client: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 bg-white"
-                  required
-                >
-                  <option value="">-- Select Client --</option>
-                  {clients.map((c, idx) => (
-                    <option key={idx} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-semibold text-gray-700 block mb-1">Assign to Project (Optional)</label>
-                <select 
-                  value={newTask.project}
-                  onChange={e => setNewTask({...newTask, project: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 bg-white"
-                >
-                  <option value="">-- No Project (Standalone) --</option>
-                  <option value="Q1 Marketing rollout">Q1 Marketing rollout</option>
-                  <option value="GST Audit 2026-27">GST Audit 2026-27</option>
-                  <option value="Compliance Catchup">Compliance Catchup</option>
-                  <option value="Client Onboarding">Client Onboarding</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-semibold text-gray-700 block mb-1">Category</label>
-                  <select 
-                    value={newTask.category}
-                    onChange={e => setNewTask({...newTask, category: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500"
-                  >
-                    <option value="GST">GST</option>
-                    <option value="Income Tax">Income Tax</option>
-                    <option value="MCA">MCA</option>
-                    <option value="Other">Other</option>
-                  </select>
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                  <CheckSquare className="w-5 h-5" />
                 </div>
-
                 <div>
-                  <label className="font-semibold text-gray-700 block mb-1">Due Date</label>
-                  <input 
-                    type="date"
-                    value={newTask.dueDate}
-                    onChange={e => setNewTask({...newTask, dueDate: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500"
-                  />
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Create New Task
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Assign a workflow deliverable to client, project, and team member
+                  </p>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-gray-100">
-                <label className="font-extrabold text-sm text-gray-900 block mb-3 text-center">Assign Team Member</label>
-                <div className="grid grid-cols-2 gap-3 max-w-sm mx-auto overflow-y-auto max-h-48 p-1">
-                  {teamMembers.length > 0 ? teamMembers.map(member => (
-                    <button
-                      key={member}
-                      type="button"
-                      onClick={() => setNewTask({...newTask, assignee: member})}
-                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
-                        newTask.assignee === member 
-                          ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm ring-1 ring-indigo-500' 
-                          : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                      }`}
+              <button 
+                onClick={() => setIsAddModalOpen(false)} 
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* 2-Column Responsive Form Body */}
+            <form onSubmit={handleAddTask} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                
+                {/* Column 1: Task Details & Scope */}
+                <div className="flex flex-col gap-3.5">
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Task Title <span className="text-red-500">*</span></label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. GSTR-3B Return Filing"
+                      value={newTask.title}
+                      onChange={e => setNewTask({...newTask, title: e.target.value})}
+                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Client Name <span className="text-red-500">*</span></label>
+                    <select 
+                      value={newTask.client}
+                      onChange={e => setNewTask({...newTask, client: e.target.value})}
+                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer"
+                      required
                     >
-                      <User className={`w-5 h-5 ${newTask.assignee === member ? 'text-indigo-600' : 'text-gray-400'}`} />
-                      <span className="text-[10px] font-bold text-center leading-tight truncate w-full">{member}</span>
-                    </button>
-                  )) : (
-                    <div className="col-span-2 text-center text-xs text-gray-400 font-bold py-4">No team members available.</div>
-                  )}
+                      <option value="">-- Select Client --</option>
+                      {clients.map((c, idx) => (
+                        <option key={idx} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Assign to Project (Optional)</label>
+                    <select 
+                      value={newTask.project}
+                      onChange={e => setNewTask({...newTask, project: e.target.value})}
+                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer"
+                    >
+                      <option value="">-- No Project (Standalone) --</option>
+                      <option value="Q1 Marketing rollout">Q1 Marketing rollout</option>
+                      <option value="GST Audit 2026-27">GST Audit 2026-27</option>
+                      <option value="Compliance Catchup">Compliance Catchup</option>
+                      <option value="Client Onboarding">Client Onboarding</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-semibold text-gray-700 block mb-1">Category</label>
+                      <select 
+                        value={newTask.category}
+                        onChange={e => setNewTask({...newTask, category: e.target.value})}
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer"
+                      >
+                        <option value="GST">GST</option>
+                        <option value="Income Tax">Income Tax</option>
+                        <option value="MCA">MCA</option>
+                        <option value="Audit">Audit</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-gray-700 block mb-1">Due Date</label>
+                      <input 
+                        type="date"
+                        value={newTask.dueDate}
+                        onChange={e => setNewTask({...newTask, dueDate: e.target.value})}
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                      />
+                    </div>
+                  </div>
                 </div>
+
+                {/* Column 2: Assignment & Attachments */}
+                <div className="flex flex-col gap-3.5">
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Assign Team Member</label>
+                    <div className="grid grid-cols-2 gap-2 bg-gray-50 border border-gray-300 rounded-xl p-2.5 max-h-48 overflow-y-auto scrollbar-thin">
+                      {teamMembers.length > 0 ? teamMembers.map(member => (
+                        <button
+                          key={member}
+                          type="button"
+                          onClick={() => setNewTask({...newTask, assignee: member})}
+                          className={`flex items-center gap-2 p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                            newTask.assignee === member 
+                              ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-2xs font-bold' 
+                              : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          <User className={`w-3.5 h-3.5 shrink-0 ${newTask.assignee === member ? 'text-indigo-600' : 'text-gray-400'}`} />
+                          <span className="text-[11px] truncate leading-tight">{member}</span>
+                        </button>
+                      )) : (
+                        <div className="col-span-2 text-center text-xs text-gray-400 py-3">No team members available.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">Attachment (Optional)</label>
+                    <div className="border border-dashed border-gray-300 rounded-xl p-3 bg-gray-50 hover:bg-gray-100/80 transition-colors">
+                      <input 
+                        type="file" 
+                        onChange={e => {
+                          const file = e.target.files[0];
+                          if (file) setNewTask({...newTask, attachment: file.name});
+                        }} 
+                        className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" 
+                      />
+                      {newTask.attachment && (
+                        <p className="text-[11px] text-emerald-700 font-bold mt-1">
+                          ✓ Attached: {newTask.attachment}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
-              <div className="pt-3 border-t border-gray-100">
-                <label className="flex items-center gap-1.5 px-4 py-2 hover:bg-gray-100 border border-dashed border-gray-300 rounded-xl text-gray-600 transition-colors cursor-pointer justify-center">
-                  <Paperclip className="w-4 h-4" /> 
-                  <span className="text-xs font-bold truncate max-w-[200px]">
-                    {newTask.attachment ? newTask.attachment : 'Attach File (Optional)'}
-                  </span>
-                  <input 
-                    type="file" 
-                    className="hidden" 
-                    onChange={e => {
-                       const file = e.target.files[0];
-                       if (file) setNewTask({...newTask, attachment: file.name});
-                    }}
-                  />
-                </label>
-              </div>
-
-              <div className="mt-2 text-right">
-                <button type="submit" className="px-6 py-2.5 rounded-xl bg-[#5b52e0] hover:bg-[#4c44cf] text-white font-bold text-sm shadow-md transition-colors w-full">
-                  Save New Task
+              {/* Bottom Sticky Actions */}
+              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  Create Task
                 </button>
               </div>
             </form>

@@ -22,12 +22,12 @@ export default function IdeasView({ onShowToast }) {
   }, [ideas]);
 
   useEffect(() => {
-    const fetchLiveMocks = async () => {
+    const fetchLiveOptions = async () => {
       const { data: deptData } = await supabase.from('departments').select('name');
       if (deptData) {
         setAvailableDepts(deptData.map(d => d.name));
       } else {
-        setAvailableDepts(['General', 'Sales', 'Admin']);
+        setAvailableDepts(['General', 'Finance', 'Taxation', 'Audit']);
       }
       
       const { data: memData } = await supabase.from('team_members').select('name');
@@ -35,7 +35,7 @@ export default function IdeasView({ onShowToast }) {
         setAvailableMembers(memData.map(m => m.name));
       }
     };
-    fetchLiveMocks();
+    fetchLiveOptions();
   }, []);
 
   const [formData, setFormData] = useState({
@@ -311,120 +311,125 @@ export default function IdeasView({ onShowToast }) {
 
       {/* CREATION ENGINE MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white/95 backdrop-blur-xl border border-white/20 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden animate-slide-up">
-            
-            <div className="flex flex-col p-6 pb-2 relative">
-              <button onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 p-1.5 bg-gray-100 text-gray-500 hover:text-gray-900 rounded-full transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-              
-              <div className="flex gap-4">
-                <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                  <Lightbulb className="w-6 h-6 text-amber-600" />
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-2xl">
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shadow-xs">
+                  <Lightbulb className="w-5 h-5" />
                 </div>
-                <div className="flex-1 pt-1">
-                  <h2 className="text-xl font-black text-gray-900 mb-1">What's on your mind?</h2>
-                  <p className="text-xs font-medium text-gray-500 mb-6">Drop your suggestions, features, and feedback here.</p>
-                  
-                  <form id="idea-engine" onSubmit={handleAddIdea} className="flex flex-col gap-5">
-                    
-                    {/* Main Input Textarea */}
-                    <div>
-                      <textarea 
-                        required
-                        autoFocus
-                        rows={5}
-                        placeholder="Type your idea..."
-                        value={formData.content}
-                        onChange={e => setFormData({...formData, content: e.target.value})}
-                        className="w-full text-base sm:text-lg font-medium text-gray-900 placeholder:text-gray-400 outline-none resize-none bg-transparent"
-                      />
-                    </div>
-
-                    {/* Rich Meta Row */}
-                    <div className="grid border-y border-gray-100 border-dashed py-4 gap-4 grid-cols-1 sm:grid-cols-2">
-                       
-                       <div className="flex flex-col gap-1.5">
-                         <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider flex items-center gap-1"><Tag className="w-3 h-3" /> Tags (Comma separated)</label>
-                         <input 
-                           type="text" 
-                           placeholder="Finance, Marketing..." 
-                           value={formData.tags}
-                           onChange={e => setFormData({...formData, tags: e.target.value})}
-                           className="bg-gray-100 border-none rounded-lg px-3 py-2 text-xs font-bold text-gray-700 outline-none"
-                         />
-                       </div>
-
-                       <div className="flex flex-col gap-1.5">
-                         <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider flex items-center gap-1"><User className="w-3 h-3" /> Assign Department</label>
-                         <select 
-                           value={formData.assignDepartment}
-                           onChange={e => setFormData({...formData, assignDepartment: e.target.value})}
-                           className="bg-gray-100 border-none rounded-lg px-3 py-2 text-xs font-bold text-gray-700 outline-none cursor-pointer"
-                         >
-                           <option value="All">All</option>
-                           {availableDepts.map(d => (
-                             <option key={d} value={d}>{d}</option>
-                           ))}
-                         </select>
-                       </div>
-                       
-                       <div className="flex flex-col gap-1.5">
-                         <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider flex items-center gap-1"><RefreshCcw className="w-3 h-3" /> Auto Convert Task</label>
-                         <select 
-                           value={formData.autoConvert}
-                           onChange={e => setFormData({...formData, autoConvert: e.target.value})}
-                           className="bg-gray-100 border-none rounded-lg px-3 py-2 text-xs font-bold text-gray-700 outline-none cursor-pointer"
-                         >
-                           <option>Manual Conversion</option>
-                           <option>After 3 Days</option>
-                           <option>After 1 Week</option>
-                           <option>100+ Upvotes triggers</option>
-                         </select>
-                       </div>
-
-                       <div className="flex flex-col gap-1.5">
-                         <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider flex items-center gap-1"><Globe className="w-3 h-3" /> Visibility</label>
-                         <select 
-                           value={formData.visibility}
-                           onChange={e => setFormData({...formData, visibility: e.target.value})}
-                           className="bg-gray-100 border-none rounded-lg px-3 py-2 text-xs font-bold text-gray-700 outline-none cursor-pointer"
-                         >
-                           <option>Public</option>
-                           <option>Private</option>
-                         </select>
-                       </div>
-
-                    </div>
-                  </form>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Post Suggestion & Idea
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Capture insights, workflow optimizations & feature suggestions
+                  </p>
                 </div>
               </div>
+
+              <button 
+                onClick={() => setIsModalOpen(false)} 
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex flex-col p-6 flex-1 overflow-y-auto scrollbar-thin">
+              <form id="idea-engine" onSubmit={handleAddIdea} className="flex flex-col gap-4 text-xs font-semibold">
+                <div>
+                  <label className="text-gray-700 block mb-1">Your Proposal / Idea Description <span className="text-red-500">*</span></label>
+                  <textarea 
+                    required
+                    autoFocus
+                    rows={4}
+                    placeholder="Describe your suggestion in detail..."
+                    value={formData.content}
+                    onChange={e => setFormData({...formData, content: e.target.value})}
+                    className="w-full text-xs font-medium text-gray-900 placeholder:text-gray-400 outline-none resize-none bg-gray-50 border border-gray-300 rounded-xl p-3 focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                   <div className="flex flex-col gap-1">
+                     <label className="text-gray-700">Tags (Comma separated)</label>
+                     <input 
+                       type="text" 
+                       placeholder="e.g. Tax, Automation, Audit" 
+                       value={formData.tags}
+                       onChange={e => setFormData({...formData, tags: e.target.value})}
+                       className="bg-gray-50 border border-gray-300 rounded-xl px-3 py-2 text-xs font-medium text-gray-800 outline-none focus:border-indigo-500"
+                     />
+                   </div>
+
+                   <div className="flex flex-col gap-1">
+                     <label className="text-gray-700">Assign Department</label>
+                     <select 
+                       value={formData.assignDepartment}
+                       onChange={e => setFormData({...formData, assignDepartment: e.target.value})}
+                       className="bg-gray-50 border border-gray-300 rounded-xl px-3 py-2 text-xs font-medium text-gray-800 outline-none focus:border-indigo-500 cursor-pointer"
+                     >
+                       <option value="All">All Departments</option>
+                       {availableDepts.map(d => (
+                         <option key={d} value={d}>{d}</option>
+                       ))}
+                     </select>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                   <div className="flex flex-col gap-1">
+                     <label className="text-gray-700">Visibility</label>
+                     <select 
+                       value={formData.visibility}
+                       onChange={e => setFormData({...formData, visibility: e.target.value})}
+                       className="bg-gray-50 border border-gray-300 rounded-xl px-3 py-2 text-xs font-medium text-gray-800 outline-none focus:border-indigo-500 cursor-pointer"
+                     >
+                       <option>Public (Workspace Visible)</option>
+                       <option>Private (Leadership Only)</option>
+                     </select>
+                   </div>
+
+                   <div className="flex flex-col gap-1">
+                     <label className="text-gray-700">Attach Document (Optional)</label>
+                     <label className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 hover:bg-gray-100 border border-dashed border-gray-300 rounded-xl text-gray-600 transition-colors cursor-pointer text-xs">
+                        <Paperclip className="w-3.5 h-3.5" /> 
+                        <span className="truncate max-w-[150px]">
+                          {formData.attachment ? formData.attachment : 'Choose file...'}
+                        </span>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          onChange={e => {
+                             const file = e.target.files[0];
+                             if (file) setFormData({...formData, attachment: file.name});
+                          }}
+                        />
+                     </label>
+                   </div>
+                </div>
+              </form>
             </div>
 
             {/* Actions Footer */}
-            <div className="p-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
-               
-               {/* Attachments */}
-               <label className="flex items-center gap-1.5 px-4 py-2 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors cursor-pointer">
-                  <Paperclip className="w-4 h-4" /> 
-                  <span className="text-xs font-bold sm:inline truncate max-w-[150px]">
-                    {formData.attachment ? formData.attachment : 'Attach Files'}
-                  </span>
-                  <input 
-                    type="file" 
-                    className="hidden" 
-                    onChange={e => {
-                       const file = e.target.files[0];
-                       if (file) setFormData({...formData, attachment: file.name});
-                    }}
-                  />
-               </label>
-
+            <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3">
+               <button
+                 type="button"
+                 onClick={() => setIsModalOpen(false)}
+                 className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+               >
+                 Cancel
+               </button>
                <button 
                  form="idea-engine" 
                  type="submit" 
-                 className="px-8 py-3 rounded-xl bg-gray-900 hover:bg-black text-white font-extrabold text-sm transition-colors shadow-lg shadow-gray-900/20"
+                 className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
                >
                  Post Idea
                </button>

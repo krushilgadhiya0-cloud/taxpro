@@ -1,52 +1,80 @@
 import express from 'express';
 import Razorpay from 'razorpay';
+import { query } from '../db.js';
+
 const router = express.Router();
 
-let transactions = [
-  { id: 'PAY-108', recipient: 'Alex Mercer (Lead Dev)', category: 'Salary', method: 'UPI', amount: '$4,800.00', status: 'Success', date: 'Today, 09:42 AM' },
-  { id: 'PAY-107', recipient: 'AWS Cloud Hosting Cluster', category: 'Custom', method: 'Card', amount: '$2,840.00', status: 'Success', date: 'Yesterday' },
-  { id: 'PAY-106', recipient: 'Uber Business Fleet Travel', category: 'Travel', method: 'Wallet', amount: '$145.50', status: 'Success', date: 'Jul 23, 2026' },
-  { id: 'PAY-105', recipient: 'DoorDash Corporate Catering', category: 'Food', method: 'Card', amount: '$320.00', status: 'Success', date: 'Jul 22, 2026' },
-  { id: 'PAY-104', recipient: 'Steam Arcade License', category: 'Gaming', method: 'UPI', amount: '$89.00', status: 'Success', date: 'Jul 20, 2026' },
-  { id: 'PAY-103', recipient: 'Office Ergonomic Supplies', category: 'Shopping', method: 'Net Banking', amount: '$1,250.00', status: 'Success', date: 'Jul 19, 2026' },
-];
+// Get Transactions from PostgreSQL
+router.get('/transactions', async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        id, 
+        recipient, 
+        category, 
+        method, 
+        amount, 
+        status, 
+        payment_id as "paymentId", 
+        order_id as "orderId", 
+        date, 
+        created_at
+      FROM payments 
+      ORDER BY created_at DESC 
+      LIMIT 100;
+    `);
 
-// Get Transactions
-router.get('/transactions', (req, res) => {
-  res.json({
-    success: true,
-    count: transactions.length,
-    transactions
-  });
+    // Format display amount with currency symbol
+    const formatted = result.rows.map(r => ({
+      ...r,
+      amount: String(r.amount).startsWith('$') || String(r.amount).startsWith('₹') ? r.amount : `$${parseFloat(r.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    }));
+
+    res.json({
+      success: true,
+      count: formatted.length,
+      transactions: formatted
+    });
+  } catch (err) {
+    console.error('[payments GET PG Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-// Send Payment
-router.post('/send', (req, res) => {
+// Send Payment (Insert into PostgreSQL)
+router.post('/send', async (req, res) => {
   const { recipient, amount, method, category } = req.body;
 
   if (!recipient || !amount) {
     return res.status(400).json({ success: false, error: 'Recipient and amount are required.' });
   }
 
-  const newTx = {
-    id: `PAY-${109 + transactions.length}`,
-    recipient,
-    category: category || 'Custom',
-    method: method || 'UPI',
-    amount: `$${parseFloat(amount).toFixed(2)}`,
-    status: 'Success',
-    date: 'Just now'
-  };
+  const cleanNum = parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 0;
+  const payId = `PAY-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
 
-  transactions.unshift(newTx);
+  try {
+    const result = await query(`
+      INSERT INTO payments (id, recipient, category, method, amount, status, date)
+      VALUES ($1, $2, $3, $4, $5, 'Success', 'Just now')
+      RETURNING *;
+    `, [payId, recipient, category || 'Custom', method || 'UPI', cleanNum]);
 
-  console.log(`[Finexo Payment Engine] Processed payment of ${newTx.amount} to ${newTx.recipient} via ${newTx.method}`);
+    const newTx = {
+      ...result.rows[0],
+      amount: `$${cleanNum.toFixed(2)}`
+    };
 
-  res.json({
-    success: true,
-    message: `Payment of ${newTx.amount} successfully sent to ${newTx.recipient}`,
-    transaction: newTx
-  });
+    console.log(`[TaxPro Payment Engine] PostgreSQL: Processed payment of ${newTx.amount} to ${newTx.recipient}`);
+
+    res.json({
+      success: true,
+      message: `Payment of ${newTx.amount} successfully recorded to PostgreSQL for ${newTx.recipient}`,
+      transaction: newTx
+    });
+  } catch (err) {
+    console.error('[payments send PG Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // POST /api/payments/razorpay/create-order
@@ -105,41 +133,40 @@ export const sendPaymentReceiptEmail = (email, paymentId, amount) => {
   };
 };
 
-// POST /api/payments/razorpay/verify
-router.post('/razorpay/verify', (req, res) => {
+// POST /api/payments/razorpay/verify (Record in PostgreSQL)
+router.post('/razorpay/verify', async (req, res) => {
   const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount, description, email } = req.body;
 
   const paymentId = razorpay_payment_id || `pay_${Date.now()}`;
   const amountPaid = amount || '₹1,999.00';
+  const cleanNum = parseFloat(String(amountPaid).replace(/[^0-9.]/g, '')) || 1999;
   const targetEmail = (email || 'krushilgadhiya0@gmail.com').trim().toLowerCase();
+  const txId = `PAY-RZP-${Date.now()}`;
 
-  const newTx = {
-    id: `PAY-RZP-${Math.floor(1000 + Math.random() * 9000)}`,
-    recipient: description || 'TaxPro Professional Plan Fee',
-    category: 'Razorpay Fee Collection',
-    method: 'Razorpay (UPI / Card / NetBanking)',
-    amount: amountPaid,
-    status: 'Success',
-    paymentId: paymentId,
-    orderId: razorpay_order_id,
-    date: 'Just now'
-  };
+  try {
+    const result = await query(`
+      INSERT INTO payments (id, recipient, category, method, amount, status, payment_id, order_id, date)
+      VALUES ($1, $2, 'Razorpay Fee Collection', 'Razorpay (UPI / Card / NetBanking)', $3, 'Success', $4, $5, 'Just now')
+      RETURNING *;
+    `, [txId, description || 'TaxPro Professional Plan Fee', cleanNum, paymentId, razorpay_order_id]);
 
-  transactions.unshift(newTx);
+    const receiptMail = sendPaymentReceiptEmail(targetEmail, paymentId, amountPaid);
 
-  const receiptMail = sendPaymentReceiptEmail(targetEmail, paymentId, amountPaid);
+    console.log(`[TaxPro Razorpay Engine] Saved to PostgreSQL: Payment Verified: ${paymentId} for ${amountPaid}`);
 
-  console.log(`[TaxPro Razorpay Engine] Payment Verified: ${paymentId} for ${amountPaid}`);
-
-  res.json({
-    success: true,
-    message: `✓ Razorpay Payment Verified Successfully! Official Receipt sent to ${targetEmail}. ID: ${paymentId}`,
-    paymentId: paymentId,
-    orderId: razorpay_order_id,
-    receiptEmailSent: true,
-    receiptEmailDetails: receiptMail,
-    transaction: newTx
-  });
+    res.json({
+      success: true,
+      message: `✓ Razorpay Payment Verified & Saved to PostgreSQL! Official Receipt sent to ${targetEmail}. ID: ${paymentId}`,
+      paymentId: paymentId,
+      orderId: razorpay_order_id,
+      receiptEmailSent: true,
+      receiptEmailDetails: receiptMail,
+      transaction: result.rows[0]
+    });
+  } catch (err) {
+    console.error('[payments verify PG Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 export default router;

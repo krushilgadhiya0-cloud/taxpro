@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 import { 
   CreditCard, 
   Send, 
@@ -12,10 +13,11 @@ import {
   ArrowDownRight, 
   DollarSign,
   PieChart as PieIcon,
-  CheckCircle2,
-  Sparkles,
-  Zap,
-  Plus
+  CheckCircle2, 
+  Sparkles, 
+  Zap, 
+  Plus,
+  RefreshCw
 } from 'lucide-react';
 
 export default function PaymentsView({ onShowToast }) {
@@ -25,6 +27,9 @@ export default function PaymentsView({ onShowToast }) {
   const [showSendModal, setShowSendModal] = useState(false);
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState('Salary & Payroll');
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const paymentMethods = [
     { id: 'UPI', label: 'UPI Instant', icon: Smartphone, desc: 'Zero fee direct bank' },
@@ -35,41 +40,90 @@ export default function PaymentsView({ onShowToast }) {
     { id: 'Bank Wire', label: 'SWIFT Wire', icon: Building2, desc: 'Cross-border enterprise' },
   ];
 
-  const categories = ['All', 'Salary', 'Travel', 'Food', 'Gaming', 'Shopping', 'Custom'];
-
-  const transactions = [
-    { id: 'PAY-108', recipient: 'Alex Mercer (Lead Dev)', category: 'Salary', method: 'UPI', amount: '$4,800.00', status: 'Success', date: 'Today, 09:42 AM' },
-    { id: 'PAY-107', recipient: 'AWS Cloud Hosting', category: 'Custom', method: 'Card', amount: '$2,840.00', status: 'Success', date: 'Yesterday' },
-    { id: 'PAY-106', recipient: 'Uber Business Travel', category: 'Travel', method: 'Wallet', amount: '$145.50', status: 'Success', date: 'Jul 23, 2026' },
-    { id: 'PAY-105', recipient: 'DoorDash Team Catering', category: 'Food', method: 'Card', amount: '$320.00', status: 'Success', date: 'Jul 22, 2026' },
-    { id: 'PAY-104', recipient: 'Steam Enterprise Arcade', category: 'Gaming', method: 'UPI', amount: '$89.00', status: 'Success', date: 'Jul 20, 2026' },
-    { id: 'PAY-103', recipient: 'Office Supplies & Gear', category: 'Shopping', method: 'Net Banking', amount: '$1,250.00', status: 'Success', date: 'Jul 19, 2026' },
+  const categories = [
+    'All',
+    'Salary & Payroll',
+    'Office Rent & Lease',
+    'Electricity & Utilities',
+    'Software & Cloud',
+    'Stationery & Printing',
+    'Tea & Refreshments',
+    'Travel & Conveyance',
+    'Government Challans',
+    'Legal & Audit Fees',
+    'Custom'
   ];
+
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase.from('payments').select('*').order('created_at', { ascending: false });
+      if (data) {
+        setTransactions(data);
+      }
+    } catch (e) {
+      console.warn('[Payments View Error]:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTransactions();
+    window.addEventListener('taxpro_db_updated', fetchTransactions);
+    window.addEventListener('taxpro_financial_updated', fetchTransactions);
+    return () => {
+      window.removeEventListener('taxpro_db_updated', fetchTransactions);
+      window.removeEventListener('taxpro_financial_updated', fetchTransactions);
+    };
+  }, []);
 
   const filteredTransactions = transactions.filter((t) => {
     const matchesCategory = selectedCategory === 'All' || t.category === selectedCategory;
-    const matchesSearch = t.recipient.toLowerCase().includes(searchQuery.toLowerCase()) || t.id.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    const rec = (t.recipient || '').toLowerCase();
+    const id = (t.id || '').toLowerCase();
+    const q = searchQuery.toLowerCase();
+    return matchesCategory && (rec.includes(q) || id.includes(q));
   });
 
-  const handleSendPayment = (e) => {
+  const handleSendPayment = async (e) => {
     e.preventDefault();
     if (!recipient || !amount) {
-      onShowToast('Please fill in recipient and amount.', 'warning');
+      if (onShowToast) onShowToast('Please fill in recipient and amount.', 'warning');
       return;
     }
 
-    onShowToast(`Sending $${amount} to ${recipient} via ${selectedMethod}...`, 'info');
+    const numAmt = parseFloat(amount) || 0;
+    if (onShowToast) onShowToast(`Executing ₹${numAmt.toLocaleString('en-IN')} transfer to ${recipient} via ${selectedMethod}...`, 'info');
 
-    setTimeout(() => {
-      onShowToast(`Payment of $${amount} successfully sent to ${recipient}!`, 'success');
+    try {
+      const newPayment = {
+        id: 'PAY-' + Date.now().toString().slice(-6),
+        recipient: recipient.trim(),
+        category: category,
+        method: selectedMethod,
+        amount: numAmt,
+        status: 'Success',
+        date: new Date().toISOString().split('T')[0]
+      };
+
+      const { error } = await supabase.from('payments').insert([newPayment]);
+      if (error) throw error;
+
+      if (onShowToast) onShowToast(`Payment of ₹${numAmt.toLocaleString('en-IN')} successfully recorded & auto-synced with Calendar!`, 'success');
       setShowSendModal(false);
       setRecipient('');
       setAmount('');
+      fetchTransactions();
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+      window.dispatchEvent(new CustomEvent('taxpro_financial_updated'));
+
       if (window.confetti) {
         window.confetti({ particleCount: 80, spread: 60, origin: { y: 0.5 } });
       }
-    }, 1200);
+    } catch (err) {
+      if (onShowToast) onShowToast(`Payment recording failed: ${err.message}`, 'error');
+    }
   };
 
   return (

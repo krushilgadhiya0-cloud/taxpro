@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+// Compatibility proxy mapping legacy imports to pure native PostgreSQL Client
+import postgresClient, { db, supabase as pgSupabase } from './postgresClient';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export { db, postgresClient };
+export const supabase = postgresClient;
+export default postgresClient;

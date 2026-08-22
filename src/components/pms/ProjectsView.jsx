@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check, Printer, Paperclip, Download } from 'lucide-react';
+import { FolderKanban, Plus, Layers, Target, CheckCircle2, X, Calendar, Search, MoreVertical, Users, Check, Printer, Paperclip, Download, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function ProjectsView({ onShowToast }) {
@@ -33,7 +33,14 @@ export default function ProjectsView({ onShowToast }) {
         }
       } catch (e) {}
     };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsModalOpen(false);
+        setOpenProject(null);
+      }
+    };
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('keydown', handleKeyDown);
     
     // Fetch live team members for the Assignee Dropdown
     const fetchLiveMembers = async () => {
@@ -44,7 +51,10 @@ export default function ProjectsView({ onShowToast }) {
     };
     fetchLiveMembers();
     
-    return () => window.removeEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [projectsList]);
   
   const [availableMembers, setAvailableMembers] = useState([]);
@@ -378,134 +388,154 @@ export default function ProjectsView({ onShowToast }) {
         </div>
       )}
 
-      {/* Floating Action Button (if projects exist) */}
-      {projectsList.length > 0 && (
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="fixed bottom-6 right-6 z-40 w-14 h-14 bg-[#0f766e] text-white rounded-full flex items-center justify-center shadow-xl hover:shadow-2xl hover:scale-105 transition-all"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
-      )}
-
       {/* NEW PROJECT MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl w-full max-w-xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-3xl">
             
-            <div className="flex items-center justify-between p-5 border-b border-gray-100">
-              <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900">
-                <FolderKanban className="w-5 h-5 text-emerald-600" /> New project
-              </h2>
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                  <FolderKanban className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Create New Project
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Bundle tasks, set timelines, and measure team deliverables
+                  </p>
+                </div>
+              </div>
+
               <button 
                 onClick={() => setIsModalOpen(false)} 
-                className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors"
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto">
-              <form id="project-form" onSubmit={handleCreateProject} className="flex flex-col gap-6">
+            <div className="p-6 overflow-y-auto flex-1 scrollbar-thin">
+              <form id="project-form" onSubmit={handleCreateProject} className="flex flex-col gap-4 text-xs font-semibold">
                 
-                <div>
-                  <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">Project Name *</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={formData.name}
-                    onChange={e => setFormData({...formData, name: e.target.value})}
-                    placeholder="Q1 Marketing rollout" 
-                    className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all font-medium text-sm text-gray-900 shadow-inner"
-                  />
-                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  
+                  {/* Column 1: Project Identity & Description */}
+                  <div className="flex flex-col gap-3.5">
+                    <div>
+                      <label className="text-gray-700 block mb-1">Project Name <span className="text-red-500">*</span></label>
+                      <input 
+                        type="text" 
+                        required
+                        value={formData.name}
+                        onChange={e => setFormData({...formData, name: e.target.value})}
+                        placeholder="e.g. Q1 Corporate Tax Rollout" 
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs font-medium"
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">Description (Optional)</label>
-                  <textarea 
-                    rows={4}
-                    value={formData.description}
-                    onChange={e => setFormData({...formData, description: e.target.value})}
-                    placeholder="What is this project about?" 
-                    className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all resize-none shadow-sm text-sm text-gray-800 shadow-inner"
-                  />
-                </div>
+                    <div>
+                      <label className="text-gray-700 block mb-1">Description (Optional)</label>
+                      <textarea 
+                        rows={3}
+                        value={formData.description}
+                        onChange={e => setFormData({...formData, description: e.target.value})}
+                        placeholder="Key milestones, scope & requirements..." 
+                        className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 min-h-[85px] text-xs resize-none"
+                      />
+                    </div>
 
-                <div className="grid grid-cols-2 gap-5">
-                  <div>
-                    <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">Start Date</label>
-                    <input 
-                      type="date" 
-                      value={formData.startDate}
-                      onChange={e => setFormData({...formData, startDate: e.target.value})}
-                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all text-sm color-gray-800 font-medium"
-                    />
+                    <div>
+                      <label className="text-gray-700 block mb-1">Priority Level</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {['Low', 'Medium', 'High'].map(prio => (
+                          <button
+                            key={prio}
+                            type="button"
+                            onClick={() => setFormData({...formData, priority: prio})}
+                            className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                              formData.priority === prio 
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-500 shadow-2xs' 
+                                : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                            }`}
+                          >
+                            {prio}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">Due Date</label>
-                    <input 
-                      type="date"
-                      value={formData.dueDate}
-                      onChange={e => setFormData({...formData, dueDate: e.target.value})}
-                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all text-sm color-gray-800 font-medium"
-                    />
-                  </div>
-                </div>
 
-                <div>
-                  <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-3">Priority</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {['Low', 'Medium', 'High'].map(prio => (
-                      <button
-                        key={prio}
-                        type="button"
-                        onClick={() => setFormData({...formData, priority: prio})}
-                        className={`py-3 rounded-xl text-sm font-extrabold border transition-all ${
-                          formData.priority === prio 
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-500 shadow-sm' 
-                            : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-100'
-                        }`}
-                      >
-                        {prio}
-                      </button>
-                    ))}
+                  {/* Column 2: Timeline & Attachments */}
+                  <div className="flex flex-col gap-3.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-gray-700 block mb-1">Start Date</label>
+                        <input 
+                          type="date" 
+                          value={formData.startDate}
+                          onChange={e => setFormData({...formData, startDate: e.target.value})}
+                          className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-gray-700 block mb-1">Due Date</label>
+                        <input 
+                          type="date"
+                          value={formData.dueDate}
+                          onChange={e => setFormData({...formData, dueDate: e.target.value})}
+                          className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-gray-700 block mb-1">Attach Project Brief / Files</label>
+                      <div className="border border-dashed border-gray-300 rounded-xl p-3.5 bg-gray-50 hover:bg-gray-100/80 transition-colors">
+                        <input 
+                          type="file" 
+                          onChange={e => {
+                             const file = e.target.files[0];
+                             if (file) setFormData({...formData, attachment: file.name});
+                          }}
+                          className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" 
+                        />
+                        {formData.attachment && (
+                          <p className="text-[11px] text-emerald-700 font-bold mt-1">
+                            ✓ Attached: {formData.attachment}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
                   </div>
-                </div>
-                
-                <div className="pt-2 border-t border-gray-100">
-                  <label className="flex items-center gap-1.5 px-4 py-3 hover:bg-gray-100 border border-dashed border-gray-300 rounded-xl text-gray-600 transition-colors cursor-pointer justify-center">
-                    <Paperclip className="w-4 h-4" /> 
-                    <span className="text-xs font-bold truncate max-w-[200px]">
-                      {formData.attachment ? formData.attachment : 'Attach Project Brief (Optional)'}
-                    </span>
-                    <input 
-                      type="file" 
-                      className="hidden" 
-                      onChange={e => {
-                         const file = e.target.files[0];
-                         if (file) setFormData({...formData, attachment: file.name});
-                      }}
-                    />
-                  </label>
+
                 </div>
 
               </form>
             </div>
 
-            <div className="p-5 border-t border-gray-100 bg-gray-50 flex justify-end items-center gap-3">
+            {/* Bottom Sticky Actions */}
+            <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex justify-end items-center gap-3">
               <button 
                 type="button" 
                 onClick={() => setIsModalOpen(false)} 
-                className="px-6 py-2.5 rounded-xl bg-white border border-gray-300 text-gray-700 font-bold text-sm hover:bg-gray-100 transition-colors"
+                className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button 
                 form="project-form" 
                 type="submit" 
-                className="px-6 py-2.5 rounded-xl bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-sm transition-colors shadow-lg flex items-center justify-center gap-2"
+                className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
               >
-                Create project
+                Create Project
               </button>
             </div>
 

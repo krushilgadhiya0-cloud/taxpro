@@ -44,7 +44,7 @@ export default function SupportHelpView({ onShowToast }) {
   };
 
   const topics = [
-    { title: 'Dashboard & Integrations', desc: 'The central nervous system. View high-level metrics, global alerts, and synchronize Google Calendar, WhatsApp, and Gmail via the Integrations menu.' },
+    { title: 'Dashboard & Integrations', desc: 'The central nervous system. View high-level metrics, global alerts, and synchronize WhatsApp Business API and custom SMTP Email via the Integrations menu.' },
     { title: 'Task & Workload Management', desc: 'Create internal tasks, assign them to team members, track due dates, and monitor global firm workload capacity without exposing internal data structures.' },
     { title: 'Client & Contact Person', desc: 'Securely map client entities to specific contact persons. Includes full lifecycle toggling (Active vs Old Clients) and detailed historical payment printing.' },
     { title: 'Fees & Owner Payments', desc: 'Track comprehensive billed amounts against collected fees. The Owner Payments module natively integrates subscription tiers and secure Razorpay receipt generation.' },

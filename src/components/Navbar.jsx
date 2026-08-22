@@ -12,7 +12,8 @@ import {
   Menu,
   X,
   Zap,
-  Headset
+  Headset,
+  Mic
 } from 'lucide-react';
 
 export default function Navbar({ 
@@ -100,11 +101,28 @@ export default function Navbar({
 
           {/* Right Action CTA Buttons */}
           <div className="hidden md:flex items-center gap-3">
+            {/* Quick Voice AI Shortcut */}
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('taxpro_start_voice'));
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition-all text-xs font-bold shadow-xs active:scale-95 group"
+              title="Activate AI Voice Assistant (Shortcut: Ctrl + M / Alt + M)"
+            >
+              <Mic className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+              <span>Voice AI</span>
+              <span className="text-[9px] font-mono bg-black/40 text-cyan-300 px-1 py-0.2 rounded border border-cyan-500/20">
+                Ctrl+M
+              </span>
+            </button>
+
             {isAuthenticated ? (
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30">
                   <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping"></span>
-                  <span className="text-xs font-bold text-indigo-300">Krushil Gadhiya (CFO)</span>
+                  <span className="text-xs font-bold text-indigo-300 truncate max-w-[150px]">
+                    {localStorage.getItem('taxpro_user_email') || 'Authorized User'}
+                  </span>
                 </div>
                 <button
                   onClick={onLogout}

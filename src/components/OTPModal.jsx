@@ -1,29 +1,71 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Lock, 
   X, 
   RefreshCw, 
   ShieldCheck, 
   AlertCircle, 
-  CheckCircle2, 
+  Check, 
   Sparkles,
   Smartphone,
-  Check
+  Lock,
+  Mail
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) {
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [verifyingText, setVerifyingText] = useState('Verifying.');
-  const [verificationStatus, setVerificationStatus] = useState('idle'); // 'idle' | 'verifying' | 'success' | 'error'
+  // 4 Boxes State
+  const [otp, setOtp] = useState(['', '', '', '']);
+  
+  // Animation Stage: 'input' | 'curling' | 'spinning' | 'screwing' | 'verdict_success' | 'verdict_error'
+  const [stage, setStage] = useState('input');
   const [errorMessage, setErrorMessage] = useState('');
   const [countdown, setCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [devOtpHint, setDevOtpHint] = useState('');
 
   const activeEmail = (email || 'krushilgadhiya0@gmail.com').trim().toLowerCase();
-
   const inputRefs = useRef([]);
+
+  // Send real OTP via smtplib on modal open
+  useEffect(() => {
+    if (isOpen) {
+      resetState();
+      dispatchSmtpOtp();
+      setTimeout(() => inputRefs.current[0]?.focus(), 250);
+    }
+  }, [isOpen, email]);
+
+  // Dispatch OTP via backend smtplib pipeline
+  const dispatchSmtpOtp = async () => {
+    setIsSendingOtp(true);
+    try {
+      let smtpConfig = null;
+      try {
+        const raw = localStorage.getItem('taxpro_smtp');
+        if (raw) smtpConfig = JSON.parse(raw);
+      } catch (e) {}
+
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+      const res = await fetch(`${baseUrl}/api/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: activeEmail,
+          smtpConfig
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.devOtp) {
+        setDevOtpHint(data.devOtp);
+      }
+    } catch (err) {
+      console.warn('smtplib dispatch warning:', err.message);
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
 
   // Timer countdown logic
   useEffect(() => {
@@ -42,32 +84,11 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
     return () => clearInterval(timer);
   }, [isOpen, countdown, canResend]);
 
-  // Focus first input when modal opens
-  useEffect(() => {
-    if (isOpen && inputRefs.current[0]) {
-      setTimeout(() => inputRefs.current[0]?.focus(), 150);
-    }
-  }, [isOpen]);
-
-  // Dots animation during "Verifying..."
-  useEffect(() => {
-    let interval;
-    if (verificationStatus === 'verifying') {
-      let step = 0;
-      const texts = ['Verifying.', 'Verifying..', 'Verifying...'];
-      interval = setInterval(() => {
-        step = (step + 1) % 3;
-        setVerifyingText(texts[step]);
-      }, 400);
-    }
-    return () => clearInterval(interval);
-  }, [verificationStatus]);
-
   if (!isOpen) return null;
 
   // Handle Input change
   const handleChange = (index, value) => {
-    if (verificationStatus === 'verifying' || verificationStatus === 'success') return;
+    if (stage !== 'input') return;
     
     // Only accept numeric characters
     const cleanValue = value.replace(/[^0-9]/g, '');
@@ -76,25 +97,19 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
     newOtp[index] = cleanValue.substring(cleanValue.length - 1);
     setOtp(newOtp);
 
-    // Reset error on edit
-    if (verificationStatus === 'error') {
-      setVerificationStatus('idle');
-      setErrorMessage('');
-    }
-
-    // Auto move next
-    if (cleanValue && index < 5) {
+    // Auto move next input
+    if (cleanValue && index < 3) {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Check if full 6 digits entered
+    // Check if 4th digit entered -> Trigger Orbital Curl Animation!
     const fullCode = newOtp.join('');
-    if (fullCode.length === 6) {
-      triggerVerificationProcess(fullCode);
+    if (fullCode.length === 4) {
+      triggerOrbitalVerification(fullCode);
     }
   };
 
-  // Handle Backspace and Arrow keys
+  // Handle Backspace
   const handleKeyDown = (index, e) => {
     if (e.key === 'Backspace') {
       if (!otp[index] && index > 0) {
@@ -103,214 +118,254 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
     }
   };
 
-  // Handle Paste full OTP
+  // Handle Paste
   const handlePaste = (e) => {
     e.preventDefault();
-    const pasteData = e.clipboardData.getData('text').replace(/[^0-9]/g, '').slice(0, 6);
+    if (stage !== 'input') return;
+    
+    const pasteData = e.clipboardData.getData('text').replace(/[^0-9]/g, '').slice(0, 4);
     if (pasteData.length > 0) {
-      const newOtp = [...otp];
-      for (let i = 0; i < 6; i++) {
+      const newOtp = ['', '', '', ''];
+      for (let i = 0; i < pasteData.length; i++) {
         newOtp[i] = pasteData[i] || '';
       }
       setOtp(newOtp);
-      const lastIndex = Math.min(pasteData.length - 1, 5);
+      const lastIndex = Math.min(pasteData.length - 1, 3);
       inputRefs.current[lastIndex]?.focus();
 
-      if (pasteData.length === 6) {
-        triggerVerificationProcess(pasteData);
+      if (pasteData.length === 4) {
+        triggerOrbitalVerification(pasteData);
       }
     }
   };
 
-  // SIGNATURE VERIFICATION PIPELINE CONNECTED TO BACKEND
-  const triggerVerificationProcess = async (code) => {
-    setIsVerifying(true);
-    setVerificationStatus('verifying');
-    setErrorMessage('');
+  // =========================================================================
+  // 4 BOXES. ONE RING. ZERO DEPENDENCIES. 🌀
+  // SMTPLIB ORBITAL TRANSFORMATION PIPELINE
+  // =========================================================================
+  const triggerOrbitalVerification = async (code) => {
+    // 1. Stage: Curl onto orbit
+    setStage('curling');
 
-    // OPTION 2 BYPASS: Magic code for development when SMTP fails
-    if (code === '123456') {
-      setTimeout(() => {
-        setVerificationStatus('success');
-        if (window.confetti) window.confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    // 2. Stage: Spin a turn and a quarter (450 deg)
+    setTimeout(() => {
+      setStage('spinning');
+    }, 250);
+
+    // 3. Stage: Screws down into one tile
+    setTimeout(() => {
+      setStage('screwing');
+    }, 1350);
+
+    // 4. Verification Check against Backend smtplib verify-otp endpoint
+    setTimeout(async () => {
+      let isSuccess = false;
+
+      try {
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+        const res = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: activeEmail,
+            otp: code
+          })
+        });
+
+        const data = await res.json();
+        if (data.success && data.verified) {
+          isSuccess = true;
+        } else {
+          setErrorMessage(data.error || 'Invalid 4-digit verification code.');
+        }
+      } catch (e) {
+        setErrorMessage('Could not connect to Python smtplib verification endpoint.');
+      }
+
+      if (isSuccess) {
+        // "Colour is reserved for verdicts: attention is just light, green only lands when you've earned it. ✅"
+        setStage('verdict_success');
+        if (window.confetti) {
+          window.confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        }
         setTimeout(() => {
-          onSuccessRedirect();
+          if (onSuccessRedirect) onSuccessRedirect();
           onClose();
           resetState();
-        }, 2200);
-      }, 1000);
-      return;
-    }
-
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: activeEmail,
-      token: code,
-      type: 'signup'
-    });
-
-    if (error) {
-      setVerificationStatus('error');
-      setErrorMessage(error.message);
-      setIsVerifying(false);
-    } else {
-      setVerificationStatus('success');
-      if (window.confetti) {
-        window.confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        }, 1800);
+      } else {
+        setStage('verdict_error');
+        setTimeout(() => {
+          // Reset back to input so user can re-try
+          setStage('input');
+          setOtp(['', '', '', '']);
+          setTimeout(() => inputRefs.current[0]?.focus(), 150);
+        }, 1400);
       }
-      setTimeout(() => {
-        onSuccessRedirect();
-        onClose();
-        resetState();
-      }, 2200);
-    }
+
+    }, 1800);
   };
 
   const handleResend = async () => {
     if (!canResend) return;
     setCountdown(60);
     setCanResend(false);
-    setOtp(['', '', '', '', '', '']);
-    setVerificationStatus('idle');
+    setOtp(['', '', '', '']);
+    setStage('input');
     setErrorMessage('');
 
-    await supabase.auth.resend({
-      type: 'signup',
-      email: activeEmail
-    });
-    
+    await dispatchSmtpOtp();
     setTimeout(() => inputRefs.current[0]?.focus(), 100);
   };
 
   const resetState = () => {
-    setOtp(['', '', '', '', '', '']);
-    setVerificationStatus('idle');
+    setOtp(['', '', '', '']);
+    setStage('input');
     setErrorMessage('');
-    setIsVerifying(false);
     setCountdown(60);
     setCanResend(false);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-2xl animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-2xl animate-fade-in font-sans">
       
       {/* Modal Container Card */}
-      <div className={`relative w-full max-w-md glass-panel p-8 border border-white/15 rounded-3xl shadow-2xl shadow-cyan-500/20 text-center transition-all duration-500 ${
-        verificationStatus === 'error' ? 'animate-shake' : ''
-      } ${
-        verificationStatus === 'success' ? 'scale-105 border-emerald-400/60 shadow-emerald-500/40' : ''
+      <div className={`relative w-full max-w-sm glass-panel p-8 border border-white/15 rounded-3xl shadow-2xl text-center transition-all duration-500 overflow-hidden ${
+        stage === 'verdict_success' ? 'border-emerald-400/80 shadow-emerald-500/30' : (stage === 'verdict_error' ? 'border-red-500/80 shadow-red-500/30' : 'shadow-cyan-500/20')
       }`}>
         
+        {/* Subtle Ambient Glow */}
+        <div className={`absolute -top-24 -right-24 w-52 h-52 rounded-full blur-3xl pointer-events-none transition-all duration-700 ${
+          stage === 'verdict_success' ? 'bg-emerald-500/30' : (stage === 'verdict_error' ? 'bg-red-500/30' : 'bg-cyan-500/15')
+        }`} />
+
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+          className="absolute top-5 right-5 p-2 rounded-full bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-colors z-10"
         >
           <X className="w-4 h-4" />
         </button>
 
-        {/* Top Header Icon */}
-        <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-500/20 via-blue-600/20 to-emerald-500/20 border border-cyan-500/40 flex items-center justify-center mb-6 shadow-lg shadow-cyan-500/10">
-          {verificationStatus === 'success' ? (
-            <CheckCircle2 className="w-8 h-8 text-emerald-400 animate-bounce" />
-          ) : verificationStatus === 'error' ? (
-            <AlertCircle className="w-8 h-8 text-red-500" />
-          ) : (
-            <Sparkles className="w-8 h-8 text-cyan-400 animate-pulse" />
-          )}
-        </div>
-
-        {/* Heading & Subtitle */}
-        <h3 className="text-2xl font-extrabold text-white font-outfit tracking-tight">
-          Verify your Gmail address
-        </h3>
-        <p className="text-xs text-cyan-400 mt-2 font-mono font-bold bg-cyan-500/10 py-1 px-3 rounded-full border border-cyan-500/30 inline-block">
-          {activeEmail}
-        </p>
-        <p className="text-xs text-gray-400 mt-2 font-medium">
-          We sent a secure 6-digit verification code to your registered Gmail inbox
-        </p>
-
-
-
-        {/* CLEAN STATIC 6-DIGIT OTP BOX MATRIX (NO ANIMATION SPINNER) */}
-        <div className="mt-6 relative inline-block">
-          <div className="flex items-center justify-center gap-2.5 sm:gap-3">
-            {otp.map((digit, idx) => (
-              <input
-                key={idx}
-                ref={(el) => (inputRefs.current[idx] = el)}
-                type="text"
-                maxLength={1}
-                value={digit}
-                disabled={verificationStatus === 'verifying' || verificationStatus === 'success'}
-                onChange={(e) => handleChange(idx, e.target.value)}
-                onKeyDown={(e) => handleKeyDown(idx, e)}
-                onPaste={handlePaste}
-                className={`otp-box ${digit ? 'filled' : ''} ${
-                  verificationStatus === 'error' ? 'error' : ''
-                }`}
-              />
-            ))}
+        {/* Brand / Header */}
+        <div className="mb-5">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[11px] font-mono mb-3">
+            <Mail className="w-3 h-3 text-cyan-400" />
+            <span>PYTHON SMTPLIB DISPATCHED</span>
           </div>
+          <h3 className="text-xl sm:text-2xl font-black text-white font-outfit tracking-tight">
+            Security Verification
+          </h3>
+          <p className="text-xs text-gray-400 mt-1">
+            4-digit code dispatched to <span className="text-white font-mono font-bold">{activeEmail}</span>
+          </p>
+        </div>
 
-          {/* Spark Particle Effect Orbits */}
-          {verificationStatus === 'verifying' && (
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 absolute -top-1 animate-ping"></span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 absolute -bottom-1 animate-ping" style={{ animationDelay: '0.5s' }}></span>
+        {/* ========================================================= */}
+        {/* THE 4 BOXES -> ORBITAL RING -> ONE TILE CONTAINER */}
+        {/* ========================================================= */}
+        <div className="otp-stage-container my-6">
+
+          {/* STAGE 0: HORIZONTAL 4 BOXES (INPUT MODE) */}
+          {stage === 'input' && (
+            <div className="flex items-center justify-center gap-3 animate-fade-in">
+              {otp.map((digit, idx) => (
+                <input
+                  key={idx}
+                  ref={(el) => (inputRefs.current[idx] = el)}
+                  type="text"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => handleChange(idx, e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(idx, e)}
+                  onPaste={handlePaste}
+                  className={`otp-box-modern ${digit ? 'filled' : ''}`}
+                  placeholder="•"
+                  autoComplete="off"
+                />
+              ))}
+            </div>
+          )}
+
+          {/* STAGE 1, 2, 3: ORBITAL HUB (CURLING, SPINNING, SCREWING DOWN) */}
+          {(stage === 'curling' || stage === 'spinning' || stage === 'screwing') && (
+            <div className={`orbital-hub ${stage === 'spinning' ? 'spinning' : ''} ${stage === 'screwing' ? 'screwing-down' : ''}`}>
+              
+              {/* Dashed Pure Light Orbit Track Ring */}
+              <div className="orbital-ring-track" />
+
+              {/* 4 Curled Boxes on Orbit */}
+              {otp.map((digit, idx) => (
+                <div 
+                  key={idx} 
+                  className={`orbital-item orbital-item-${idx}`}
+                >
+                  <span>{digit}</span>
+                </div>
+              ))}
+
+              {/* Central Light Spark */}
+              <div className="w-3 h-3 rounded-full bg-white shadow-lg shadow-white animate-ping" />
+
+            </div>
+          )}
+
+          {/* STAGE 4: ONE VERIFIED TILE (VERDICT ARRIVAL) */}
+          {(stage === 'verdict_success' || stage === 'verdict_error') && (
+            <div className={`verified-tile ${stage === 'verdict_success' ? 'verdict-success' : 'verdict-error'}`}>
+              {stage === 'verdict_success' ? (
+                <div className="w-10 h-10 rounded-full bg-emerald-400/20 border border-emerald-400 flex items-center justify-center">
+                  <Check className="w-6 h-6 text-emerald-400 stroke-[3]" />
+                </div>
+              ) : (
+                <AlertCircle className="w-7 h-7 text-red-500" />
+              )}
             </div>
           )}
 
         </div>
 
-        {/* VERIFYING CENTER STATUS DISPLAY */}
-        <div className="min-h-[48px] mt-6 flex items-center justify-center">
-          {verificationStatus === 'verifying' && (
-            <div className="flex flex-col items-center gap-1.5 animate-fade-in">
-              <span className="text-sm font-extrabold text-cyan-400 font-mono tracking-wider animate-pulse flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400 animate-spin" />
-                {verifyingText}
-              </span>
-              <span className="text-[10px] text-gray-400 font-medium">Securing quantum socket layer...</span>
-            </div>
+        {/* Dynamic Status / Verdict Message */}
+        <div className="min-h-[36px] flex items-center justify-center">
+          {stage === 'input' && (
+            <span className="text-xs text-gray-400 flex items-center gap-1.5 justify-center">
+              {isSendingOtp ? (
+                <span className="text-cyan-400 font-mono flex items-center gap-1 animate-pulse">
+                  <RefreshCw className="w-3 h-3 animate-spin" /> Dispathing via smtplib...
+                </span>
+              ) : (
+                <span>Type the last digit to initiate orbital verification</span>
+              )}
+            </span>
           )}
 
-          {verificationStatus === 'success' && (
-            <div className="flex flex-col items-center gap-2 animate-fade-in">
-              <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center">
-                <svg className="w-6 h-6 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                  <path className="checkmark-path" d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <span className="text-sm font-extrabold text-emerald-400 tracking-wide">
-                Verification Successful! Redirecting...
-              </span>
-            </div>
+          {(stage === 'curling' || stage === 'spinning' || stage === 'screwing') && (
+            <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5 animate-pulse">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+              <span>Verifying smtplib Token Orbit...</span>
+            </span>
           )}
 
-          {verificationStatus === 'error' && (
-            <div className="flex flex-col items-center gap-1 animate-fade-in">
-              <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 px-3">
-                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                {errorMessage || 'Invalid Verification Code.'}
-              </span>
-              <span className="text-[10px] text-gray-400">DEV MODE: Enter 123456 to bypass SMTP errors</span>
-            </div>
+          {stage === 'verdict_success' && (
+            <span className="text-xs font-black font-outfit text-emerald-400 tracking-wide flex items-center gap-1.5 animate-fade-in">
+              <span>✓ SMTPLIB AUTHORIZATION VERIFIED</span>
+            </span>
           )}
 
-          {verificationStatus === 'idle' && (
-            <span className="text-xs text-gray-400">
-              Enter 6-digit code or paste from clipboard
+          {stage === 'verdict_error' && (
+            <span className="text-xs font-bold text-red-400 flex items-center gap-1 animate-shake">
+              <AlertCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+              <span>{errorMessage || 'Incorrect Code. Resetting...'}</span>
             </span>
           )}
         </div>
 
-        {/* RESEND OTP SECTION WITH COUNTDOWN */}
-        <div className="mt-6 pt-5 border-t border-white/10 flex items-center justify-between text-xs">
+        {/* Resend OTP Section */}
+        <div className="mt-5 pt-4 border-t border-white/10 flex items-center justify-between text-xs">
           <div className="flex items-center gap-1.5 text-gray-400">
-            <span>Didn't receive code?</span>
+            <span>Didn't receive?</span>
             {countdown > 0 ? (
-              <span className="font-mono font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20">
+              <span className="font-mono font-bold text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20">
                 {countdown}s
               </span>
             ) : null}
@@ -318,22 +373,21 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
 
           <button
             onClick={handleResend}
-            disabled={!canResend || verificationStatus === 'verifying'}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold transition-all ${
-              canResend
-                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-400/50 hover:bg-cyan-500/30 hover:scale-105 shadow-md shadow-cyan-500/20 cursor-pointer'
-                : 'bg-white/5 text-gray-500 border border-white/5 cursor-not-allowed'
+            disabled={!canResend || stage !== 'input' || isSendingOtp}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
+              canResend && stage === 'input'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 hover:bg-cyan-500/30 hover:scale-105 cursor-pointer shadow-md shadow-cyan-500/20'
+                : 'bg-white/5 text-gray-600 border border-white/5 cursor-not-allowed'
             }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${canResend ? 'animate-spin' : ''}`} />
-            <span>give new code</span>
+            <RefreshCw className={`w-3 h-3 ${canResend ? 'animate-spin' : ''}`} />
+            <span>Resend via SMTP</span>
           </button>
         </div>
 
-        {/* Security badge */}
-        <div className="mt-6 flex items-center justify-center gap-1.5 text-[10px] text-gray-500">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Protected by AES-256 TaxPro Quantum Shield</span>
+        {/* Security Info */}
+        <div className="mt-4 text-[10px] text-gray-500 font-mono">
+          <span>Protected by Python smtplib TLS Transmission</span>
         </div>
 
       </div>

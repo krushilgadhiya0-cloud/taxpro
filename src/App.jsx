@@ -9,6 +9,7 @@ import PaymentsView from './components/PaymentsView';
 import WorkersView from './components/WorkersView';
 import AttendanceView from './components/AttendanceView';
 import AIAssistant from './components/AIAssistant';
+import VoicePillTrigger from './components/VoicePillTrigger';
 import AuthModal from './components/AuthModal';
 import SecurityPanel from './components/SecurityPanel';
 import PricingSection from './components/PricingSection';
@@ -34,11 +35,40 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    try {
+      const session = localStorage.getItem('taxpro_pg_session');
+      const superadmin = localStorage.getItem('taxpro_secret_superadmin');
+      const profile = localStorage.getItem('taxpro_profile_completed');
+      const email = localStorage.getItem('taxpro_user_email');
+      return Boolean(session || superadmin || (profile && email));
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const [userRole, setUserRole] = useState(() => {
+    return localStorage.getItem('taxpro_user_role') || 'Admin';
+  });
+
+  const [userEmail, setUserEmail] = useState(() => {
+    return localStorage.getItem('taxpro_user_email') || localStorage.getItem('taxpro_secret_superadmin') || '';
+  });
+
+  const [loading, setLoading] = useState(() => {
+    try {
+      const session = localStorage.getItem('taxpro_pg_session');
+      const superadmin = localStorage.getItem('taxpro_secret_superadmin');
+      const profile = localStorage.getItem('taxpro_profile_completed');
+      const email = localStorage.getItem('taxpro_user_email');
+      return !(session || superadmin || (profile && email));
+    } catch (e) {
+      return true;
+    }
+  });
+
   const [activeTab, setActiveTab] = useState('home');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pendingTab, setPendingTab] = useState(null);
-  const [userRole, setUserRole] = useState('Employee');
 
   const [isOTPModalOpen, setIsOTPModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -47,9 +77,29 @@ export default function App() {
   const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [authMode, setAuthMode] = useState('login');
-  const [userEmail, setUserEmail] = useState('');
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
+
+  // GLOBAL SHORTCUT KEY LISTENER FOR VOICE AI (Ctrl+M / Alt+M / Cmd+M)
+  useEffect(() => {
+    const handleVoiceShortcut = (e) => {
+      if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault();
+        setIsAIAssistantOpen((prev) => {
+          const next = !prev;
+          if (next) {
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('taxpro_start_voice'));
+            }, 150);
+            showToast('🎙️ AI Voice Activated via Shortcut (Ctrl + M / Alt + M)', 'info');
+          }
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleVoiceShortcut);
+    return () => window.removeEventListener('keydown', handleVoiceShortcut);
+  }, []);
 
   // GLOBAL DARK MODE INJECTOR ON BOOTUP
   useEffect(() => {
@@ -59,11 +109,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Ensure hovering # is removed on mount regardless
-    if (window.location.href.endsWith('#')) {
-      window.history.replaceState(null, null, window.location.pathname + window.location.search);
-    }
-
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -104,17 +149,26 @@ export default function App() {
            return;
         }
         
-        const { data: memberCheck } = await supabase.from('team_members').select('id, role, status').ilike('email', userMail).single();
+        const { data: memberCheck } = await supabase.from('team_members').select('id, role, status, permissions').ilike('email', userMail).single();
         
-        // Strict Authorization Layer (Securing firm from deleted employees & randoms)
-        const allowedAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com'];
+        // Strict Authorization Layer (Securing firm from disabled accounts & revoked access)
+        const allowedAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'superadmin@taxpro.com'];
         const isAuthorizedAdmin = allowedAdmins.includes(userMail) || localStorage.getItem('taxpro_secret_superadmin') === userMail;
 
-        if ((!memberCheck && !isAuthorizedAdmin) || (memberCheck && memberCheck.status === 'Past')) {
+        const isRevoked = memberCheck && (memberCheck.status === 'Past' || memberCheck.status === 'Access Revoked' || memberCheck.status === 'Suspended');
+
+        if ((!memberCheck && !isAuthorizedAdmin) || (isRevoked && !isAuthorizedAdmin)) {
            await supabase.auth.signOut();
-           showToast('Access Revoked: Your account has been disabled. You are no longer authorized to enter the firm.', 'error');
+           localStorage.removeItem('taxpro_pg_session');
+           localStorage.removeItem('taxpro_user_role');
+           localStorage.removeItem('taxpro_user_permissions');
+           showToast('🔒 Access Revoked: An Administrator has revoked or suspended your access to this firm workspace.', 'error');
            setIsAuthenticated(false);
            return;
+        }
+
+        if (memberCheck?.permissions) {
+          localStorage.setItem('taxpro_user_permissions', typeof memberCheck.permissions === 'string' ? memberCheck.permissions : JSON.stringify(memberCheck.permissions));
         }
 
         const isNewUser = session.user?.created_at 
@@ -124,12 +178,14 @@ export default function App() {
         if (memberCheck || session.user?.user_metadata?.profile_completed || !isNewUser) {
           localStorage.setItem('taxpro_profile_completed', 'true');
           
-          let role = 'Employee';
+          let role = localStorage.getItem('taxpro_user_role') || 'Employee';
           if (isAuthorizedAdmin) {
             role = 'Admin';
           } else if (memberCheck) {
-            role = memberCheck.role === 'Administrator' ? 'Admin' : 'Employee';
-            await supabase.from('team_members').update({ status: 'Active' }).ilike('email', userMail);
+            role = memberCheck.role === 'Administrator' ? 'Admin' : (memberCheck.role === 'Manager' ? 'Manager' : (localStorage.getItem('taxpro_user_role') || 'Employee'));
+            if (memberCheck.status === 'Active') {
+              await supabase.from('team_members').update({ status: 'Active' }).ilike('email', userMail);
+            }
           }
           
           localStorage.setItem('taxpro_user_role', role);
@@ -296,23 +352,18 @@ export default function App() {
           onShowToast={showToast}
         />
 
-        {/* FLOATING AI ORB BUTTON */}
-        {!isAIAssistantOpen && (
-          <button
-            onClick={() => setIsAIAssistantOpen(true)}
-            className="fixed bottom-6 right-6 z-40 p-4 rounded-full bg-gradient-to-tr from-cyan-500 via-blue-600 to-purple-600 text-white shadow-2xl shadow-cyan-500/40 hover:scale-110 transition-transform group"
-            title="Launch Neural AI"
-          >
-            <Bot className="w-6 h-6 group-hover:rotate-12 transition-transform" />
-            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-black animate-ping"></span>
-          </button>
-        )}
+        {/* FLOATING HOLOGRAPHIC AI VOICE PILL */}
+        <VoicePillTrigger
+          onOpenAI={() => setIsAIAssistantOpen(true)}
+          isAIAssistantOpen={isAIAssistantOpen}
+        />
 
         <AIAssistant
           isOpen={isAIAssistantOpen}
           onClose={() => setIsAIAssistantOpen(false)}
           onShowToast={showToast}
           onLogout={handleLogout}
+          screenContext={{ activeTab: localStorage.getItem('taxpro_active_nav') || 'Dashboard', userRole, userEmail }}
         />
       </div>
     );
@@ -342,43 +393,15 @@ export default function App() {
       <main className="relative z-10">
         
         {activeTab === 'home' && (
-          <>
-            <HeroSection
-              onGetStarted={() => handleOpenAuth('login')}
-              onWatchDemo={() => {
-                showToast('Launching TaxPro AI Interactive Product Tour...', 'info');
-                setActiveTab('dashboard');
-              }}
-              onExploreDashboard={() => setActiveTab('dashboard')}
-              onPWAInstall={() => setIsPWAModalOpen(true)}
-            />
-            {/* Quick Teaser Grid on Home (Static Non-Clickable Info Cards) */}
-            <div className="max-w-7xl mx-auto px-4 pb-20 grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="glass-panel p-6 border border-cyan-500/20 cursor-default">
-                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-4">
-                  <ShieldCheck className="w-5 h-5 text-cyan-400" />
-                </div>
-                <h3 className="text-lg font-bold font-outfit text-white">Biometric Scanner Terminal</h3>
-                <p className="text-xs text-gray-400 mt-2">Laser Fingerprint sweep, QR scanning, and Face Mesh recognition.</p>
-              </div>
-
-              <div className="glass-panel p-6 border border-emerald-500/20 cursor-default">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-4">
-                  <KeyRound className="w-5 h-5 text-emerald-400" />
-                </div>
-                <h3 className="text-lg font-bold font-outfit text-white">Signature OTP Screen</h3>
-                <p className="text-xs text-gray-400 mt-2">Continuous gradient ring spinner, particles, and verification pulses.</p>
-              </div>
-
-              <div className="glass-panel p-6 border border-purple-500/20 cursor-default">
-                <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center mb-4">
-                  <Bot className="w-5 h-5 text-purple-400" />
-                </div>
-                <h3 className="text-lg font-bold font-outfit text-white">Floating Neural AI</h3>
-                <p className="text-xs text-gray-400 mt-2">Voice soundwave toggle, expense predictions, and tax reports.</p>
-              </div>
-            </div>
-          </>
+          <HeroSection
+            onGetStarted={() => handleOpenAuth('login')}
+            onWatchDemo={() => {
+              showToast('Launching TaxPro AI Interactive Product Tour...', 'info');
+              setActiveTab('dashboard');
+            }}
+            onExploreDashboard={() => setActiveTab('dashboard')}
+            onPWAInstall={() => setIsPWAModalOpen(true)}
+          />
         )}
 
         {activeTab === 'dashboard' && (
@@ -446,31 +469,30 @@ export default function App() {
         email={userEmail}
         onClose={() => setIsOTPModalOpen(false)}
         onSuccessRedirect={async () => {
-          showToast('✓ Gmail OTP Verification Successful!', 'success');
-          if (userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com') {
-            setIsAuthenticated(true);
-            return;
-          }
+          showToast('✓ OTP Verification Successful!', 'success');
+          localStorage.setItem('taxpro_profile_completed', 'true');
           
-          const { data: memberCheck } = await supabase.from('team_members').select('id, role').eq('email', userEmail).single();
-          if (memberCheck) {
-            localStorage.setItem('taxpro_profile_completed', 'true');
-            const role = memberCheck.role === 'Administrator' ? 'Admin' : 'Employee';
-            localStorage.setItem('taxpro_user_role', role);
-            setUserRole(role);
-            await supabase.from('team_members').update({ status: 'Active' }).eq('email', userEmail);
-          } else {
-            localStorage.setItem('taxpro_user_role', 'Admin');
-            setUserRole('Admin');
+          let targetRole = localStorage.getItem('taxpro_user_role') || 'Admin';
+          const cleanEmail = (userEmail || localStorage.getItem('taxpro_user_email') || '').trim();
+
+          if (cleanEmail) {
+            try {
+              const { data: memberCheck } = await supabase.from('team_members').select('id, role').ilike('email', cleanEmail).single();
+              if (memberCheck) {
+                if (memberCheck.role === 'Administrator') targetRole = 'Admin';
+                else if (memberCheck.role === 'Manager') targetRole = 'Manager';
+                else targetRole = 'Employee';
+                await supabase.from('team_members').update({ status: 'Active' }).ilike('email', cleanEmail);
+              }
+            } catch(e) {}
           }
 
-          if (localStorage.getItem('taxpro_profile_completed')) {
-            setIsAuthenticated(true);
-            setActiveTab(pendingTab || 'dashboard');
-            setPendingTab(null);
-          } else {
-            setIsProfileSetupOpen(true);
-          }
+          localStorage.setItem('taxpro_user_role', targetRole);
+          setUserRole(targetRole);
+          setIsAuthenticated(true);
+          setActiveTab(pendingTab || 'dashboard');
+          setPendingTab(null);
+          setIsOTPModalOpen(false);
         }}
       />
 
@@ -490,32 +512,38 @@ export default function App() {
           setIsAuthModalOpen(false);
           setIsForgotPasswordModalOpen(true);
         }}
-        onLoginSuccess={async () => {
-          showToast('✓ Authentication successful!', 'success');
-          if (userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com') {
-            setIsAuthenticated(true);
-            return;
+        onLoginSuccess={async (loggedInEmail, roleOverride) => {
+          const finalEmail = (loggedInEmail || userEmail || localStorage.getItem('taxpro_user_email') || '').trim();
+          if (finalEmail) {
+            setUserEmail(finalEmail);
+            localStorage.setItem('taxpro_user_email', finalEmail);
           }
 
-          const { data: memberCheck } = await supabase.from('team_members').select('id, role').eq('email', userEmail).single();
-          if (memberCheck) {
-            localStorage.setItem('taxpro_profile_completed', 'true');
-            const role = memberCheck.role === 'Administrator' ? 'Admin' : 'Employee';
-            localStorage.setItem('taxpro_user_role', role);
-            setUserRole(role);
-            await supabase.from('team_members').update({ status: 'Active' }).eq('email', userEmail);
-          } else {
-            localStorage.setItem('taxpro_user_role', 'Admin');
-            setUserRole('Admin');
+          localStorage.setItem('taxpro_profile_completed', 'true');
+          
+          let targetRole = roleOverride || localStorage.getItem('taxpro_user_role') || 'Admin';
+          
+          if (finalEmail) {
+            try {
+              const { data: memberCheck } = await supabase.from('team_members').select('id, role, status').ilike('email', finalEmail).single();
+              if (memberCheck) {
+                if (memberCheck.role === 'Administrator') targetRole = 'Admin';
+                else if (memberCheck.role === 'Manager') targetRole = 'Manager';
+                else if (!roleOverride) targetRole = 'Employee';
+                
+                await supabase.from('team_members').update({ status: 'Active' }).ilike('email', finalEmail);
+              }
+            } catch (err) {}
           }
 
-          if (localStorage.getItem('taxpro_profile_completed')) {
-            setIsAuthenticated(true);
-            setActiveTab(pendingTab || 'dashboard');
-            setPendingTab(null);
-          } else {
-            setIsProfileSetupOpen(true);
-          }
+          localStorage.setItem('taxpro_user_role', targetRole);
+          setUserRole(targetRole);
+          setIsAuthenticated(true);
+          setActiveTab(pendingTab || 'dashboard');
+          setPendingTab(null);
+          setIsAuthModalOpen(false);
+
+          showToast(`✓ Authentication successful as ${targetRole}! Welcome to TaxPro.`, 'success');
         }}
         onShowToast={showToast}
       />
@@ -558,6 +586,21 @@ export default function App() {
           setActiveTab(destination);
           setPendingTab(null);
         }}
+      />
+
+      {/* FLOATING HOLOGRAPHIC AI VOICE PILL (LANDING VIEW) */}
+      <VoicePillTrigger
+        onOpenAI={() => setIsAIAssistantOpen(true)}
+        isAIAssistantOpen={isAIAssistantOpen}
+      />
+
+      {/* AUTONOMOUS NEURAL VOICE AI ASSISTANT */}
+      <AIAssistant
+        isOpen={isAIAssistantOpen}
+        onClose={() => setIsAIAssistantOpen(false)}
+        onShowToast={showToast}
+        onLogout={handleLogout}
+        screenContext={{ activeTab, userRole: 'Public / Guest', userEmail: userEmail || 'Guest' }}
       />
 
       {/* FOOTER */}

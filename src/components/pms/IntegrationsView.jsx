@@ -1,26 +1,47 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Mail, MessageCircle, Check, Info, Settings, X, Loader2 } from 'lucide-react';
+import { Mail, MessageCircle, Check, Info, Settings, X, Loader2 } from 'lucide-react';
 
 export default function IntegrationsView({ onShowToast }) {
-  const [activeModal, setActiveModal] = useState(null); // 'google', 'whatsapp', 'smtp'
+  const [activeModal, setActiveModal] = useState(null); // 'whatsapp', 'smtp'
   const [isTesting, setIsTesting] = useState(false);
 
   // States for configs
   const [smtpConfig, setSmtpConfig] = useState({ host: '', port: '587', user: '', pass: '', sender_email: '', target_email: '' });
   const [whatsappConfig, setWhatsappConfig] = useState({ block_token: '', phone_id: '', target_phone: '' });
-  const [googleConfig, setGoogleConfig] = useState({ client_id: '', client_secret: '', refresh_token: '' });
   
   // Status definitions
-  const [status, setStatus] = useState({ google: false, whatsapp: false, smtp: false });
+  const [status, setStatus] = useState({ whatsapp: false, smtp: false });
 
-  // Load from LocalStorage
+  // Load from SQL Backend with LocalStorage fallback
   useEffect(() => {
-    const s = localStorage.getItem('taxpro_smtp');
-    const w = localStorage.getItem('taxpro_wa');
-    const g = localStorage.getItem('taxpro_gc');
-    if (s) { setSmtpConfig(JSON.parse(s)); setStatus(prev => ({...prev, smtp: true})); }
-    if (w) { setWhatsappConfig(JSON.parse(w)); setStatus(prev => ({...prev, whatsapp: true})); }
-    if (g) { setGoogleConfig(JSON.parse(g)); setStatus(prev => ({...prev, google: true})); }
+    const fetchSqlConfig = async () => {
+      try {
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+        const res = await fetch(`${baseUrl}/api/integrations/config`);
+        const data = await res.json();
+        if (data.success && data.configs) {
+          if (data.configs.smtp && data.configs.smtp.config) {
+            setSmtpConfig(data.configs.smtp.config);
+            setStatus(prev => ({ ...prev, smtp: data.configs.smtp.isActive }));
+          }
+          if (data.configs.whatsapp && data.configs.whatsapp.config) {
+            setWhatsappConfig(data.configs.whatsapp.config);
+            setStatus(prev => ({ ...prev, whatsapp: data.configs.whatsapp.isActive }));
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn('[Integrations] Falling back to local storage cache:', err.message);
+      }
+
+      // Fallback
+      const s = localStorage.getItem('taxpro_smtp');
+      const w = localStorage.getItem('taxpro_wa');
+      if (s) { setSmtpConfig(JSON.parse(s)); setStatus(prev => ({...prev, smtp: true})); }
+      if (w) { setWhatsappConfig(JSON.parse(w)); setStatus(prev => ({...prev, whatsapp: true})); }
+    };
+
+    fetchSqlConfig();
   }, []);
 
   const handleTestAndSave = async (type) => {
@@ -34,9 +55,6 @@ export default function IntegrationsView({ onShowToast }) {
     } else if (type === 'whatsapp') {
       payload = whatsappConfig;
       endpoint = '/api/integrations/test-whatsapp';
-    } else if (type === 'google') {
-      payload = googleConfig;
-      endpoint = '/api/integrations/test-calendar';
     }
 
     try {
@@ -53,12 +71,11 @@ export default function IntegrationsView({ onShowToast }) {
         throw new Error(data.error || 'Server rejected the request.');
       }
       
-      if(onShowToast) onShowToast(data.message, 'success');
+      if(onShowToast) onShowToast(data.message || `Saved to PostgreSQL SQL Database!`, 'success');
       
-      // Save locally
+      // Save locally as cache
       if (type === 'smtp') { localStorage.setItem('taxpro_smtp', JSON.stringify(smtpConfig)); }
       if (type === 'whatsapp') { localStorage.setItem('taxpro_wa', JSON.stringify(whatsappConfig)); }
-      if (type === 'google') { localStorage.setItem('taxpro_gc', JSON.stringify(googleConfig)); }
 
       setStatus(prev => ({...prev, [type]: true}));
       setActiveModal(null);
@@ -74,40 +91,11 @@ export default function IntegrationsView({ onShowToast }) {
     <div className="p-4 sm:p-6 lg:p-8 bg-[#f9fafb] min-h-screen text-gray-800 relative">
       <div className="mb-8">
         <h1 className="text-2xl font-extrabold font-outfit text-gray-900">Integrations</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage active system connections, external messaging nodes, and calendar synchronizations.</p>
+        <p className="text-sm text-gray-500 mt-1">Manage active system connections, custom email SMTP servers, and WhatsApp Business API messaging nodes.</p>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
         
-        {/* Google Calendar Card */}
-        <div className="bg-white border border-gray-200 rounded-[20px] p-6 shadow-sm flex flex-col gap-5">
-           <div className="flex justify-between items-start">
-              <div className="flex gap-4 items-center">
-                 <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center shadow-md flex-shrink-0">
-                    <Calendar className="w-6 h-6 text-white" />
-                 </div>
-                 <div>
-                    <h3 className="font-bold text-gray-900 text-lg">Google Calendar</h3>
-                    <p className="text-gray-500 text-xs mt-0.5">Sync tasks with due dates to your calendar</p>
-                 </div>
-              </div>
-              <div className={`px-3 py-1 rounded-full text-[11px] font-bold border flex items-center gap-1 ${status.google ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-gray-100 text-gray-500 border-transparent'}`}>
-                 {status.google && <Check className="w-3 h-3" />} {status.google ? 'Active' : 'Unlinked'}
-              </div>
-           </div>
-
-           <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex gap-3 mt-1 items-start">
-              <Info className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-gray-500 font-medium">Configure Google Cloud API OAuth credentials to sync deadlines instantly to the cloud.</p>
-           </div>
-
-           <div className="mt-auto pt-4">
-              <button onClick={() => setActiveModal('google')} className="px-5 py-2.5 bg-[#1e1e2d] hover:bg-black text-white font-bold text-sm rounded-xl transition-colors">
-                 {status.google ? 'Reconfigure Calendar' : 'Connect Calendar'}
-              </button>
-           </div>
-        </div>
-
         {/* WhatsApp Business Card */}
         <div className="bg-white border border-gray-200 rounded-[20px] p-6 shadow-sm flex flex-col gap-5">
            <div className="flex justify-between items-start">
@@ -140,7 +128,7 @@ export default function IntegrationsView({ onShowToast }) {
            </div>
 
            <div className="mt-4">
-              <button onClick={() => setActiveModal('whatsapp')} className="w-full py-3 bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors">
+              <button onClick={() => setActiveModal('whatsapp')} className="w-full py-3 bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer">
                  <Settings className="w-4 h-4" /> Setup Custom WhatsApp
               </button>
            </div>
@@ -177,7 +165,7 @@ export default function IntegrationsView({ onShowToast }) {
            </div>
 
            <div className="mt-4">
-              <button onClick={() => setActiveModal('smtp')} className="w-full py-3 bg-[#1e1e2d] hover:bg-black text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors">
+              <button onClick={() => setActiveModal('smtp')} className="w-full py-3 bg-[#1e1e2d] hover:bg-black text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2 shadow-sm transition-colors cursor-pointer">
                  <Settings className="w-4 h-4" /> Setup Custom SMTP
               </button>
            </div>
@@ -252,13 +240,10 @@ export default function IntegrationsView({ onShowToast }) {
                </div>
 
                <div className="flex items-center gap-3 mt-8">
-                 <button onClick={() => handleTestAndSave('smtp')} disabled={isTesting} className="flex-1 bg-[#6ba392] hover:bg-[#5a8c7b] text-white font-bold py-3 px-4 rounded-xl flex justify-center items-center gap-2 transition-colors">
+                 <button onClick={() => handleTestAndSave('smtp')} disabled={isTesting} className="flex-1 bg-[#6ba392] hover:bg-[#5a8c7b] text-white font-bold py-3 px-4 rounded-xl flex justify-center items-center gap-2 transition-colors cursor-pointer">
                    {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save</>}
                  </button>
-                 <button className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl flex items-center gap-2 hover:bg-gray-50 transition-colors">
-                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg> Verify
-                 </button>
-                 <button onClick={() => setActiveModal(null)} className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl hover:bg-gray-50 transition-colors">
+                 <button onClick={() => setActiveModal(null)} className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl hover:bg-gray-50 transition-colors cursor-pointer">
                    Cancel
                  </button>
                </div>
@@ -334,43 +319,14 @@ export default function IntegrationsView({ onShowToast }) {
                </div>
 
                <div className="flex items-center gap-3 mt-8">
-                 <button onClick={() => handleTestAndSave('whatsapp')} disabled={isTesting} className="flex-1 bg-[#6ba392] hover:bg-[#5a8c7b] text-white font-bold py-3 px-4 rounded-xl flex justify-center items-center gap-2 transition-colors">
+                 <button onClick={() => handleTestAndSave('whatsapp')} disabled={isTesting} className="flex-1 bg-[#6ba392] hover:bg-[#5a8c7b] text-white font-bold py-3 px-4 rounded-xl flex justify-center items-center gap-2 transition-colors cursor-pointer">
                    {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Connect</>}
                  </button>
-                 <button className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl flex items-center gap-2 hover:bg-gray-50 transition-colors">
-                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg> Verify
-                 </button>
-                 <button onClick={() => setActiveModal(null)} className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl hover:bg-gray-50 transition-colors">
+                 <button onClick={() => setActiveModal(null)} className="px-6 py-3 border border-gray-200 text-[#5f6368] font-bold rounded-xl hover:bg-gray-50 transition-colors cursor-pointer">
                    Cancel
                  </button>
                </div>
             </div>
-          )}
-
-          {/* Google Calendar Fallback Modal */}
-          {activeModal === 'google' && (
-             <div className="bg-white border-[2.5px] border-[#44b595] rounded-3xl p-6 w-full max-w-xl shadow-2xl relative animate-fade-in">
-                <button onClick={() => setActiveModal(null)} className="absolute top-4 right-4 text-gray-400 hover:text-black">
-                   <X className="w-5 h-5" />
-                </button>
-                <div className="flex gap-4 items-center mb-6">
-                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center flex-shrink-0 shadow-sm">
-                      <Calendar className="w-7 h-7 text-white" />
-                   </div>
-                   <div>
-                      <h3 className="font-extrabold text-[#202124] text-xl">Google Calendar OAuth</h3>
-                      <p className="text-[#80868b] text-sm mt-0.5">Acquire tokens from GCP Console.</p>
-                   </div>
-                </div>
-                <div className="space-y-4">
-                   <input value={googleConfig.client_id} onChange={e => setGoogleConfig({...googleConfig, client_id: e.target.value})} type="text" className="w-full border rounded-xl px-4 py-3 outline-none font-mono" placeholder="GCP Client ID" />
-                   <input value={googleConfig.client_secret} onChange={e => setGoogleConfig({...googleConfig, client_secret: e.target.value})} type="password" className="w-full border rounded-xl px-4 py-3 outline-none font-mono" placeholder="GCP Client Secret" />
-                   <input value={googleConfig.refresh_token} onChange={e => setGoogleConfig({...googleConfig, refresh_token: e.target.value})} type="password" className="w-full border rounded-xl px-4 py-3 outline-none font-mono" placeholder="Authorized Refresh Token" />
-                </div>
-                <button onClick={() => handleTestAndSave('google')} className="mt-6 w-full py-3 bg-[#6ba392] hover:bg-[#5a8c7b] text-white font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center">
-                   {isTesting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Connect Google Cloud'}
-                </button>
-             </div>
           )}
         </div>
       )}

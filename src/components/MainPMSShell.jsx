@@ -18,6 +18,11 @@ import {
   FileText, 
   DollarSign,
   Lock,
+  Unlock,
+  Eye,
+  EyeOff,
+  Shield,
+  ShieldCheck,
   X,
   LogOut,
   Sparkles,
@@ -34,7 +39,11 @@ import {
   Megaphone,
   RefreshCw,
   AlertCircle,
-  Plus
+  Plus,
+  Mic,
+  Camera,
+  Upload,
+  Trash2
 } from 'lucide-react';
 
 import DashboardView from './DashboardView';
@@ -58,43 +67,242 @@ import OwnerPaymentsView from './pms/OwnerPaymentsView';
 import PrivateChatView from './pms/PrivateChatView';
 import IntegrationsView from './pms/IntegrationsView';
 import SupportHelpView from './pms/SupportHelpView';
-import VoiceAIEngine from './VoiceAIEngine';
 import MembersPaymentView from './pms/MembersPaymentView';
 import OurPaymentView from './pms/OurPaymentView';
+import AIInsightsBar from './AIInsightsBar';
+import AIStudioPresenter from './pms/AIStudioPresenter';
+import CalendarActivityModal from './pms/CalendarActivityModal';
+import CalendarPageView from './pms/CalendarPageView';
+
+const SCREEN_SLUG_MAP = {
+  'dashboard': 'Dashboard',
+  'calendar': 'Calendar',
+  'timesheet': 'Calendar',
+  'ai-studio': 'AI Studio',
+  'ai-canvas': 'AI Studio',
+  'presenter': 'AI Studio',
+  'studio': 'AI Studio',
+  'clients': 'Clients',
+  'contact-person': 'Contact Person',
+  'projects': 'Projects',
+  'tasks': 'Tasks',
+  'to-do': 'To Do',
+  'todo': 'To Do',
+  'workload': 'Workload',
+  'team-members': 'Team Members',
+  'departments': 'Departments',
+  'fees-tracking': 'Fees Tracking',
+  'receipts-payments': 'Receipts & Payments',
+  'receipts': 'Receipts & Payments',
+  'owner-payments': 'Owner Payments',
+  'members-payment': 'Members Payment',
+  'our-payment': 'Our Payment',
+  'communication': 'Communication',
+  'private-chat': 'Private Chat',
+  'reports': 'Reports',
+  'ideas': 'Ideas',
+  'integrations': 'Integrations',
+  'support-help': 'Support & Help',
+  'settings': 'Settings'
+};
+
+const screenNameToSlug = (name) => {
+  return (name || 'Dashboard')
+    .toLowerCase()
+    .replace(/&/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+};
+
+const resolveInitialScreen = () => {
+  try {
+    const hash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+    if (hash && SCREEN_SLUG_MAP[hash]) {
+      return SCREEN_SLUG_MAP[hash];
+    }
+    const saved = localStorage.getItem('taxpro_active_nav');
+    if (saved) return saved;
+  } catch (e) {}
+  return 'Dashboard';
+};
 
 export default function MainPMSShell({ userRole, onLogout, onShowToast, onTriggerAI }) {
-  const [activeItem, setActiveItem] = useState(() => {
-    return localStorage.getItem('taxpro_active_nav') || 'Dashboard';
-  });
+  const [activeItem, setActiveItemState] = useState(() => resolveInitialScreen());
   const [userEmail, setUserEmail] = useState('');
-  
-  useEffect(() => {
-    const secretEmail = localStorage.getItem('taxpro_secret_superadmin');
-    if (secretEmail) {
-       setUserEmail(secretEmail);
-    } else {
-       const sbToken = localStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token');
-       if (sbToken) {
-          try {
-             const parsed = JSON.parse(sbToken);
-             if (parsed?.user?.email) setUserEmail(parsed.user.email);
-          } catch(e) {}
-       }
+
+  const navigateTo = (screenName, replace = false) => {
+    if (!screenName) return;
+    setActiveItemState(screenName);
+    localStorage.setItem('taxpro_active_nav', screenName);
+    const slug = screenNameToSlug(screenName);
+    const targetHash = `#/${slug}`;
+
+    if (replace) {
+      window.history.replaceState({ screen: screenName }, '', targetHash);
+    } else if (window.location.hash !== targetHash) {
+      window.history.pushState({ screen: screenName }, '', targetHash);
     }
+
+    window.dispatchEvent(new CustomEvent('taxpro_screen_changed', { detail: screenName }));
+  };
+
+  useEffect(() => {
+    // Initial sync of hash
+    const initialSlug = screenNameToSlug(activeItem);
+    if (window.location.hash !== `#/${initialSlug}`) {
+      window.history.replaceState({ screen: activeItem }, '', `#/${initialSlug}`);
+    }
+
+    // Chrome / Browser Back & Forward Navigation (PopState)
+    const handlePopState = (e) => {
+      let targetScreen = null;
+      if (e.state && e.state.screen) {
+        targetScreen = e.state.screen;
+      } else {
+        const hash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+        if (hash && SCREEN_SLUG_MAP[hash]) {
+          targetScreen = SCREEN_SLUG_MAP[hash];
+        } else {
+          targetScreen = 'Dashboard';
+        }
+      }
+
+      if (targetScreen) {
+        setActiveItemState(targetScreen);
+        localStorage.setItem('taxpro_active_nav', targetScreen);
+        window.dispatchEvent(new CustomEvent('taxpro_screen_changed', { detail: targetScreen }));
+      }
+    };
+
+    const handleAINavigate = (e) => {
+      if (e.detail) {
+        navigateTo(e.detail);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('ai_navigate', handleAINavigate);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('ai_navigate', handleAINavigate);
+    };
   }, []);
   
-  const profileName = userEmail ? userEmail.split('@')[0].replace(/[^a-zA-Z]/g, ' ') : 'Administrator';
-  const profileInitials = profileName.substring(0, 2).toUpperCase() || 'AD';
-  
   useEffect(() => {
-    localStorage.setItem('taxpro_active_nav', activeItem);
-  }, [activeItem]);
+    const loadUserIdentity = () => {
+      const savedEmail = localStorage.getItem('taxpro_user_email') || localStorage.getItem('taxpro_secret_superadmin');
+      if (savedEmail) {
+         setUserEmail(savedEmail);
+      } else {
+         const sbToken = localStorage.getItem('sb-fkgjhlsqwypqgmjwvwlq-auth-token');
+         if (sbToken) {
+            try {
+               const parsed = JSON.parse(sbToken);
+               if (parsed?.user?.email) setUserEmail(parsed.user.email);
+            } catch(e) {}
+         }
+      }
+      
+      const savedName = localStorage.getItem('taxpro_user_fullname');
+      if (savedName) setUserFullName(savedName);
+      
+      const savedDept = localStorage.getItem('taxpro_user_department');
+      if (savedDept) setUserDepartment(savedDept);
+      
+      const savedAvatar = localStorage.getItem('taxpro_user_avatar');
+      if (savedAvatar) setUserAvatar(savedAvatar);
+    };
+
+    loadUserIdentity();
+
+    const handleEmailChanged = (e) => {
+      if (e.detail) setUserEmail(e.detail);
+    };
+
+    const handleProfileUpdated = (e) => {
+      if (e.detail?.email) setUserEmail(e.detail.email);
+      if (e.detail?.name) setUserFullName(e.detail.name);
+    };
+
+    window.addEventListener('taxpro_email_changed', handleEmailChanged);
+    window.addEventListener('taxpro_profile_updated', handleProfileUpdated);
+
+    return () => {
+      window.removeEventListener('taxpro_email_changed', handleEmailChanged);
+      window.removeEventListener('taxpro_profile_updated', handleProfileUpdated);
+    };
+  }, []);
+  
+  const [userAvatar, setUserAvatar] = useState(() => localStorage.getItem('taxpro_user_avatar') || '');
+  const [userFullName, setUserFullName] = useState(() => localStorage.getItem('taxpro_user_fullname') || '');
+  const [userDepartment, setUserDepartment] = useState(() => localStorage.getItem('taxpro_user_department') || '');
+
+  const profileName = userFullName.trim() || (userEmail ? userEmail.split('@')[0].replace(/[^a-zA-Z]/g, ' ') : 'Administrator');
+  const profileInitials = userFullName.trim()
+    ? userFullName.trim().split(' ').filter(Boolean).map(w => w[0]).join('').substring(0, 2).toUpperCase()
+    : (profileName.substring(0, 2).toUpperCase() || 'AD');
+
+  const PRESET_AVATARS = [
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80',
+  ];
+
+  const handleAvatarUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      if (onShowToast) onShowToast('Image too large. Please select a photo under 5MB.', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (readerEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 180;
+        canvas.height = 180;
+        ctx.drawImage(img, 0, 0, 180, 180);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        
+        setUserAvatar(dataUrl);
+        localStorage.setItem('taxpro_user_avatar', dataUrl);
+        window.dispatchEvent(new CustomEvent('taxpro_avatar_changed', { detail: dataUrl }));
+        if (onShowToast) onShowToast('Profile avatar updated successfully!', 'success');
+      };
+      img.src = readerEvent.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSelectPresetAvatar = (presetUrl) => {
+    setUserAvatar(presetUrl);
+    localStorage.setItem('taxpro_user_avatar', presetUrl);
+    window.dispatchEvent(new CustomEvent('taxpro_avatar_changed', { detail: presetUrl }));
+    if (onShowToast) onShowToast('Preset avatar selected!', 'success');
+  };
+
+  const handleRemoveAvatar = () => {
+    setUserAvatar('');
+    localStorage.removeItem('taxpro_user_avatar');
+    window.dispatchEvent(new CustomEvent('taxpro_avatar_changed', { detail: '' }));
+    if (onShowToast) onShowToast('Avatar removed. Using initials.', 'info');
+  };
+
   const [liveClock, setLiveClock] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notificationTab, setNotificationTab] = useState('All');
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
+  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -104,12 +312,38 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
   const [broadcastSubject, setBroadcastSubject] = useState('');
   const [broadcastText, setBroadcastText] = useState('');
   
-  const [userDepartment, setUserDepartment] = useState('');
-  
   // Complaint Box State
   const [isComplainModalOpen, setIsComplainModalOpen] = useState(false);
   const [complainText, setComplainText] = useState('');
   const [isSubmittingComplain, setIsSubmittingComplain] = useState(false);
+
+  // Screen Privacy Lock State
+  const [isScreenLocked, setIsScreenLocked] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [lockError, setLockError] = useState('');
+  const [showUnlockPass, setShowUnlockPass] = useState(false);
+
+  const handleUnlockScreen = (e) => {
+    if (e) e.preventDefault();
+    const savedPin = localStorage.getItem('taxpro_lock_pin') || '1234';
+    const cleanInput = unlockPassword.trim();
+    
+    // Accept saved PIN, default '1234', 'admin', 'taxpro', or current user email
+    if (
+      cleanInput === savedPin || 
+      cleanInput === '1234' || 
+      cleanInput === 'admin' || 
+      cleanInput === 'taxpro' || 
+      (userEmail && cleanInput.toLowerCase() === userEmail.toLowerCase())
+    ) {
+      setIsScreenLocked(false);
+      setUnlockPassword('');
+      setLockError('');
+      if (onShowToast) onShowToast('Workspace unlocked successfully.', 'success');
+    } else {
+      setLockError('Incorrect PIN / Password. Default PIN is 1234.');
+    }
+  };
 
   useEffect(() => {
     const dept = localStorage.getItem('taxpro_user_department');
@@ -127,17 +361,31 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
     return () => clearInterval(interval);
   }, []);
 
-  // Keyboard shortcut Ctrl + K
+  // Keyboard shortcuts (Ctrl + K for Search, Ctrl + L for Screen Lock)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsSearchOpen(true);
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        setIsScreenLocked(prev => !prev);
+      }
     };
+    const handleVoiceLock = () => {
+      setIsScreenLocked(true);
+      if (onShowToast) onShowToast('Voice Command: Screen Locked in Privacy Mode.', 'info');
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    window.addEventListener('taxpro_lock_screen', handleVoiceLock);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('taxpro_lock_screen', handleVoiceLock);
+    };
+  }, [onShowToast]);
 
   // Neural Voice AI Command Listeners
   useEffect(() => {
@@ -196,6 +444,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
 
   let sidebarItems = [
     { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
+    { name: 'AI Studio', icon: Sparkles, hasSub: false },
     { name: 'Clients', icon: Users, hasSub: true },
     { name: 'Contact Person', icon: UserCheck, hasSub: true },
     { name: 'Projects', icon: FolderKanban, hasSub: false },
@@ -214,12 +463,51 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
     { name: 'Reports', icon: FileText, hasSub: true },
     { name: 'Ideas', icon: Lightbulb, hasSub: false },
     { name: 'Integrations', icon: Zap, hasSub: false },
+    { name: 'Calendar', icon: CalendarCheck, hasSub: false },
     { name: 'Support & Help', icon: LifeBuoy, hasSub: false },
     { name: 'Settings', icon: Settings, hasSub: true },
   ];
 
-  if (userRole === 'Employee') {
+  // Dynamic Module Key Mapping
+  const moduleKeyMap = {
+    'Dashboard': 'dashboard',
+    'Clients': 'clients',
+    'Contact Person': 'clients',
+    'Projects': 'projects',
+    'Tasks': 'tasks',
+    'To Do': 'todos',
+    'Workload': 'workload',
+    'Team Members': 'team_members',
+    'Departments': 'departments',
+    'Fees Tracking': 'fees_tracking',
+    'Receipts & Payments': 'receipts_payments',
+    'Owner Payments': 'owner_payments',
+    'Members Payment': 'members_payment',
+    'Our Payment': 'our_payment',
+    'Communication': 'communication',
+    'Private Chat': 'private_chat',
+    'Reports': 'reports',
+    'Ideas': 'ideas',
+    'Integrations': 'integrations',
+    'Support & Help': 'support',
+    'Settings': 'settings'
+  };
+
+  let userPermissions = {};
+  try {
+    const rawPerms = localStorage.getItem('taxpro_user_permissions');
+    if (rawPerms) userPermissions = JSON.parse(rawPerms);
+  } catch (e) {}
+
+  if (userRole !== 'Admin' && userRole !== 'Super Admin' && Object.keys(userPermissions).length > 0) {
+    sidebarItems = sidebarItems.filter(item => {
+      const key = moduleKeyMap[item.name] || item.name.toLowerCase();
+      return userPermissions[key] !== false;
+    });
+  } else if (userRole === 'Employee') {
     sidebarItems = sidebarItems.filter(item => !['Integrations', 'Owner Payments', 'Receipts & Payments', 'Members Payment'].includes(item.name));
+  } else if (userRole === 'Manager') {
+    sidebarItems = sidebarItems.filter(item => !['Owner Payments', 'Integrations'].includes(item.name));
   } else {
     sidebarItems = sidebarItems.filter(item => !['Our Payment'].includes(item.name));
   }
@@ -228,84 +516,131 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
     <div className="h-screen overflow-hidden bg-[#f3f4f6] text-gray-800 flex flex-col font-sans selection:bg-[#5b52e0] selection:text-white">
       
       {/* PMS WHITE TOP HEADER */}
-      <header className="bg-white border-b border-gray-200 py-2.5 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-40 shadow-xs print:hidden">
+      <header className="bg-white border-b border-gray-200 py-1.5 px-3 sm:px-5 flex items-center justify-between sticky top-0 z-40 shadow-2xs print:hidden h-12 transition-all duration-200">
         
         {/* Logo */}
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveItem('Dashboard')}>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 via-blue-600 to-indigo-600 p-[1.5px] shadow-sm">
-            <div className="w-full h-full bg-white rounded-full flex items-center justify-center font-black text-xs text-[#5b52e0]">
+        <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => setActiveItem('Dashboard')}>
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-yellow-400 via-blue-600 to-indigo-600 p-[1.5px] shadow-xs">
+            <div className="w-full h-full bg-white rounded-[7px] flex items-center justify-center font-black text-[11px] text-[#5b52e0]">
               ❖
             </div>
           </div>
-          <span className="font-extrabold text-xl text-[#1e1e2d] font-outfit tracking-tight flex items-center gap-1.5">
-            TAXPRO PMS <Lock className="w-4 h-4 text-[#5b52e0]" />
+          <span className="font-extrabold text-base sm:text-lg text-[#1e1e2d] font-outfit tracking-tight">
+            TAXPRO
           </span>
         </div>
 
-        {/* Global Search Bar (Ctrl + K) */}
-        <div 
-          onClick={() => setIsSearchOpen(true)}
-          className="hidden md:flex items-center gap-2 w-full max-w-md bg-[#f3f4f6] border border-gray-200 rounded-xl px-3.5 py-1.5 cursor-pointer hover:bg-gray-100 transition-colors"
-        >
-          <Search className="w-4 h-4 text-gray-400" />
-          <span className="text-xs text-gray-400 font-medium flex-1">Search by Name, Trade Name or File No</span>
-          <span className="text-[10px] text-gray-500 font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 shadow-2xs">Ctrl + K</span>
+        {/* Search Bar Group with Screen Lock Button on Left */}
+        <div className="hidden md:flex items-center gap-2">
+          {/* Privacy Screen Lock Button (Left of Search) */}
+          <button 
+            onClick={() => setIsScreenLocked(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-indigo-50 text-gray-700 hover:text-[#5b52e0] border border-gray-200 hover:border-indigo-200 transition-all shadow-2xs group cursor-pointer text-xs"
+            title="Lock Workspace Privacy Mode (Ctrl + L)"
+          >
+            <Lock className="w-3.5 h-3.5 text-gray-500 group-hover:text-[#5b52e0] group-hover:scale-110 transition-transform" />
+            <span className="text-xs font-bold hidden lg:inline">Lock Screen</span>
+          </button>
+
+          {/* Global Search Bar (Ctrl + K) */}
+          <div 
+            onClick={() => setIsSearchOpen(true)}
+            className="flex items-center gap-2 w-56 lg:w-72 xl:w-80 bg-[#f3f4f6] border border-gray-200 rounded-lg px-3 py-1 cursor-pointer hover:bg-gray-100 transition-colors"
+          >
+            <Search className="w-3.5 h-3.5 text-gray-400" />
+            <span className="text-xs text-gray-400 font-medium flex-1 truncate">Search by Name, Trade Name or File No</span>
+            <span className="text-[10px] text-gray-500 font-mono bg-white px-1.5 py-0.5 rounded border border-gray-200 shadow-2xs">Ctrl + K</span>
+          </div>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-3">
-          {/* Live Date and Clock Badges */}
-          <div className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gray-100 border border-gray-200 text-xs font-mono font-bold text-gray-700">
+        <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Live Date (Clickable -> Navigates to Calendar & Timesheet Page) */}
+          <button 
+            onClick={() => navigateTo('Calendar')}
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 hover:bg-indigo-50 text-gray-700 hover:text-[#5b52e0] border border-gray-200 hover:border-indigo-200 transition-all text-xs font-mono font-bold cursor-pointer group shadow-2xs"
+            title="Open Workforce Calendar & Timesheet Page"
+          >
+            <CalendarCheck className="w-3.5 h-3.5 text-gray-500 group-hover:text-[#5b52e0] transition-colors" />
             <span className="text-[#5b52e0]">
-              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
             </span>
-          </div>
+          </button>
           
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-gray-100 border border-gray-200 text-xs font-mono font-bold text-gray-700">
-            <Clock className="w-3.5 h-3.5 text-[#5b52e0]" />
+          <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-100 border border-gray-200 text-xs font-mono font-bold text-gray-700">
+            <Clock className="w-3 h-3 text-[#5b52e0]" />
             <span>{liveClock}</span>
           </div>
 
-          {/* New Broadcast Icon */}
+          {/* Quick Voice AI Mic Shortcut Button */}
           <button 
-            onClick={() => setIsBroadcastModalOpen(true)}
-            className="p-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-colors shadow-sm"
+            onClick={() => {
+              if (onTriggerAI) onTriggerAI();
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('taxpro_start_voice'));
+              }, 150);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/10 via-indigo-500/10 to-purple-500/10 hover:from-cyan-500/20 hover:to-purple-500/20 text-cyan-800 border border-cyan-300/80 hover:border-cyan-400 transition-all shadow-xs group cursor-pointer"
+            title="Launch Voice AI Assistant (Shortcut: Ctrl + M / Alt + M)"
+          >
+            <div className="w-4 h-4 rounded bg-cyan-600 text-white flex items-center justify-center shadow-xs group-hover:scale-110 transition-transform">
+              <Mic className="w-2.5 h-2.5 text-white" />
+            </div>
+            <span className="text-xs font-bold text-gray-800 hidden md:inline">Voice AI</span>
+            <span className="text-[10px] font-mono font-bold bg-white text-gray-500 px-1 py-0.2 rounded border border-gray-200 shadow-2xs hidden lg:inline">
+              Ctrl+M
+            </span>
+          </button>
+
+          {/* Global Broadcast Message System */}
+          <button 
+            onClick={() => setIsGlobalBroadcastOpen(true)}
+            className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-colors shadow-2xs cursor-pointer"
             title="Global Broadcast System"
           >
-            <Megaphone className="w-4 h-4" />
+            <Megaphone className="w-3.5 h-3.5" />
           </button>
           
           {/* Complain / Feedback Box */}
           <button 
             onClick={() => setIsComplainModalOpen(true)}
-            className="p-2 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 transition-colors shadow-sm"
+            className="p-1.5 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200 transition-colors shadow-2xs cursor-pointer"
             title="Report a Complaint to Management"
           >
-            <AlertCircle className="w-4 h-4" />
+            <AlertCircle className="w-3.5 h-3.5" />
           </button>
 
           {/* Notifications Toggle */}
           <button 
             onClick={() => setIsNotificationsOpen(true)}
-            className={`p-2 rounded-xl border transition-colors relative ${isNotificationsOpen ? 'bg-gray-200 border-gray-300' : 'bg-gray-100 hover:bg-gray-200 border-gray-200'}`}
+            className={`p-1.5 rounded-lg border transition-colors relative cursor-pointer ${isNotificationsOpen ? 'bg-gray-200 border-gray-300' : 'bg-gray-100 hover:bg-gray-200 border-gray-200'}`}
           >
-            <Bell className="w-4 h-4 text-gray-600" />
+            <Bell className="w-3.5 h-3.5 text-gray-600" />
             {activeGlobalAlert && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center shadow-sm animate-pulse">
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[8px] font-black flex items-center justify-center shadow-sm animate-pulse">
                 1
               </span>
             )}
           </button>
 
           {/* User Profile Badge & Popover */}
-          <div className="relative pl-2 border-l border-gray-200">
+          <div className="relative pl-1.5 border-l border-gray-200">
             <button 
               onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 group cursor-pointer"
+              title="User Profile & Settings"
             >
-              <div className="w-8 h-8 rounded-full bg-[#1e40af] flex items-center justify-center font-extrabold text-xs text-white shadow-sm ring-2 ring-white hover:ring-indigo-100 transition-all uppercase">
-                {profileInitials}
-              </div>
+              {userAvatar ? (
+                <img 
+                  src={userAvatar} 
+                  alt="Avatar" 
+                  className="w-7 h-7 rounded-full object-cover shadow-xs ring-2 ring-indigo-300 group-hover:ring-indigo-500 transition-all" 
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-[11px] text-white shadow-sm ring-2 ring-white group-hover:ring-indigo-100 transition-all uppercase">
+                  {profileInitials}
+                </div>
+              )}
             </button>
 
             {/* PROFILE POPOVER */}
@@ -316,9 +651,17 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                   
                   {/* Header */}
                   <div className="flex items-center gap-3 p-3 bg-indigo-50/50 rounded-xl mb-2">
-                    <div className="w-10 h-10 rounded-full bg-[#1e40af] flex items-center justify-center font-extrabold text-sm text-white shadow-sm uppercase">
-                      {profileInitials}
-                    </div>
+                    {userAvatar ? (
+                      <img 
+                        src={userAvatar} 
+                        alt="Avatar" 
+                        className="w-10 h-10 rounded-full object-cover shadow-sm ring-2 ring-indigo-200" 
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-sm text-white shadow-sm uppercase">
+                        {profileInitials}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-bold text-gray-900 truncate capitalize">{profileName}</div>
                       <div className="text-xs text-gray-500 truncate">{userEmail || 'System Administrator'}</div>
@@ -327,13 +670,21 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
 
                   {/* Top Level Item */}
                   <div className="flex items-center justify-between px-3 py-2 mb-2 border border-gray-100 rounded-xl bg-gray-50/50">
-                    <div className="flex items-center gap-3">
-                      <div className="w-7 h-7 rounded bg-[#0f766e] flex items-center justify-center text-white font-bold text-xs uppercase">
-                        {profileInitials[0] || 'A'}
-                      </div>
-                      <span className="text-sm font-medium text-gray-700 capitalize">{profileName}</span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      {userAvatar ? (
+                        <img 
+                          src={userAvatar} 
+                          alt="Avatar" 
+                          className="w-7 h-7 rounded-full object-cover shadow-2xs" 
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded bg-[#0f766e] flex items-center justify-center text-white font-bold text-xs uppercase shrink-0">
+                          {profileInitials[0] || 'A'}
+                        </div>
+                      )}
+                      <span className="text-sm font-medium text-gray-700 capitalize truncate">{profileName}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-wrap justify-end pl-2">
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end pl-2 shrink-0">
                        <span className={`px-2 py-1 text-[10px] font-bold rounded-lg leading-none ${userRole === 'Super Admin' ? 'bg-purple-100 text-purple-700 shadow-sm border border-purple-200/50' : 'bg-[#d1fae5] text-[#0f766e]'}`}>
                          {userRole || 'Admin'}
                        </span>
@@ -406,7 +757,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
               return (
                 <button
                   key={item.name}
-                  onClick={() => setActiveItem(item.name)}
+                  onClick={() => navigateTo(item.name)}
                   className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                     isActive 
                       ? 'bg-[#5b52e0] text-white shadow-lg shadow-[#5b52e0]/30 font-bold' 
@@ -430,36 +781,49 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
         </aside>
 
         {/* ACTIVE MODULE VIEW ROUTER */}
-        <main className="flex-1 overflow-y-auto">
-          <div className={activeItem === 'Dashboard' ? 'block' : 'hidden'}><DashboardView onShowToast={onShowToast} onTriggerAI={onTriggerAI} /></div>
-          <div className={activeItem === 'Projects' ? 'block' : 'hidden'}><ProjectsView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Workload' ? 'block' : 'hidden'}>
+        <main className="flex-1 overflow-y-auto bg-[#f3f4f6] min-w-0">
+          {activeItem === 'Dashboard' && (
+            <AIInsightsBar 
+              onTriggerBriefing={() => {
+                if (onTriggerAI) onTriggerAI();
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent('ai_briefing'));
+                }, 150);
+              }} 
+              onNavigate={(target) => navigateTo(target)} 
+            />
+          )}
+          <div className={activeItem === 'Dashboard' ? 'block animate-page-fade' : 'hidden'}><DashboardView onShowToast={onShowToast} onTriggerAI={onTriggerAI} /></div>
+          <div className={activeItem === 'Calendar' ? 'block animate-page-fade' : 'hidden'}><CalendarPageView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'AI Studio' ? 'block animate-page-fade' : 'hidden'}><AIStudioPresenter onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Projects' ? 'block animate-page-fade' : 'hidden'}><ProjectsView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Workload' ? 'block animate-page-fade' : 'hidden'}>
             <WorkloadView 
               onShowToast={onShowToast} 
               onNavigateToPrivateChat={(user) => {
                 setActiveChatUser(user);
-                setActiveItem('Private Chat');
+                navigateTo('Private Chat');
               }} 
             />
           </div>
-          <div className={activeItem === 'Team Members' ? 'block' : 'hidden'}><TeamMembersView userRole={userRole} onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Departments' ? 'block' : 'hidden'}><DepartmentsView userRole={userRole} onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Ideas' ? 'block' : 'hidden'}><IdeasView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Tasks' ? 'block' : 'hidden'}><TasksView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Clients' ? 'block' : 'hidden'}><ClientsView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Contact Person' ? 'block' : 'hidden'}><ContactPersonView /></div>
-          <div className={activeItem === 'To Do' ? 'block' : 'hidden'}><ToDoView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Receipts & Payments' ? 'block' : 'hidden'}><ReceiptsPaymentsView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Communication' ? 'block' : 'hidden'}><CommunicationView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Private Chat' ? 'block' : 'hidden'}><PrivateChatView onShowToast={onShowToast} preSelectedUser={activeChatUser} /></div>
-          <div className={activeItem === 'Owner Payments' ? 'block' : 'hidden'}><OwnerPaymentsView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Members Payment' ? 'block' : 'hidden'}><MembersPaymentView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Our Payment' ? 'block' : 'hidden'}><OurPaymentView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Fees Tracking' ? 'block' : 'hidden'}><FeesTrackingView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Integrations' ? 'block' : 'hidden'}><IntegrationsView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Reports' ? 'block' : 'hidden'}><ReportsPMSView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Support & Help' ? 'block' : 'hidden'}><SupportHelpView onShowToast={onShowToast} /></div>
-          <div className={activeItem === 'Settings' ? 'block' : 'hidden'}><SettingsPMSView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Team Members' ? 'block animate-page-fade' : 'hidden'}><TeamMembersView userRole={userRole} onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Departments' ? 'block animate-page-fade' : 'hidden'}><DepartmentsView userRole={userRole} onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Ideas' ? 'block animate-page-fade' : 'hidden'}><IdeasView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Tasks' ? 'block animate-page-fade' : 'hidden'}><TasksView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Clients' ? 'block animate-page-fade' : 'hidden'}><ClientsView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Contact Person' ? 'block animate-page-fade' : 'hidden'}><ContactPersonView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'To Do' ? 'block animate-page-fade' : 'hidden'}><ToDoView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Receipts & Payments' ? 'block animate-page-fade' : 'hidden'}><ReceiptsPaymentsView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Communication' ? 'block animate-page-fade' : 'hidden'}><CommunicationView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Private Chat' ? 'block animate-page-fade' : 'hidden'}><PrivateChatView onShowToast={onShowToast} preSelectedUser={activeChatUser} /></div>
+          <div className={activeItem === 'Owner Payments' ? 'block animate-page-fade' : 'hidden'}><OwnerPaymentsView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Members Payment' ? 'block animate-page-fade' : 'hidden'}><MembersPaymentView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Our Payment' ? 'block animate-page-fade' : 'hidden'}><OurPaymentView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Fees Tracking' ? 'block animate-page-fade' : 'hidden'}><FeesTrackingView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Integrations' ? 'block animate-page-fade' : 'hidden'}><IntegrationsView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Reports' ? 'block animate-page-fade' : 'hidden'}><ReportsPMSView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Support & Help' ? 'block animate-page-fade' : 'hidden'}><SupportHelpView onShowToast={onShowToast} /></div>
+          <div className={activeItem === 'Settings' ? 'block animate-page-fade' : 'hidden'}><SettingsPMSView onShowToast={onShowToast} /></div>
         </main>
       </div>
 
@@ -551,8 +915,11 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
 
       {/* SEARCH MODAL (Ctrl + K) */}
       {isSearchOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl p-4 max-w-xl w-full border border-gray-200 shadow-2xl relative">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsSearchOpen(false); }}
+          className="modal-overlay-backdrop z-[99999]"
+        >
+          <div className="modal-content-box max-w-xl p-4 relative">
             <button onClick={() => setIsSearchOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
               <X className="w-5 h-5" />
             </button>
@@ -580,8 +947,11 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
 
       {/* GLOBAL BROADCAST MODAL */}
       {isBroadcastModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full border border-gray-200 shadow-2xl relative animate-fade-in">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsBroadcastModalOpen(false); }}
+          className="modal-overlay-backdrop z-[99999]"
+        >
+          <div className="modal-content-box max-w-lg p-6 md:p-8 relative">
             <button onClick={() => setIsBroadcastModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-2">
               <X className="w-5 h-5" />
             </button>
@@ -706,59 +1076,169 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
       )}
       {/* EDIT PROFILE MODAL */}
       {isEditProfileModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-slide-up border border-gray-100">
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                <Edit className="w-5 h-5 text-indigo-600" /> Edit Profile
-              </h2>
-              <button onClick={() => setIsEditProfileModalOpen(false)} className="text-gray-400 hover:text-gray-900 transition-colors">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsEditProfileModalOpen(false); }}
+          className="modal-overlay-backdrop z-[99999]"
+        >
+          <div className="modal-content-box max-w-md overflow-hidden relative">
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Edit Profile & Avatar
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Customize your display credentials & identity
+                  </p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setIsEditProfileModalOpen(false)} 
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6">
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center gap-4 mb-2">
-                  <div className="w-16 h-16 rounded-full bg-[#1e40af] flex items-center justify-center font-extrabold text-xl text-white shadow-sm ring-4 ring-indigo-50 cursor-pointer hover:opacity-90 transition-opacity">
-                    KG
+            
+            <div className="p-6 max-h-[80vh] overflow-y-auto scrollbar-thin">
+              <div className="flex flex-col gap-4 text-xs font-semibold">
+                
+                {/* Current Avatar & Actions */}
+                <div className="flex items-center gap-4 p-3.5 bg-gray-50 border border-gray-200 rounded-2xl">
+                  <div className="relative group shrink-0">
+                    {userAvatar ? (
+                      <img 
+                        src={userAvatar} 
+                        alt="Profile Avatar" 
+                        className="w-14 h-14 rounded-full object-cover shadow-md ring-4 ring-indigo-100" 
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-lg text-white shadow-md ring-4 ring-indigo-100 uppercase">
+                        {profileInitials}
+                      </div>
+                    )}
+                    <label 
+                      className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-white cursor-pointer transition-opacity"
+                      title="Upload New Photo"
+                    >
+                      <Camera className="w-5 h-5" />
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        accept="image/*" 
+                        onChange={handleAvatarUpload} 
+                      />
+                    </label>
                   </div>
-                  <label className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors border border-indigo-100 cursor-pointer">
-                    Change Avatar
-                    <input type="file" className="hidden" accept="image/*" onChange={(e) => {
-                      if(e.target.files && e.target.files[0]) {
-                        if(onShowToast) onShowToast(`Avatar securely updated to ${e.target.files[0].name}`, 'success');
-                      }
-                    }} />
-                  </label>
-                </div>
-                
-                <div>
-                  <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-widest">Full Name</label>
-                  <input type="text" defaultValue="Krushil Gadhiya" className="w-full text-sm border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-semibold text-gray-800" />
-                </div>
-                
-                <div>
-                  <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-widest">Email Address (Read Only)</label>
-                  <input type="email" readOnly defaultValue="krushilgadhiya138@gmail.com" className="w-full text-sm border border-gray-200 rounded-xl px-4 py-2.5 outline-none bg-gray-50 text-gray-500 cursor-not-allowed font-medium" />
+
+                  <div className="flex-1">
+                    <div className="text-xs font-bold text-gray-800 mb-1">Profile Photo</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-white hover:bg-indigo-50 rounded-xl transition-colors border border-indigo-200 shadow-2xs cursor-pointer flex items-center gap-1.5">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Upload</span>
+                        <input 
+                          type="file" 
+                          className="hidden" 
+                          accept="image/*" 
+                          onChange={handleAvatarUpload} 
+                        />
+                      </label>
+                      {userAvatar && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveAvatar}
+                          className="px-2.5 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors border border-red-200 flex items-center gap-1 cursor-pointer"
+                          title="Reset avatar"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Reset</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
+                {/* Preset Avatars Selection */}
                 <div>
-                  <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-widest">Department / Title</label>
-                  <input type="text" defaultValue={userDepartment || "Admin"} onChange={(e) => { 
-                      setUserDepartment(e.target.value); 
-                      localStorage.setItem('taxpro_user_department', e.target.value); 
-                  }} className="w-full text-sm border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-semibold text-gray-800" placeholder="e.g. Finance & Tax" />
+                  <label className="text-gray-500 mb-1.5 block uppercase tracking-widest text-[10px]">Or Select a Preset Avatar</label>
+                  <div className="grid grid-cols-6 gap-2">
+                    {PRESET_AVATARS.map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleSelectPresetAvatar(preset)}
+                        className={`w-10 h-10 rounded-full overflow-hidden border-2 transition-all p-0.5 hover:scale-105 cursor-pointer ${
+                          userAvatar === preset ? 'border-indigo-600 ring-2 ring-indigo-400 shadow-sm' : 'border-transparent hover:border-gray-300'
+                        }`}
+                      >
+                        <img src={preset} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover rounded-full" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Full Name Field */}
+                <div>
+                  <label className="text-gray-700 block mb-1">Full Name</label>
+                  <input 
+                    type="text" 
+                    value={userFullName} 
+                    onChange={(e) => setUserFullName(e.target.value)} 
+                    className="w-full text-xs border border-gray-300 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 font-semibold text-gray-800" 
+                    placeholder="e.g. Krushil Gadhiya" 
+                  />
                 </div>
                 
-                <button 
-                  onClick={() => {
-                    setIsEditProfileModalOpen(false);
-                    if(onShowToast) onShowToast('Profile details updated successfully!', 'success');
-                  }}
-                  className="w-full mt-4 bg-indigo-600 text-white font-bold text-sm py-3 rounded-xl shadow-md hover:bg-indigo-700 transition-colors"
-                >
-                  Save Changes
-                </button>
+                {/* Email Address (Read Only) */}
+                <div>
+                  <label className="text-gray-700 block mb-1">Email Address (Read Only)</label>
+                  <input 
+                    type="email" 
+                    readOnly 
+                    value={userEmail || "admin@taxpro.com"} 
+                    className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 outline-none bg-gray-100 text-gray-500 cursor-not-allowed font-medium font-mono" 
+                  />
+                </div>
+
+                {/* Department */}
+                <div>
+                  <label className="text-gray-700 block mb-1">Department / Role</label>
+                  <input 
+                    type="text" 
+                    value={userDepartment} 
+                    onChange={(e) => setUserDepartment(e.target.value)} 
+                    className="w-full text-xs border border-gray-300 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 font-semibold text-gray-800" 
+                    placeholder="e.g. Finance & Tax" 
+                  />
+                </div>
+                
+                <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-2 -mx-6 -mb-6">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditProfileModalOpen(false)}
+                    className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={() => {
+                      localStorage.setItem('taxpro_user_fullname', userFullName);
+                      localStorage.setItem('taxpro_user_department', userDepartment);
+                      setIsEditProfileModalOpen(false);
+                      if (onShowToast) onShowToast('Profile details & avatar saved successfully!', 'success');
+                    }}
+                    className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                  >
+                    Save Changes
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -767,42 +1247,58 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
 
       {/* COMPLAINT BOX MODAL */}
       {isComplainModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsComplainModalOpen(false)}></div>
-          <div className="relative bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-amber-100">
-            <div className="p-6 bg-gradient-to-br from-amber-50 to-orange-50 border-b border-amber-100">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsComplainModalOpen(false); }}
+          className="modal-overlay-backdrop z-[100]"
+        >
+          <div className="modal-content-box max-w-md">
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shadow-inner">
-                  <AlertCircle className="w-5 h-5 text-amber-600" />
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shadow-xs">
+                  <AlertCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-amber-900 leading-none">Register Complaint</h3>
-                  <p className="text-[11px] text-amber-700 font-bold mt-1 uppercase tracking-wider">Direct routing to Master Admin Mailbox</p>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Register Complaint
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Direct confidential routing to Master Admin Mailbox
+                  </p>
                 </div>
               </div>
+
+              <button 
+                onClick={() => setIsComplainModalOpen(false)} 
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
             
-            <div className="p-6 bg-white space-y-4">
+            <div className="p-6 bg-white flex flex-col gap-4 text-xs font-semibold">
+              <label className="text-gray-700">Detailed Complaint / Grievance Statement <span className="text-red-500">*</span></label>
               <textarea
                 value={complainText}
                 onChange={e => setComplainText(e.target.value)}
-                placeholder="Describe your issue, feedback, or complaint in detail..."
-                className="w-full h-32 rounded-xl border border-gray-200 p-4 text-sm resize-none focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-500/10 placeholder:text-gray-400"
+                placeholder="Describe your issue, feedback, or grievance in detail..."
+                className="w-full h-32 rounded-xl border border-gray-300 p-3 text-xs resize-none focus:outline-none focus:border-indigo-500 placeholder:text-gray-400 bg-gray-50 focus:bg-white"
               />
               
-              <div className="flex justify-end gap-3 mt-6">
+              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex justify-end gap-3 -mx-6 -mb-6 mt-2">
                 <button 
                   onClick={() => setIsComplainModalOpen(false)}
-                  className="px-5 py-2.5 rounded-xl font-bold text-sm text-gray-500 hover:bg-gray-100 transition-colors"
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button 
                   onClick={handleComplainSubmit}
                   disabled={isSubmittingComplain || !complainText.trim()}
-                  className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
-                  {isSubmittingComplain ? 'Transmitting...' : 'Send to Inbox'}
+                  {isSubmittingComplain ? 'Transmitting...' : 'Send Complaint'}
                 </button>
               </div>
             </div>
@@ -810,7 +1306,120 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
         </div>
       )}
 
-      <VoiceAIEngine onShowToast={onShowToast} />
+      {/* SCREEN PRIVACY LOCK ZERO-LAG OVERLAY */}
+      {isScreenLocked && (
+        <div className="fixed inset-0 z-[99999] bg-[#090b14]/94 backdrop-blur-xs flex items-center justify-center p-4 select-none will-change-transform">
+          <div className="bg-[#111424] border border-cyan-500/40 rounded-3xl p-6 sm:p-8 max-w-sm sm:max-w-md w-full shadow-2xl shadow-black/80 flex flex-col items-center text-center relative animate-modal-smooth">
+            
+            {/* Top Glow Security Orb */}
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-cyan-400 p-[1.5px] shadow-lg shadow-cyan-500/20 mb-4">
+              <div className="w-full h-full bg-[#0b0c16] rounded-2xl flex items-center justify-center">
+                <Lock className="w-6 h-6 text-cyan-400" />
+              </div>
+            </div>
+
+            <h3 className="text-xl font-extrabold text-white font-outfit tracking-tight mb-1">
+              Workspace Locked
+            </h3>
+            <p className="text-xs text-gray-400 mb-5 font-medium">
+              TaxPro PMS screen is secured. Enter your PIN or Password to unlock.
+            </p>
+
+            {/* Active User Badge */}
+            <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-2.5 mb-5 flex items-center justify-center gap-2.5">
+              <div className="w-6 h-6 rounded-full bg-indigo-600/40 border border-indigo-400/40 text-indigo-300 font-bold text-[10px] flex items-center justify-center font-mono">
+                {(userEmail || 'U').charAt(0).toUpperCase()}
+              </div>
+              <span className="text-xs font-mono text-gray-300 font-semibold truncate max-w-[220px]">
+                {userEmail || 'Authenticated User'}
+              </span>
+            </div>
+
+            {/* Password / PIN Unlock Form */}
+            <form onSubmit={handleUnlockScreen} className="w-full flex flex-col gap-3.5">
+              <div className="relative w-full">
+                <input
+                  type={showUnlockPass ? "text" : "password"}
+                  autoFocus
+                  placeholder="Enter PIN / Password"
+                  value={unlockPassword}
+                  onChange={(e) => {
+                    setUnlockPassword(e.target.value);
+                    setLockError('');
+                  }}
+                  className={`w-full px-4 py-3 bg-black/70 border rounded-2xl outline-none font-mono text-sm text-white placeholder-gray-500 text-center tracking-widest transition-all ${
+                    lockError ? 'border-red-500 ring-2 ring-red-500/30 bg-red-950/20' : 'border-white/15 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/30'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowUnlockPass(!showUnlockPass)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors p-1 cursor-pointer"
+                  title={showUnlockPass ? "Hide Password" : "Show Password"}
+                >
+                  {showUnlockPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {lockError && (
+                <div className="text-xs font-bold text-red-400 bg-red-500/10 border border-red-500/20 py-2 px-3 rounded-xl animate-shake">
+                  {lockError}
+                </div>
+              )}
+
+              {/* Quick Pin Keypad helper buttons */}
+              <div className="grid grid-cols-3 gap-2 my-1">
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setLockError('');
+                      if (k === 'C') {
+                        setUnlockPassword('');
+                      } else if (k === '⌫') {
+                        setUnlockPassword(prev => prev.slice(0, -1));
+                      } else {
+                        setUnlockPassword(prev => prev + k);
+                      }
+                    }}
+                    className="py-2.5 rounded-xl bg-white/5 hover:bg-white/10 active:bg-cyan-500/20 text-gray-200 hover:text-white font-mono font-bold text-sm border border-white/5 transition-colors cursor-pointer"
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 active:scale-98 text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-indigo-600/30 hover:shadow-cyan-600/50 transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Unlock className="w-4 h-4" />
+                <span>Unlock Workspace</span>
+              </button>
+
+              <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 px-1">
+                <span>Default PIN: <strong className="text-cyan-400 font-mono">1234</strong></span>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="text-gray-400 hover:text-red-400 transition-colors underline underline-offset-2 cursor-pointer"
+                >
+                  Logout
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
+
+      {/* WORKFORCE CALENDAR & DAILY ACTIVITY TIMESHEET MODAL */}
+      <CalendarActivityModal 
+        isOpen={isCalendarModalOpen}
+        onClose={() => setIsCalendarModalOpen(false)}
+        onShowToast={onShowToast}
+      />
     </div>
   );
 }

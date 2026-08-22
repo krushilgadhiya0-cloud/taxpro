@@ -16,21 +16,30 @@ export default function DepartmentsView({ userRole, onShowToast }) {
 
   const fetchDepts = async () => {
     setIsLoading(true);
-    // Remove local storage pulling, strictly hit the new 'departments' Supabase table
-    const { data, error } = await supabase.from('departments').select('*').order('created_at', { ascending: false });
-    if (error) {
-       console.error("Error fetching departments:", error);
-       if (onShowToast) onShowToast("Failed to sync departments from cloud.", "error");
-    } else {
-       setDepts(data || []);
+    try {
+      const { data, error } = await supabase.from('departments').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        setDepts(data);
+        localStorage.setItem('taxpro_departments', JSON.stringify(data));
+      } else {
+        const cached = localStorage.getItem('taxpro_departments');
+        if (cached) {
+          setDepts(JSON.parse(cached));
+        } else if (Array.isArray(data)) {
+          setDepts(data);
+        }
+      }
+    } catch (e) {
+      console.warn('[Departments Load Notice]:', e.message);
+      const cached = localStorage.getItem('taxpro_departments');
+      if (cached) setDepts(JSON.parse(cached));
     }
     setIsLoading(false);
   };
 
   const [availableManagers] = useState(() => {
     try {
-      const saved = localStorage.getItem('taxpro_workload_team'); // wait, the user's workload Team managers
-      // Actually there's some managers from team_members maybe?
+      const saved = localStorage.getItem('taxpro_workload_team');
       if (saved) return JSON.parse(saved) || [];
     } catch(e) {}
     return [];
@@ -45,7 +54,7 @@ export default function DepartmentsView({ userRole, onShowToast }) {
   });
 
   const uniqueManagersCount = new Set(
-    depts.map(d => d.manager).filter(m => m && m !== 'Not assigned' && m !== 'Unassigned')
+    (Array.isArray(depts) ? depts : []).map(d => d.manager).filter(m => m && m !== 'Not assigned' && m !== 'Unassigned')
   ).size;
 
   const [deleteId, setDeleteId] = useState(null);
@@ -81,12 +90,13 @@ export default function DepartmentsView({ userRole, onShowToast }) {
   };
 
   const handleDownloadCSV = () => {
-    if (depts.length === 0) {
+    const list = Array.isArray(depts) ? depts : [];
+    if (list.length === 0) {
       if (onShowToast) onShowToast('No data to download.', 'error');
       return;
     }
     const csvRows = ['Name,Initials,Members,Manager,Description'];
-    depts.forEach(d => {
+    list.forEach(d => {
       csvRows.push(`"${d.name}","${d.initials}","${d.members || 0}","${d.manager || 'Unassigned'}","${d.description || d.desc}"`);
     });
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
@@ -185,7 +195,7 @@ export default function DepartmentsView({ userRole, onShowToast }) {
       {/* Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10 mb-10">
         
-        {depts.map((d) => (
+        {(Array.isArray(depts) ? depts : []).map((d) => (
           <div 
             key={d.id} 
             onClick={() => setActiveDeptStat(d)}
@@ -257,105 +267,142 @@ export default function DepartmentsView({ userRole, onShowToast }) {
         </div>
       </div>
 
-      {/* Persistent FAB */}
-      {userRole === 'Admin' && (
-        <button onClick={() => setIsAddModalOpen(true)} className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-[#0f766e] text-white rounded-full flex items-center justify-center shadow-xl hover:shadow-2xl hover:scale-105 transition-all">
-          <Plus className="w-6 h-6" />
-        </button>
-      )}
-
       {/* CREATE NEW DEPARTMENT MODAL */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden shadow-emerald-500/20 border border-emerald-100 animate-slide-up relative">
-            <button onClick={() => setIsAddModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-900 transition-colors">
-              <X className="w-5 h-5" />
-            </button>
-            
-            <div className="p-6">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center mb-4">
-                <Building2 className="w-6 h-6 text-emerald-700" />
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsAddModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-2xl">
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Add Department
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Create a new organizational branch & management scope
+                  </p>
+                </div>
               </div>
-              <h3 className="text-xl font-extrabold text-gray-900 mb-1">New Department</h3>
-              <p className="text-xs text-gray-500 mb-6 font-medium">Create a new organizational branch</p>
+
+              <button 
+                onClick={() => setIsAddModalOpen(false)} 
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddDept} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
               
-              <form onSubmit={handleAddDept} className="flex flex-col gap-4">
-                <div>
-                  <label className="text-xs font-bold text-gray-600 uppercase tracking-widest block mb-1.5">Department Name</label>
-                  <select
-                    value={newDeptForm.isOther ? 'Other' : newDeptForm.name}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === 'Other') {
-                        setNewDeptForm({ ...newDeptForm, name: '', isOther: true });
-                      } else {
-                        setNewDeptForm({ ...newDeptForm, name: val, isOther: false });
-                      }
-                    }}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20 transition-all font-medium text-sm text-gray-900 cursor-pointer mb-2"
-                  >
-                    <option value="Compliance">Compliance</option>
-                    <option value="Tax & Audit">Tax & Audit</option>
-                    <option value="Accounting">Accounting</option>
-                    <option value="Legal & Advisory">Legal & Advisory</option>
-                    <option value="Outsourcing">Outsourcing</option>
-                    <option value="HR & Admin">HR & Admin</option>
-                    <option value="Sales & Marketing">Sales & Marketing</option>
-                    <option value="IT Support">IT Support</option>
-                    <option value="Other">Other (Custom)</option>
-                  </select>
-                  
-                  {newDeptForm.isOther && (
-                    <input 
-                      required 
-                      type="text"
-                      value={newDeptForm.customName}
-                      onChange={e => setNewDeptForm({...newDeptForm, customName: e.target.value})}
-                      placeholder="Enter custom department name..."
-                      className="w-full px-4 py-2.5 bg-white border border-emerald-300 rounded-xl outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20 transition-all font-medium text-sm text-gray-900 shadow-inner mt-1 animate-fade-in"
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-600 uppercase tracking-widest block mb-1.5">Description</label>
-                  <textarea 
-                    required 
-                    rows={3}
-                    value={newDeptForm.desc}
-                    onChange={e => setNewDeptForm({...newDeptForm, desc: e.target.value})}
-                    placeholder="What does this department do?"
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20 transition-all resize-none shadow-inner text-sm text-gray-800"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-600 uppercase tracking-widest block mb-1.5">Assign Manager (Optional)</label>
-                  <div className="relative">
-                    <UserCog className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <select 
-                      value={newDeptForm.manager}
-                      onChange={e => setNewDeptForm({...newDeptForm, manager: e.target.value})}
-                      className="w-full px-4 py-2.5 pl-9 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20 transition-all font-medium text-sm text-gray-900 cursor-pointer appearance-none"
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Column 1: Identity & Manager */}
+                <div className="flex flex-col gap-3.5">
+                  <div>
+                    <label className="text-gray-700 block mb-1">Department Name <span className="text-red-500">*</span></label>
+                    <select
+                      value={newDeptForm.isOther ? 'Other' : newDeptForm.name}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'Other') {
+                          setNewDeptForm({ ...newDeptForm, name: '', isOther: true });
+                        } else {
+                          setNewDeptForm({ ...newDeptForm, name: val, isOther: false });
+                        }
+                      }}
+                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium text-xs text-gray-900 cursor-pointer"
                     >
-                      <option value="">Leave Unassigned</option>
-                      {availableManagers.map(m => (
-                        <option key={m.id} value={m.name}>{m.name}</option>
-                      ))}
+                      <option value="Compliance">Compliance</option>
+                      <option value="Tax & Audit">Tax & Audit</option>
+                      <option value="Accounting">Accounting</option>
+                      <option value="Legal & Advisory">Legal & Advisory</option>
+                      <option value="Outsourcing">Outsourcing</option>
+                      <option value="HR & Admin">HR & Admin</option>
+                      <option value="Sales & Marketing">Sales & Marketing</option>
+                      <option value="IT Support">IT Support</option>
+                      <option value="Other">Other (Custom)</option>
                     </select>
+                    
+                    {newDeptForm.isOther && (
+                      <input 
+                        required 
+                        type="text"
+                        value={newDeptForm.customName}
+                        onChange={e => setNewDeptForm({...newDeptForm, customName: e.target.value})}
+                        placeholder="Enter custom department name..."
+                        className="w-full px-3 py-2.5 bg-white border border-indigo-300 rounded-xl outline-none focus:border-indigo-500 transition-all font-medium text-xs text-gray-900 mt-2 animate-fade-in"
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-gray-700 block mb-1">Assign Manager (Optional)</label>
+                    <div className="relative">
+                      <UserCog className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <select 
+                        value={newDeptForm.manager}
+                        onChange={e => setNewDeptForm({...newDeptForm, manager: e.target.value})}
+                        className="w-full px-3 py-2.5 pl-9 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 font-medium text-xs text-gray-900 cursor-pointer"
+                      >
+                        <option value="">Leave Unassigned</option>
+                        {availableManagers.map(m => (
+                          <option key={m.id} value={m.name}>{m.name}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 </div>
-                <button type="submit" className="w-full py-3 mt-2 bg-[#0f766e] hover:bg-teal-800 text-white font-black text-sm rounded-xl shadow-md transition-all">
-                  Initialize Department
+
+                {/* Column 2: Scope & Function */}
+                <div className="flex flex-col gap-3.5">
+                  <div>
+                    <label className="text-gray-700 block mb-1">Department Description & Scope <span className="text-red-500">*</span></label>
+                    <textarea 
+                      required 
+                      rows={5}
+                      value={newDeptForm.desc}
+                      onChange={e => setNewDeptForm({...newDeptForm, desc: e.target.value})}
+                      placeholder="What is this department's primary function, responsibilities, and operational scope?"
+                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 resize-none text-xs text-gray-800 min-h-[110px]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Sticky Actions */}
+              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
                 </button>
-              </form>
-            </div>
+                <button 
+                  type="submit" 
+                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  Create Department
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
       {/* CONFIRM DELETE MODAL */}
       {deleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 text-center border border-red-100 animate-shake">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setDeleteId(null); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-sm p-6 text-center border border-red-100 dark:border-red-900/30 animate-shake">
             <h3 className="text-xl font-extrabold text-gray-900 mb-2">Delete Department</h3>
             <p className="text-sm text-gray-500 mb-6 font-medium">Are you sure you want to permanently disband this department? This action cannot be undone.</p>
             <div className="flex gap-3">
@@ -368,9 +415,9 @@ export default function DepartmentsView({ userRole, onShowToast }) {
 
       {/* DEPT STATS MODAL */}
       {activeDeptStat && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in" onClick={() => setActiveDeptStat(null)}>
+        <div className="modal-overlay-backdrop z-[60]" onClick={() => setActiveDeptStat(null)}>
           <div 
-            className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden border border-gray-100 flex flex-col transform transition-all scale-100 opacity-100"
+            className="modal-content-box max-w-xl border border-gray-100"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}

@@ -1,10 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DollarSign, CheckCircle2, CloudLightning, ArrowRight, Wallet, History, CreditCard, ShieldCheck, Lock, Printer, Download } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function OwnerPaymentsView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [remainingDays, setRemainingDays] = useState(14);
-  const [activePlan, setActivePlan] = useState('Starter Tier');
+  const [activePlan, setActivePlan] = useState('Fintech Enterprise');
+  const [history, setHistory] = useState([]);
+
+  useEffect(() => {
+    const fetchBillingHistory = async () => {
+      try {
+        const { data } = await supabase.from('payments').select('*').order('created_at', { ascending: false });
+        if (data && data.length > 0) {
+          setHistory(data.map((p, idx) => ({
+            id: p.id || `INV-0${idx + 100}`,
+            date: new Date(p.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
+            amount: `₹${parseFloat(p.amount || 0).toLocaleString('en-IN')}`,
+            plan: p.category || 'Fintech Enterprise Tier',
+            status: p.status || 'Paid'
+          })));
+        } else {
+          setHistory([]);
+        }
+      } catch (e) {
+        console.error('[Owner Billing Fetch Error]:', e);
+      }
+    };
+    fetchBillingHistory();
+  }, []);
 
   const plans = [
     {
@@ -126,12 +150,6 @@ export default function OwnerPaymentsView({ onShowToast }) {
       if(onShowToast) onShowToast(`Gateway Error: ${err.message}`, 'error');
     }
   };
-
-  const history = [
-    { id: 'INV-0291', date: 'Jul 01, 2026', amount: '₹299', plan: 'Starter M-T-M', status: 'Paid' },
-    { id: 'INV-0102', date: 'Jun 01, 2026', amount: '₹299', plan: 'Starter M-T-M', status: 'Paid' },
-    { id: 'INV-0041', date: 'May 01, 2026', amount: '₹1', plan: 'Promotional Trial', status: 'Paid' }
-  ];
 
   const handleDownloadRazorpayReceipt = (invoice) => {
     const textData = `

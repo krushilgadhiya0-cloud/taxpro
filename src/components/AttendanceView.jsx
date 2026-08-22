@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 import { 
   Fingerprint, 
   QrCode, 
@@ -7,35 +8,79 @@ import {
   Clock, 
   AlertTriangle, 
   Calendar, 
-  Sparkles,
-  Zap,
-  RefreshCw,
-  ShieldCheck
+  Sparkles, 
+  Zap, 
+  RefreshCw, 
+  ShieldCheck,
+  UserCheck,
+  Users
 } from 'lucide-react';
 
 export default function AttendanceView({ onShowToast }) {
   const [activeScanner, setActiveScanner] = useState('fingerprint'); // 'fingerprint' | 'qr' | 'face'
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [attendanceCount, setAttendanceCount] = useState(0);
 
-  const startBiometricScan = () => {
+  const fetchMembers = async () => {
+    try {
+      const [memRes, attRes] = await Promise.all([
+        supabase.from('team_members').select('*'),
+        supabase.from('attendance').select('*')
+      ]);
+      if (memRes.data && memRes.data.length > 0) {
+        setTeamMembers(memRes.data);
+        setSelectedMember(memRes.data[0]);
+      }
+      if (attRes.data) {
+        setAttendanceCount(attRes.data.length);
+      }
+    } catch (e) {
+      console.warn('[Attendance View Load]:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchMembers();
+    window.addEventListener('taxpro_db_updated', fetchMembers);
+    return () => window.removeEventListener('taxpro_db_updated', fetchMembers);
+  }, []);
+
+  const startBiometricScan = async () => {
+    const member = selectedMember || teamMembers[0] || { name: 'Active User', email: 'user@taxpro.ai' };
     setIsScanning(true);
     setScanResult(null);
-    onShowToast(`Initializing ${activeScanner.toUpperCase()} biometric scanner hardware...`, 'info');
+    if (onShowToast) onShowToast(`Initializing ${activeScanner.toUpperCase()} biometric scanner for ${member.name}...`, 'info');
 
-    setTimeout(() => {
+    setTimeout(async () => {
       setIsScanning(false);
-      setScanResult({
-        name: 'Dr. Sarah Jenkins',
-        time: new Date().toLocaleTimeString(),
+      const logEntry = {
+        name: member.name,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         status: 'VERIFIED & LOGGED',
-        shift: 'Morning Shift A'
-      });
-      onShowToast(`Biometric match confirmed for Dr. Sarah Jenkins!`, 'success');
+        shift: 'General Shift'
+      };
+
+      try {
+        await supabase.from('attendance').insert([{
+          id: 'ATT-' + Date.now(),
+          employee_name: member.name,
+          mode: activeScanner,
+          shift: 'General Shift',
+          status: 'Present',
+          logged_at: logEntry.time
+        }]);
+        window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+      } catch (err) {}
+
+      setScanResult(logEntry);
+      if (onShowToast) onShowToast(`Biometric match confirmed for ${member.name}!`, 'success');
       if (window.confetti) {
         window.confetti({ particleCount: 60, spread: 50, origin: { y: 0.6 } });
       }
-    }, 2200);
+    }, 1800);
   };
 
   return (
@@ -188,26 +233,26 @@ export default function AttendanceView({ onShowToast }) {
             <div className="flex flex-col gap-4">
               <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between">
                 <div>
-                  <span className="text-xs text-gray-400 block">On-Time Arrival</span>
-                  <span className="text-2xl font-black text-emerald-400 font-outfit">139 / 142</span>
+                  <span className="text-xs text-gray-400 block">Logged In Today</span>
+                  <span className="text-2xl font-black text-emerald-400 font-outfit">{attendanceCount} / {teamMembers.length || 1}</span>
                 </div>
                 <Clock className="w-6 h-6 text-emerald-400" />
               </div>
 
               <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between">
                 <div>
-                  <span className="text-xs text-gray-400 block">Late Arrivals</span>
-                  <span className="text-2xl font-black text-amber-400 font-outfit">3 Staff</span>
+                  <span className="text-xs text-gray-400 block">Active Workforce</span>
+                  <span className="text-2xl font-black text-cyan-400 font-outfit">{teamMembers.length} Staff</span>
                 </div>
-                <AlertTriangle className="w-6 h-6 text-amber-400" />
+                <Users className="w-6 h-6 text-cyan-400" />
               </div>
 
               <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 flex items-center justify-between">
                 <div>
-                  <span className="text-xs text-gray-400 block">Average Working Hours</span>
-                  <span className="text-2xl font-black text-cyan-400 font-outfit">8.4 hrs/day</span>
+                  <span className="text-xs text-gray-400 block">Biometric Health</span>
+                  <span className="text-2xl font-black text-purple-400 font-outfit">100% Operational</span>
                 </div>
-                <Calendar className="w-6 h-6 text-cyan-400" />
+                <Calendar className="w-6 h-6 text-purple-400" />
               </div>
             </div>
           </div>

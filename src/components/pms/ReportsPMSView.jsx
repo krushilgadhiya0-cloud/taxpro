@@ -1,5 +1,6 @@
 import React from 'react';
 import { FileText, Download, Activity, CheckSquare, Target, Users, BookOpen, CreditCard, FolderKanban, Lightbulb, Printer } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function ReportsPMSView({ onShowToast }) {
   const reports = [
@@ -69,16 +70,59 @@ export default function ReportsPMSView({ onShowToast }) {
     },
   ];
 
-  const handleDownload = (r) => {
-     const dummyCsvContent = `Report,${r.title}\nDate,${new Date().toLocaleDateString()}\nStatus,Generated Securely\nPlatform,TaxPro PMS`;
-     const blob = new Blob([dummyCsvContent], { type: 'text/csv' });
-     const url = URL.createObjectURL(blob);
-     const link = document.createElement('a');
-     link.href = url;
-     link.download = `Export_${r.title.replace(/\s+/g, '_')}.csv`;
-     link.click();
+  const handleDownload = async (r) => {
+     try {
+       if (onShowToast) onShowToast(`Fetching live database records for ${r.title}...`, 'info');
+       let csvRows = [];
+       csvRows.push([`TaxPro PMS Intelligence Export - ${r.title}`]);
+       csvRows.push([`Generated: ${new Date().toLocaleString()}`]);
+       csvRows.push([]);
 
-     if (onShowToast) onShowToast(`Direct export complete: ${r.title} CSV generated.`, 'success');
+       if (r.id === 'csv_client_master') {
+         const { data } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
+         csvRows.push(['ID', 'Company Name', 'Trade Name', 'GSTIN', 'PAN', 'Email', 'Phone', 'Status', 'Created Date']);
+         (data || []).forEach(c => {
+           csvRows.push([`"${c.id}"`, `"${c.name || ''}"`, `"${c.trade_name || ''}"`, `"${c.gst || c.gstin || ''}"`, `"${c.pan || ''}"`, `"${c.email || ''}"`, `"${c.phone || ''}"`, `"${c.status || 'Active'}"`, `"${c.created_at || ''}"`]);
+         });
+       } else if (r.id === 'csv_team_roster') {
+         const { data } = await supabase.from('team_members').select('*').order('created_at', { ascending: false });
+         csvRows.push(['ID', 'Name', 'Email', 'Role', 'Department', 'Status', 'Created Date']);
+         (data || []).forEach(m => {
+           csvRows.push([`"${m.id}"`, `"${m.name || ''}"`, `"${m.email || ''}"`, `"${m.role || ''}"`, `"${m.department || ''}"`, `"${m.status || 'Active'}"`, `"${m.created_at || ''}"`]);
+         });
+       } else if (r.id === 'csv_fees_tracking') {
+         const { data } = await supabase.from('fees').select('*').order('created_at', { ascending: false });
+         csvRows.push(['ID', 'Client Name', 'Invoice No', 'Amount', 'Paid', 'Status', 'Created Date']);
+         (data || []).forEach(f => {
+           csvRows.push([`"${f.id}"`, `"${f.client_name || ''}"`, `"${f.invoice_no || ''}"`, Number(f.amount || 0), Number(f.paid || 0), `"${f.status || 'Pending'}"`, `"${f.created_at || ''}"`]);
+         });
+       } else if (r.id === 'csv_projects') {
+         const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+         csvRows.push(['ID', 'Project Name', 'Client', 'Department', 'Status', 'Progress', 'Deadline']);
+         (data || []).forEach(p => {
+           csvRows.push([`"${p.id}"`, `"${p.name || ''}"`, `"${p.client || ''}"`, `"${p.department || ''}"`, `"${p.status || ''}"`, `"${p.progress || 0}%"`, `"${p.deadline || ''}"`]);
+         });
+       } else {
+         const { data } = await supabase.from('global_tasks').select('*').order('created_at', { ascending: false });
+         csvRows.push(['Task ID', 'Title', 'Client', 'Priority', 'Status', 'Due Date', 'Created Date']);
+         (data || []).forEach(t => {
+           csvRows.push([`"${t.id}"`, `"${t.title || ''}"`, `"${t.client || ''}"`, `"${t.priority || 'Normal'}"`, `"${t.status || 'Pending'}"`, `"${t.due_date || ''}"`, `"${t.created_at || ''}"`]);
+         });
+       }
+
+       const csvContent = 'data:text/csv;charset=utf-8,' + csvRows.map(e => e.join(',')).join('\n');
+       const encodedUri = encodeURI(csvContent);
+       const link = document.createElement('a');
+       link.setAttribute('href', encodedUri);
+       link.setAttribute('download', `TaxPro_${r.title.replace(/\s+/g, '_')}_${Date.now()}.csv`);
+       document.body.appendChild(link);
+       link.click();
+       document.body.removeChild(link);
+
+       if (onShowToast) onShowToast(`✓ Real database export complete: ${r.title} CSV generated.`, 'success');
+     } catch (err) {
+       if (onShowToast) onShowToast(`Failed to export ${r.title}`, 'error');
+     }
   };
 
   const triggerPrint = (title) => {

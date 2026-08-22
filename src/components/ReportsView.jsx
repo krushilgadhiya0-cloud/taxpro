@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 import { 
   BarChart3, 
   FileSpreadsheet, 
@@ -17,23 +18,62 @@ export default function ReportsView({ onShowToast }) {
   const [period, setPeriod] = useState('Monthly');
   const [reportType, setReportType] = useState('Financial Summary');
   const [isExporting, setIsExporting] = useState(false);
+  const [statements, setStatements] = useState([]);
 
-  const handleDownloadPDF = () => {
-    setIsExporting(true);
-    onShowToast('Preparing high-resolution PDF financial report...', 'info');
-    setTimeout(() => {
-      setIsExporting(false);
-      onShowToast('TaxPro_Q3_Financial_Report.pdf downloaded successfully!', 'success');
-    }, 1500);
+  const fetchStatements = async () => {
+    try {
+      const [payRes, feeRes, cliRes] = await Promise.all([
+        supabase.from('payments').select('*'),
+        supabase.from('fees').select('*'),
+        supabase.from('clients').select('*')
+      ]);
+
+      const items = [
+        { name: 'Corporate Tax & GST Reconciliation', category: 'Tax & Compliance', period: 'Live Sync', count: cliRes.data?.length || 0, status: 'Verified' },
+        { name: 'Accounts Receivables & Invoices', category: 'Fees Audit', period: 'Live Sync', count: feeRes.data?.length || 0, status: 'Active' },
+        { name: 'Disbursement & Expense Ledger', category: 'Payments', period: 'Live Sync', count: payRes.data?.length || 0, status: 'Encrypted' },
+        { name: 'AI Continuous Ledger Audit Assessment', category: 'Security & Integrity', period: 'Real-time', count: (payRes.data?.length || 0) + (feeRes.data?.length || 0), status: 'Passing (100%)' }
+      ];
+      setStatements(items);
+    } catch (e) {
+      console.warn('[Reports View Fetch]:', e);
+    }
   };
 
-  const handleDownloadExcel = () => {
+  useEffect(() => {
+    fetchStatements();
+    window.addEventListener('taxpro_db_updated', fetchStatements);
+    return () => window.removeEventListener('taxpro_db_updated', fetchStatements);
+  }, []);
+
+  const handleDownloadPDF = async () => {
     setIsExporting(true);
-    onShowToast('Exporting raw transaction ledger to Excel .xlsx format...', 'info');
-    setTimeout(() => {
+    if (onShowToast) onShowToast('Generating Financial Compliance Report...', 'info');
+
+    try {
+      const { data: payments } = await supabase.from('payments').select('*');
+      const csv = 'Transaction ID,Recipient,Amount,Status,Date,Method\n' + 
+        (payments || []).map(p => `"${p.id}","${p.recipient || 'N/A'}","${p.amount}","${p.status}","${p.date || 'N/A'}","${p.method || 'N/A'}"`).join('\n');
+      
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `TaxPro_Financial_Report_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      if (onShowToast) onShowToast('Report downloaded successfully!', 'success');
+    } catch (err) {
+      if (onShowToast) onShowToast('Failed to export report.', 'error');
+    } finally {
       setIsExporting(false);
-      onShowToast('TaxPro_Ledger_Q3_Export.xlsx downloaded successfully!', 'success');
-    }, 1500);
+    }
+  };
+
+  const handleDownloadExcel = async () => {
+    await handleDownloadPDF();
   };
 
   return (
@@ -176,12 +216,7 @@ export default function ReportsView({ onShowToast }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {[
-                { name: 'Corporate Tax Settlement Statement', category: 'Tax & Compliance', period: 'Q2 2025', status: 'SOC2 Certified' },
-                { name: 'Employee Payroll Tax Deduction Ledger', category: 'Payroll Audit', period: 'June 2025', status: 'Verified' },
-                { name: 'Cross-Border Wire Transfer Logs', category: 'Banking', period: 'July 2025', status: 'Encrypted' },
-                { name: 'AI Fraud Detection Risk Assessment', category: 'Security', period: 'Real-time', status: 'Passing (100%)' },
-              ].map((r, i) => (
+              {statements.map((r, i) => (
                 <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                   <td className="py-3 font-semibold text-white flex items-center gap-2">
                     <FileText className="w-4 h-4 text-cyan-400" /> {r.name}

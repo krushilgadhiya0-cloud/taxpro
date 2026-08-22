@@ -47,33 +47,7 @@ export default function MembersPaymentView({ onShowToast }) {
        let historyModified = false;
        const currentMonthKey = new Date().toISOString().substring(0, 7); // e.g. "2026-07"
 
-       if (data) {
-           // --- START TEMPORARY DUMMY DATA FOR YEAR TESTING ---
-           if (data.length > 0 && !history.some(h => h.id === 'TEST-2024-01')) {
-              history.push({
-                 id: 'TEST-2024-01',
-                 memberId: data[0].id,
-                 memberName: data[0].name,
-                 amount: 45000,
-                 method: 'UPI',
-                 description: 'Historical 2024 Test Salary',
-                 date: new Date('2024-06-15T10:00:00Z').toISOString(),
-                 status: 'Paid'
-              });
-              history.push({
-                 id: 'TEST-2025-01',
-                 memberId: data[0].id,
-                 memberName: data[0].name,
-                 amount: 12500,
-                 method: 'Cash',
-                 description: 'Historical 2025 Test Bonus',
-                 date: new Date('2025-11-01T10:00:00Z').toISOString(),
-                 status: 'Paid'
-              });
-              historyModified = true;
-           }
-           // --- END TEMPORARY DUMMY DATA ---
-           
+        if (data) {
            data.forEach(m => {
                const c = configs[m.id];
                if (c && c.salary && Number(c.salary) > 0) {
@@ -116,7 +90,7 @@ export default function MembersPaymentView({ onShowToast }) {
     fetchData();
   };
 
-  const handlePay = () => {
+  const handlePay = async () => {
     if (!payAmount || isNaN(payAmount) || Number(payAmount) <= 0) {
        if (onShowToast) onShowToast('Please enter a valid amount.', 'error');
        return;
@@ -124,6 +98,7 @@ export default function MembersPaymentView({ onShowToast }) {
 
     let updatedHistory = [...paymentHistory];
 
+    let paidItem = null;
     if (activePayId) {
         const idx = updatedHistory.findIndex(h => h.id === activePayId);
         if (idx > -1) {
@@ -134,6 +109,7 @@ export default function MembersPaymentView({ onShowToast }) {
                 date: new Date().toISOString(),
                 status: 'Paid'
             };
+            paidItem = updatedHistory[idx];
         }
     } else {
         const newPayment = {
@@ -147,12 +123,30 @@ export default function MembersPaymentView({ onShowToast }) {
            status: 'Paid'
         };
         updatedHistory = [newPayment, ...updatedHistory];
+        paidItem = newPayment;
     }
 
     setPaymentHistory(updatedHistory);
     localStorage.setItem('taxpro_payroll_history', JSON.stringify(updatedHistory));
+
+    // Synchronize to Supabase payments table
+    try {
+      if (paidItem) {
+        await supabase.from('payments').insert([{
+          id: paidItem.id,
+          recipient: `${paidItem.memberName || selectedMember.name} (Salary)`,
+          amount: Number(payAmount),
+          category: paidItem.description || 'Staff Salary & Payroll',
+          method: payMethod,
+          status: 'Success'
+        }]);
+      }
+    } catch (err) {}
+
+    window.dispatchEvent(new CustomEvent('taxpro_financial_updated'));
+    window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
     
-    if (onShowToast) onShowToast(`Payment of ₹${payAmount} marked as Paid via ${payMethod}.`, 'success');
+    if (onShowToast) onShowToast(`Payment of ₹${payAmount} marked as Paid via ${payMethod} & auto-synced with Calendar!`, 'success');
     setIsPayModalOpen(false);
     setPayAmount('');
     setActivePayId(null);
@@ -586,8 +580,11 @@ export default function MembersPaymentView({ onShowToast }) {
 
       {/* DISPATCH PAYMENT / UPI GENERATOR MODAL */}
       {isPayModalOpen && selectedMember && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 border border-gray-100 relative">
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) { setIsPayModalOpen(false); setPayAmount(''); setActivePayId(null); } }}
+          className="modal-overlay-backdrop z-[60]"
+        >
+          <div className="modal-content-box max-w-md p-6 relative">
              <h3 className="text-xl font-black text-gray-900 mb-1">Issue Payment</h3>
              <p className="text-xs text-gray-500 mb-6 font-medium">To {selectedMember.name}</p>
 
@@ -673,8 +670,11 @@ export default function MembersPaymentView({ onShowToast }) {
 
       {/* SALARY CONFIGURATION MODAL */}
       {isConfigModalOpen && selectedMember && (
-         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 border border-gray-100 relative">
+         <div 
+           onClick={(e) => { if (e.target === e.currentTarget) setIsConfigModalOpen(false); }}
+           className="modal-overlay-backdrop z-[70]"
+         >
+           <div className="modal-content-box max-w-sm p-6 relative">
               <h3 className="text-xl font-black text-gray-900 mb-1">Set Parameters</h3>
               <p className="text-xs text-gray-500 mb-6 font-medium">For {selectedMember.name}</p>
 
@@ -711,8 +711,11 @@ export default function MembersPaymentView({ onShowToast }) {
 
       {/* EXTRA PAYMENT MODAL */}
       {isExtraModalOpen && selectedMember && (
-         <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 border border-blue-100 relative">
+         <div 
+           onClick={(e) => { if (e.target === e.currentTarget) setIsExtraModalOpen(false); }}
+           className="modal-overlay-backdrop z-[75]"
+         >
+           <div className="modal-content-box max-w-sm p-6 border border-blue-100 relative">
               <div className="absolute -top-4 -right-4 w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center shadow-lg text-white">
                 <IndianRupee className="w-6 h-6" />
               </div>
@@ -741,8 +744,11 @@ export default function MembersPaymentView({ onShowToast }) {
 
       {/* AD-HOC BONUS DISPATCH MODAL */}
       {isBonusModalOpen && selectedMember && (
-         <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 border border-amber-100 relative">
+         <div 
+           onClick={(e) => { if (e.target === e.currentTarget) setIsBonusModalOpen(false); }}
+           className="modal-overlay-backdrop z-[75]"
+         >
+           <div className="modal-content-box max-w-sm p-6 border border-amber-100 relative">
               <div className="absolute -top-4 -right-4 w-12 h-12 bg-amber-400 rounded-full flex items-center justify-center shadow-lg text-white">
                 <Gift className="w-6 h-6" />
               </div>

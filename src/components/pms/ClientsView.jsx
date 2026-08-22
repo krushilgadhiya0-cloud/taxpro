@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Users, Mail, Phone, FileText, CheckCircle, X, Download, Trash2, Printer, History, Archive, MapPin, Edit2, Save } from 'lucide-react';
+import { Plus, Search, Users, Mail, Phone, FileText, CheckCircle, X, Download, Trash2, Printer, History, Archive, MapPin, Edit2, Save, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
 export default function ClientsView({ onShowToast }) {
@@ -17,10 +17,10 @@ export default function ClientsView({ onShowToast }) {
 
   const fetchClients = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
-    if (!error && data) {
-       // Convert snake_case from Database back to camelCase for the UI
-       const mapped = data.map(c => ({
+    try {
+      const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapped = data.map(c => ({
           ...c,
           tradeName: c.trade_name,
           fileNo: c.file_no,
@@ -28,16 +28,43 @@ export default function ClientsView({ onShowToast }) {
           paymentHistory: c.payment_history,
           address: c.client_address || '',
           createdAt: c.created_at
-       }));
-       setClients(mapped);
-    } else if (error) {
-       if (onShowToast) onShowToast("Failed to fetch clients from cloud.", "error");
+        }));
+        setClients(mapped);
+        localStorage.setItem('taxpro_cached_clients', JSON.stringify(mapped));
+      } else {
+        const cached = localStorage.getItem('taxpro_cached_clients');
+        if (cached) setClients(JSON.parse(cached));
+      }
+    } catch (e) {
+      console.warn('[Clients Load Notice]:', e.message);
+      const cached = localStorage.getItem('taxpro_cached_clients');
+      if (cached) setClients(JSON.parse(cached));
     }
     setIsLoading(false);
   };
 
   useEffect(() => {
     fetchClients();
+
+    const handleOpenAdd = () => setIsAddModalOpen(true);
+    const handleClientAdded = () => fetchClients();
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsAddModalOpen(false);
+        setActiveClientStat(null);
+        setIsEditingClient(false);
+      }
+    };
+
+    window.addEventListener('ai_open_add_client', handleOpenAdd);
+    window.addEventListener('ai_client_added', handleClientAdded);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('ai_open_add_client', handleOpenAdd);
+      window.removeEventListener('ai_client_added', handleClientAdded);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const [newClient, setNewClient] = useState({
@@ -124,30 +151,48 @@ export default function ClientsView({ onShowToast }) {
     }
   };
 
-  const toggleOldStatus = async (e, id) => {
-    e.stopPropagation();
+  const isClientArchived = (status) => {
+    return status === 'Archived' || status === 'Old Client' || status === 'Old' || status === 'Inactive';
+  };
+
+  const toggleArchiveStatus = async (e, id) => {
+    if (e) e.stopPropagation();
     
     const client = clients.find(c => c.id === id);
     if (!client) return;
     
-    const nextStatus = client.status === 'Active' ? 'Old Client' : 'Active';
+    const isCurrentlyArchived = isClientArchived(client.status);
+    const nextStatus = isCurrentlyArchived ? 'Active' : 'Archived';
     
-    const { error } = await supabase.from('clients').update({ status: nextStatus }).eq('id', id);
-    if (error) {
-       if (onShowToast) onShowToast(`Failed to update status: ${error.message}`, 'error');
-       return;
+    try {
+      const { error } = await supabase.from('clients').update({ status: nextStatus }).eq('id', id);
+      if (error) {
+         if (onShowToast) onShowToast(`Failed to update status: ${error.message}`, 'error');
+         return;
+      }
+    } catch (err) {
+      console.error('[Archive Error]:', err);
     }
 
-    setClients(clients.map(c => {
+    setClients(prev => prev.map(c => {
       if (c.id === id) {
-        if(onShowToast) onShowToast(`Client status changed to ${nextStatus}`, 'success');
-        if(activeClientStat && activeClientStat.id === id) {
-           setActiveClientStat({ ...c, status: nextStatus });
-        }
         return { ...c, status: nextStatus };
       }
       return c;
     }));
+
+    if (activeClientStat && activeClientStat.id === id) {
+      setActiveClientStat(prev => prev ? { ...prev, status: nextStatus } : null);
+    }
+
+    if (onShowToast) {
+      onShowToast(
+        nextStatus === 'Archived' 
+          ? `Client "${client.name}" moved to Archive.` 
+          : `Client "${client.name}" restored to Active Directory!`,
+        'success'
+      );
+    }
   };
 
   const updateClientDoc = async (id, fileName) => {
@@ -198,7 +243,7 @@ export default function ClientsView({ onShowToast }) {
     if (onShowToast) onShowToast('Generating printable client ledger...', 'info');
     setTimeout(() => {
       window.print();
-    }, 500);
+    }, 400);
   };
 
   const handleDownloadCSV = () => {
@@ -206,17 +251,18 @@ export default function ClientsView({ onShowToast }) {
       if (onShowToast) onShowToast('No clients available to export.', 'warning');
       return;
     }
-    const headers = ['Client ID', 'Name', 'Trade Name', 'File No', 'PAN', 'GSTIN', 'Email', 'Phone', 'Status', 'Attached Doc'];
+    const headers = ['Client ID', 'Name', 'Trade Name', 'File No', 'PAN', 'GSTIN', 'Email', 'Phone', 'Status', 'Address', 'Attached Doc'];
     const rows = clients.map(c => [
       c.id, 
-      `"${c.name}"`, 
-      `"${c.tradeName}"`, 
-      `"${c.fileNo}"`, 
-      c.pan, 
-      c.gst, 
-      c.email, 
-      `"${c.phone}"`, 
-      c.status,
+      `"${(c.name || '').replace(/"/g, '""')}"`, 
+      `"${(c.tradeName || '').replace(/"/g, '""')}"`, 
+      `"${c.fileNo || ''}"`, 
+      `"${c.pan || ''}"`, 
+      `"${c.gst || ''}"`, 
+      `"${c.email || ''}"`, 
+      `"${c.phone || ''}"`, 
+      `"${c.status || 'Active'}"`,
+      `"${(c.address || '').replace(/"/g, '""')}"`,
       `"${c.attachedDoc || ''}"`
     ]);
     
@@ -225,26 +271,32 @@ export default function ClientsView({ onShowToast }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `TaxPro_Client_Ledger.csv`);
+    link.setAttribute('download', `TaxPro_Client_Directory_${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     
-    if (onShowToast) onShowToast('Client ledger CSV downloaded!', 'success');
+    if (onShowToast) onShowToast('Client directory CSV downloaded successfully!', 'success');
   };
 
+  const activeClientsCount = clients.filter(c => !isClientArchived(c.status)).length;
+  const archivedClientsCount = clients.filter(c => isClientArchived(c.status)).length;
+
   const filteredClients = clients.filter(c => {
-    // Perspective
-    if (activeTab === 'Active' && c.status !== 'Active') return false;
-    if (activeTab === 'Old' && c.status !== 'Old Client') return false;
+    const isArchived = isClientArchived(c.status);
+    if (activeTab === 'Active' && isArchived) return false;
+    if (activeTab === 'Archived' && !isArchived) return false;
     
-    // Search
     if (searchQuery) {
        const term = searchQuery.toLowerCase();
-       return c.name.toLowerCase().includes(term) || 
-              c.tradeName.toLowerCase().includes(term) || 
-              c.fileNo.toLowerCase().includes(term) || 
-              c.pan.toLowerCase().includes(term);
+       return (
+         (c.name && c.name.toLowerCase().includes(term)) || 
+         (c.tradeName && c.tradeName.toLowerCase().includes(term)) || 
+         (c.fileNo && c.fileNo.toLowerCase().includes(term)) || 
+         (c.pan && c.pan.toLowerCase().includes(term)) ||
+         (c.email && c.email.toLowerCase().includes(term)) ||
+         (c.phone && c.phone.toLowerCase().includes(term))
+       );
     }
     return true;
   });
@@ -256,27 +308,27 @@ export default function ClientsView({ onShowToast }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-extrabold font-outfit text-[#1e1e2d]">Client Directory</h1>
-          <p className="text-xs text-gray-500 mt-1">Manage firm client profiles, historical records, and file tracking.</p>
+          <p className="text-xs text-gray-500 mt-1">Manage firm client profiles, compliance tracking, and archives.</p>
         </div>
 
         <div className="flex items-center gap-3 self-start sm:self-auto print:hidden">
           <button 
             onClick={triggerPrint}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-sm transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs sm:text-sm transition-colors cursor-pointer shadow-xs"
           >
-            <Printer className="w-4 h-4" /> <span className="hidden sm:inline">Print Directory</span>
+            <Printer className="w-4 h-4 text-indigo-600" /> <span className="hidden sm:inline">Print Directory</span>
           </button>
           
           <button 
             onClick={handleDownloadCSV}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-sm transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs sm:text-sm transition-colors cursor-pointer shadow-xs"
           >
-            <Download className="w-4 h-4" /> <span className="hidden sm:inline">Download CSV</span>
+            <Download className="w-4 h-4 text-emerald-600" /> <span className="hidden sm:inline">Download CSV</span>
           </button>
           
           <button 
             onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#5b52e0] hover:bg-[#4c44cf] text-white text-xs font-bold shadow-md transition-all"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#5b52e0] hover:bg-[#4c44cf] text-white text-xs font-bold shadow-md transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Add New Client
           </button>
@@ -284,20 +336,42 @@ export default function ClientsView({ onShowToast }) {
       </div>
 
       {/* Control Bar: Tabs & Search */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-2 sm:p-4 mb-6 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white border border-gray-200 rounded-2xl p-2 sm:p-4 mb-6 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 print:hidden print-hidden">
         
         <div className="flex bg-gray-100 p-1 rounded-xl w-full sm:w-auto">
           <button 
             onClick={() => setActiveTab('Active')}
-            className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'Active' ? 'bg-white text-[#5b52e0] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              activeTab === 'Active' ? 'bg-white text-[#5b52e0] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
           >
-            Active Clients
+            <span>Active Clients</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${activeTab === 'Active' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-200 text-gray-600'}`}>
+              {activeClientsCount}
+            </span>
           </button>
+          
           <button 
-            onClick={() => setActiveTab('Old')}
-            className={`flex-1 sm:flex-none px-6 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'Old' ? 'bg-white text-amber-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setActiveTab('Archived')}
+            className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              activeTab === 'Archived' ? 'bg-white text-amber-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
           >
-            Old Clients
+            <Archive className="w-3.5 h-3.5" />
+            <span>Archived</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${activeTab === 'Archived' ? 'bg-amber-100 text-amber-800' : 'bg-gray-200 text-gray-600'}`}>
+              {archivedClientsCount}
+            </span>
+          </button>
+
+          <button 
+            onClick={() => setActiveTab('All')}
+            className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              activeTab === 'All' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <span>All</span>
+            <span className="text-[10px] font-bold text-gray-400">({clients.length})</span>
           </button>
         </div>
 
@@ -305,7 +379,7 @@ export default function ClientsView({ onShowToast }) {
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input 
             type="text" 
-            placeholder="Search Name, Trade Name, File No..."
+            placeholder="Search Name, Trade Name, File No, Phone, PAN..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-800 outline-none focus:bg-white focus:border-indigo-500"
@@ -313,8 +387,80 @@ export default function ClientsView({ onShowToast }) {
         </div>
       </div>
 
+      {/* MASTER CLIENT DIRECTORY PRINTABLE REGISTER (Visible ONLY in print when no single client modal is active) */}
+      <div className={`hidden ${activeClientStat ? 'print:hidden' : 'print:block'} client-directory-print-table bg-white text-gray-900`}>
+        {/* Official Letterhead */}
+        <div className="border-b-2 border-gray-900 pb-4 mb-5 flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-gray-900 font-outfit uppercase">TAXPRO PMS</h1>
+            <p className="text-xs text-gray-700 font-bold uppercase tracking-wider">Client Master Directory & Compliance Register</p>
+            <p className="text-[10px] text-gray-500 mt-0.5">Filter Scope: {activeTab} Clients ({filteredClients.length} Records)</p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs font-mono font-bold text-gray-900">Generated: {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+            <div className="text-[10px] text-gray-600 font-medium">Total Active: {clients.filter(c => c.status === 'Active').length} • Old: {clients.filter(c => c.status === 'Old Client').length}</div>
+          </div>
+        </div>
+
+        {/* Clean High-Density A4 Print Table */}
+        <table className="w-full text-left text-xs border-collapse border border-gray-300">
+          <thead>
+            <tr className="bg-gray-100 border-b border-gray-300 font-bold text-gray-900 uppercase text-[10px] tracking-wider">
+              <th className="py-2 px-2 border-r border-gray-300 text-center w-8">#</th>
+              <th className="py-2 px-2.5 border-r border-gray-300 w-20">File No</th>
+              <th className="py-2 px-3 border-r border-gray-300">Client Name & Trade Name</th>
+              <th className="py-2 px-2.5 border-r border-gray-300 w-24">PAN / GSTIN</th>
+              <th className="py-2 px-3 border-r border-gray-300">Contact & Email</th>
+              <th className="py-2 px-2 border-r border-gray-300 text-center w-16">Status</th>
+              <th className="py-2 px-3">Registered Address</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredClients.map((c, index) => (
+              <tr key={c.id || index} className="border-b border-gray-200 text-[11px]">
+                <td className="py-2 px-2 border-r border-gray-200 text-center font-mono text-gray-500">{index + 1}</td>
+                <td className="py-2 px-2.5 border-r border-gray-200 font-mono font-bold text-gray-900">{c.fileNo}</td>
+                <td className="py-2 px-3 border-r border-gray-200 font-bold text-gray-900">
+                  <div>{c.name}</div>
+                  {c.tradeName && c.tradeName !== c.name && (
+                    <div className="text-[10px] text-gray-600 font-normal">T/A: {c.tradeName}</div>
+                  )}
+                </td>
+                <td className="py-2 px-2.5 border-r border-gray-200 font-mono text-gray-700">
+                  <div>{c.pan}</div>
+                  {c.gst && <div className="text-[9px] text-gray-500">{c.gst}</div>}
+                </td>
+                <td className="py-2 px-3 border-r border-gray-200 text-gray-700">
+                  <div>{c.phone}</div>
+                  <div className="text-[10px] text-gray-500">{c.email}</div>
+                </td>
+                <td className="py-2 px-2 border-r border-gray-200 text-center">
+                  <span className="font-bold text-[9px] uppercase px-1.5 py-0.5 border border-gray-400 rounded">
+                    {c.status}
+                  </span>
+                </td>
+                <td className="py-2 px-3 text-gray-600 text-[10px]">
+                  {c.address || '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* Signatory Footer */}
+        <div className="mt-8 pt-4 border-t border-gray-300 flex justify-between items-end text-[10px] text-gray-500">
+          <div>
+            <span>TaxPro Practice Management System • Confidential Master Record</span>
+          </div>
+          <div className="text-right">
+            <div className="h-10 border-b border-gray-400 w-48 mb-1"></div>
+            <span>Authorized Signatory</span>
+          </div>
+        </div>
+      </div>
+
       {/* Client List Grid view */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 print-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 print:hidden print-hidden">
         {filteredClients.length === 0 ? (
            <div className="col-span-full py-12 text-center text-gray-400 font-bold bg-white rounded-2xl border border-gray-200 border-dashed">
              No clients found in this category.
@@ -324,7 +470,7 @@ export default function ClientsView({ onShowToast }) {
             <div 
               key={c.id} 
               onClick={() => setActiveClientStat(c)}
-              className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all cursor-pointer relative group flex flex-col h-full"
+              className="bg-white rounded-3xl p-6 border border-gray-200 shadow-xs hover:shadow-lg hover:border-indigo-300 transition-all cursor-pointer relative group flex flex-col h-full smooth-card"
             >
                
                <div className="flex items-start justify-between gap-4 mb-4">
@@ -366,15 +512,15 @@ export default function ClientsView({ onShowToast }) {
                <div className="absolute bottom-4 right-4 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button 
                     onClick={(e) => deleteClient(e, c.id)}
-                    className="p-1.5 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white rounded-lg transition-colors border border-rose-100"
+                    className="p-1.5 bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white rounded-lg transition-colors border border-rose-100 cursor-pointer"
                     title="Delete Client"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                   <button 
-                    onClick={(e) => toggleOldStatus(e, c.id)}
-                    className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white rounded-lg transition-colors border border-amber-100"
-                    title={c.status === 'Active' ? 'Mark as Old' : 'Restore to Active'}
+                    onClick={(e) => toggleArchiveStatus(e, c.id)}
+                    className="p-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white rounded-lg transition-colors border border-amber-100 cursor-pointer"
+                    title={isClientArchived(c.status) ? 'Restore to Active Directory' : 'Move to Archive'}
                   >
                     <Archive className="w-3.5 h-3.5" />
                   </button>
@@ -387,84 +533,230 @@ export default function ClientsView({ onShowToast }) {
 
       {/* Add Client Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full border border-gray-200 shadow-2xl relative">
-            <button onClick={() => setIsAddModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-xl font-extrabold font-outfit text-gray-900 mb-1">Register Client</h3>
-            <p className="text-xs text-gray-500 mb-6">Initialize a new client record in the master directory.</p>
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsAddModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-3xl">
             
-            <form onSubmit={handleAddClient} className="flex flex-col gap-4 text-xs font-semibold">
-              <div>
-                <label className="text-gray-700 block mb-1">Legal Client Name</label>
-                <input type="text" placeholder="e.g. Acme Corp Private Limited" autoFocus value={newClient.name} onChange={e => setNewClient({...newClient, name: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500" required />
-              </div>
-
-              <div>
-                <label className="text-gray-700 block mb-1">Trade Name (Optional)</label>
-                <input type="text" placeholder="e.g. Acme Financials" value={newClient.tradeName} onChange={e => setNewClient({...newClient, tradeName: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-gray-700 block mb-1">PAN Number</label>
-                  <input type="text" placeholder="ABCDE1234F" value={newClient.pan} onChange={e => setNewClient({...newClient, pan: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 font-mono" />
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                  <Users className="w-5 h-5" />
                 </div>
                 <div>
-                  <label className="text-gray-700 block mb-1">GSTIN</label>
-                  <input type="text" placeholder="27ABCDE1234F1Z5" value={newClient.gst} onChange={e => setNewClient({...newClient, gst: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 font-mono" />
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Register New Client
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Add verified corporate profile & tax credentials to master directory
+                  </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-gray-700 block mb-1">Mobile Number</label>
-                  <input type="text" placeholder="+91 98000 00000" value={newClient.phone} onChange={e => setNewClient({...newClient, phone: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 font-mono" />
-                </div>
-                <div>
-                  <label className="text-gray-700 block mb-1">File No / ID</label>
-                  <input type="text" placeholder="FN-100" value={newClient.fileNo} onChange={e => setNewClient({...newClient, fileNo: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 font-mono" />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-gray-700 block mb-1">Email Address</label>
-                <input type="email" placeholder="client@acme.com" value={newClient.email} onChange={e => setNewClient({...newClient, email: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500" />
-              </div>
-
-              <div>
-                <label className="text-gray-700 block mb-1">Client Address</label>
-                <textarea rows="2" placeholder="e.g. 123 Business Suite, Commerce City" value={newClient.address} onChange={e => setNewClient({...newClient, address: e.target.value})} className="w-full px-3 py-2 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 max-h-24 min-h-[60px]" />
-              </div>
-
-              <div>
-                <label className="text-gray-700 block mb-1">Client Related File (Optional)</label>
-                <input type="file" onChange={e => setNewClient({...newClient, attachedDocName: e.target.files[0]?.name || ''})} className="block w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer border border-gray-300 rounded-xl px-2 py-1.5 focus:border-indigo-500 transition-colors" />
-              </div>
-
-              <button type="submit" className="mt-4 py-3 bg-[#1e1e2d] text-white font-black text-sm rounded-xl hover:bg-indigo-600 shadow-lg transition-colors">
-                Commit to Secure Directory
+              <button 
+                onClick={() => setIsAddModalOpen(false)} 
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
               </button>
+            </div>
+            
+            {/* 2-Column Responsive Form Body */}
+            <form onSubmit={handleAddClient} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                
+                {/* Column 1: Identity & Communication */}
+                <div className="flex flex-col gap-3.5">
+                  <div>
+                    <label className="text-gray-700 block mb-1">Legal Client Name <span className="text-red-500">*</span></label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Acme Corp Private Limited" 
+                      autoFocus 
+                      value={newClient.name} 
+                      onChange={e => setNewClient({...newClient, name: e.target.value})} 
+                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs" 
+                      required 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-gray-700 block mb-1">Trade Name (Optional)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Acme Financials" 
+                      value={newClient.tradeName} 
+                      onChange={e => setNewClient({...newClient, tradeName: e.target.value})} 
+                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs" 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-gray-700 block mb-1">Email Address</label>
+                    <input 
+                      type="email" 
+                      placeholder="client@acme.com" 
+                      value={newClient.email} 
+                      onChange={e => setNewClient({...newClient, email: e.target.value})} 
+                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs" 
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-gray-700 block mb-1">Client Business Address</label>
+                    <textarea 
+                      rows="3" 
+                      placeholder="e.g. 123 Business Suite, Commerce City, Gujarat - 380001" 
+                      value={newClient.address} 
+                      onChange={e => setNewClient({...newClient, address: e.target.value})} 
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 min-h-[75px] text-xs resize-none" 
+                    />
+                  </div>
+                </div>
+
+                {/* Column 2: Tax Credentials, IDs & Documents */}
+                <div className="flex flex-col gap-3.5">
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-gray-700 block mb-1">PAN Number</label>
+                      <input 
+                        type="text" 
+                        placeholder="ABCDE1234F" 
+                        value={newClient.pan} 
+                        onChange={e => setNewClient({...newClient, pan: e.target.value.toUpperCase()})} 
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 font-mono text-xs" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-gray-700 block mb-1">GSTIN</label>
+                      <input 
+                        type="text" 
+                        placeholder="27ABCDE1234F1Z5" 
+                        value={newClient.gst} 
+                        onChange={e => setNewClient({...newClient, gst: e.target.value.toUpperCase()})} 
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 font-mono text-xs" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-gray-700 block mb-1">Mobile / Phone</label>
+                      <input 
+                        type="text" 
+                        placeholder="+91 98000 00000" 
+                        value={newClient.phone} 
+                        onChange={e => setNewClient({...newClient, phone: e.target.value})} 
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 font-mono text-xs" 
+                      />
+                    </div>
+                    <div>
+                      <label className="text-gray-700 block mb-1">File No / Cust ID</label>
+                      <input 
+                        type="text" 
+                        placeholder="FN-100" 
+                        value={newClient.fileNo} 
+                        onChange={e => setNewClient({...newClient, fileNo: e.target.value})} 
+                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 font-mono text-xs" 
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-gray-700 block mb-1">KYC / Registration Document (Optional)</label>
+                    <div className="border border-dashed border-gray-300 rounded-xl p-3 bg-gray-50 hover:bg-gray-100/80 transition-colors">
+                      <input 
+                        type="file" 
+                        onChange={e => setNewClient({...newClient, attachedDocName: e.target.files[0]?.name || ''})} 
+                        className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" 
+                      />
+                      {newClient.attachedDocName && (
+                        <p className="text-[11px] text-emerald-700 font-bold mt-1">
+                          ✓ Selected: {newClient.attachedDocName}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* Bottom Sticky Actions */}
+              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  Save Client
+                </button>
+              </div>
             </form>
+
           </div>
         </div>
       )}
 
       {/* DETAILED STATS & PRINT MODAL */}
       {activeClientStat && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs print:bg-white print:static print:p-0">
-          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-2xl w-full border border-gray-200 shadow-2xl relative print:border-none print:shadow-none print:max-w-full">
-            <button onClick={() => { setActiveClientStat(null); setIsEditingClient(false); }} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 print:hidden hidden sm:block">
-              <X className="w-5 h-5" />
-            </button>
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) { setActiveClientStat(null); setIsEditingClient(false); } }}
+          className="modal-overlay-backdrop print:bg-transparent print:static print:p-0"
+        >
+          <div className="modal-content-box max-w-2xl p-6 md:p-8 client-print-document print:border-none print:shadow-none print:max-w-full scrollbar-thin print:p-0 print:m-0">
+            
+            {/* Print Letterhead Header (Visible ONLY during print) */}
+            <div className="hidden print:block border-b-2 border-gray-900 pb-3 mb-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-black tracking-tight text-gray-900 font-outfit uppercase">TAXPRO PMS</h1>
+                  <p className="text-[10px] text-gray-600 font-semibold uppercase tracking-wider">Official Client Master Record & Compliance Summary</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs font-mono font-bold text-gray-900">Generated: {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                  <div className="text-[10px] font-mono text-gray-500">Status: {activeClientStat.status}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Top Close & Back Controls */}
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-gray-100 print:hidden">
+              <button 
+                type="button" 
+                onClick={() => { setActiveClientStat(null); setIsEditingClient(false); }}
+                className="p-2 rounded-xl bg-gray-50 hover:bg-gray-200 text-gray-700 border border-gray-200 transition-colors flex items-center gap-1.5 text-xs font-bold shadow-xs cursor-pointer"
+                title="Go Back"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Back to Directory</span>
+              </button>
+
+              <button 
+                onClick={() => { setActiveClientStat(null); setIsEditingClient(false); }} 
+                className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
             
             {/* Modal Header */}
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
               <div>
-                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                   <Users className="w-3.5 h-3.5" /> Client Master Account
+                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5 print:text-gray-600">
+                   <Users className="w-3.5 h-3.5 print:hidden" /> Client Master Account
                 </div>
                 {isEditingClient ? (
                   <div className="space-y-2 mb-2 w-full max-w-xs">
@@ -473,7 +765,7 @@ export default function ClientsView({ onShowToast }) {
                   </div>
                 ) : (
                   <>
-                    <h3 className="text-2xl font-extrabold text-[#1e1e2d] font-outfit leading-tight mb-1">
+                    <h3 className="text-2xl font-extrabold text-[#1e1e2d] font-outfit leading-tight mb-1 print:text-black">
                       {activeClientStat.name}
                     </h3>
                     <div className="text-sm font-bold text-gray-500 mb-2">T/A: {activeClientStat.tradeName}</div>
@@ -481,7 +773,7 @@ export default function ClientsView({ onShowToast }) {
                 )}
                 <div className="flex items-center gap-2 mt-2">
                   <span className={`px-2.5 py-0.5 rounded text-[9px] font-black uppercase tracking-widest border ${
-                    activeClientStat.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                    activeClientStat.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 print:bg-transparent print:border-gray-400 print:text-gray-900' : 'bg-amber-50 text-amber-700 border-amber-200 print:bg-transparent print:border-gray-400 print:text-gray-900'
                   }`}>
                     {activeClientStat.status}
                   </span>
@@ -493,33 +785,33 @@ export default function ClientsView({ onShowToast }) {
                  {isEditingClient ? (
                    <button 
                      onClick={saveEditClient}
-                     className="px-3 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl hover:bg-indigo-100 flex items-center gap-1.5 transition-colors"
+                     className="px-3 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl hover:bg-indigo-100 flex items-center gap-1.5 transition-colors cursor-pointer"
                    >
                      <Save className="w-4 h-4" /> Save Details
                    </button>
                  ) : (
                    <button 
                      onClick={startEditClient}
-                     className="px-3 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl hover:bg-indigo-100 flex items-center gap-1.5 transition-colors"
+                     className="px-3 py-2 bg-indigo-50 text-indigo-700 font-bold text-xs rounded-xl hover:bg-indigo-100 flex items-center gap-1.5 transition-colors cursor-pointer"
                    >
                      <Edit2 className="w-4 h-4" /> Edit Profile
                    </button>
                  )}
                  <button 
                    onClick={triggerPrint}
-                   className="px-3 py-2 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-200 flex items-center gap-1.5 transition-colors"
+                   className="px-3 py-2 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-200 flex items-center gap-1.5 transition-colors cursor-pointer"
                  >
                    <Printer className="w-4 h-4" /> Print Record
                  </button>
                  <button 
-                   onClick={(e) => toggleOldStatus(e, activeClientStat.id)}
-                   className="px-3 py-2 bg-amber-50 text-amber-700 font-bold text-xs rounded-xl hover:bg-amber-100 flex items-center gap-1.5 transition-colors"
+                   onClick={(e) => toggleArchiveStatus(e, activeClientStat.id)}
+                   className="px-3 py-2 bg-amber-50 text-amber-700 font-bold text-xs rounded-xl hover:bg-amber-100 flex items-center gap-1.5 transition-colors cursor-pointer"
                  >
-                   <Archive className="w-4 h-4" /> {activeClientStat.status === 'Active' ? 'Mark as Old' : 'Make Active'}
+                   <Archive className="w-4 h-4" /> {isClientArchived(activeClientStat.status) ? 'Restore to Active' : 'Send to Archive'}
                  </button>
                  <button 
                    onClick={(e) => deleteClient(e, activeClientStat.id)}
-                   className="px-3 py-2 bg-rose-50 text-rose-600 font-bold text-xs rounded-xl hover:bg-rose-100 flex items-center gap-1.5 transition-colors"
+                   className="px-3 py-2 bg-rose-50 text-rose-600 font-bold text-xs rounded-xl hover:bg-rose-100 flex items-center gap-1.5 transition-colors cursor-pointer"
                  >
                    <Trash2 className="w-4 h-4" /> Remove
                  </button>
@@ -527,43 +819,60 @@ export default function ClientsView({ onShowToast }) {
             </div>
 
             {/* Profile Info Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-               <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl">
-                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1">Physical File No</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6 print:grid-cols-2 print:gap-4">
+               <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl print:bg-white print:border-gray-300">
+                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1 print:text-gray-600">Physical File No</div>
                  {isEditingClient ? (
                    <input type="text" value={clientEditForm.fileNo} onChange={e => setClientEditForm({...clientEditForm, fileNo: e.target.value})} className="font-mono font-bold text-indigo-700 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" />
                  ) : (
-                   <div className="font-mono font-bold text-indigo-700">{activeClientStat.fileNo}</div>
+                   <div className="font-mono font-bold text-indigo-700 print:text-gray-900">{activeClientStat.fileNo}</div>
                  )}
                </div>
-               <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl">
-                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1">PAN Detail</div>
+               <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl print:bg-white print:border-gray-300">
+                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1 print:text-gray-600">PAN Detail</div>
                  {isEditingClient ? (
                    <input type="text" value={clientEditForm.pan} onChange={e => setClientEditForm({...clientEditForm, pan: e.target.value})} className="font-mono font-bold text-gray-900 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" />
                  ) : (
                    <div className="font-mono font-bold text-gray-900">{activeClientStat.pan}</div>
                  )}
                </div>
-               <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl col-span-2">
-                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1">Contact & Address</div>
+               <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl print:bg-white print:border-gray-300">
+                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1 print:text-gray-600">GSTIN</div>
+                 {isEditingClient ? (
+                   <input type="text" value={clientEditForm.gst} onChange={e => setClientEditForm({...clientEditForm, gst: e.target.value})} className="font-mono font-bold text-gray-900 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" />
+                 ) : (
+                   <div className="font-mono font-bold text-gray-900">{activeClientStat.gst || 'N/A'}</div>
+                 )}
+               </div>
+               <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl col-span-2 md:col-span-1 print:col-span-2 print:bg-white print:border-gray-300">
+                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1 print:text-gray-600">Contact Details</div>
                  {isEditingClient ? (
                    <div className="space-y-2">
                      <input type="text" value={clientEditForm.phone} onChange={e => setClientEditForm({...clientEditForm, phone: e.target.value})} className="text-xs font-bold text-gray-800 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" placeholder="Phone" />
                      <input type="email" value={clientEditForm.email} onChange={e => setClientEditForm({...clientEditForm, email: e.target.value})} className="text-xs font-bold text-gray-600 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" placeholder="Email" />
-                     <input type="text" value={clientEditForm.address} onChange={e => setClientEditForm({...clientEditForm, address: e.target.value})} className="text-xs font-bold text-gray-600 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" placeholder="Client Address" />
                    </div>
                  ) : (
                    <>
-                     <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 opacity-50" /> {activeClientStat.phone}</div>
-                     <div className="text-xs font-bold text-gray-600 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 opacity-50" /> {activeClientStat.email}</div>
-                     {activeClientStat.address && <div className="text-[11px] font-bold text-gray-500 flex items-start gap-1.5 mt-1.5 leading-snug"><MapPin className="w-3.5 h-3.5 shrink-0 opacity-50" /> {activeClientStat.address}</div>}
+                     <div className="text-xs font-bold text-gray-800 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 opacity-50 print:hidden" /> {activeClientStat.phone}</div>
+                     <div className="text-xs font-bold text-gray-600 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 opacity-50 print:hidden" /> {activeClientStat.email}</div>
                    </>
+                 )}
+               </div>
+               <div className="bg-gray-50 border border-gray-200 p-3 rounded-xl col-span-2 md:col-span-4 print:col-span-2 print:bg-white print:border-gray-300">
+                 <div className="text-[9px] font-black text-gray-400 tracking-widest uppercase mb-1 print:text-gray-600">Registered Office Address</div>
+                 {isEditingClient ? (
+                   <input type="text" value={clientEditForm.address} onChange={e => setClientEditForm({...clientEditForm, address: e.target.value})} className="text-xs font-bold text-gray-600 w-full outline-none border-b-2 border-indigo-500 bg-white px-1 py-0.5 rounded-t" placeholder="Client Address" />
+                 ) : (
+                   <div className="text-xs font-semibold text-gray-700 flex items-start gap-1.5 mt-0.5 leading-snug">
+                     <MapPin className="w-3.5 h-3.5 shrink-0 opacity-50 print:hidden mt-0.5" /> 
+                     <span>{activeClientStat.address || 'Address not registered'}</span>
+                   </div>
                  )}
                </div>
             </div>
 
-            {/* Attached Record Segment */}
-            <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 mb-8 print:hidden flex items-center justify-between">
+            {/* Attached Record Segment (Hidden in Print) */}
+            <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 mb-8 print:hidden print-hidden flex items-center justify-between">
               <div>
                 <div className="text-[10px] font-black text-indigo-400 tracking-widest uppercase mb-1">Client Related File</div>
                 <div className="text-sm font-bold text-gray-800 flex items-center gap-2">
@@ -589,8 +898,8 @@ export default function ClientsView({ onShowToast }) {
               </div>
             </div>
 
-            {/* Historical Records */}
-            <div>
+            {/* Historical Records (Hidden in Print) */}
+            <div className="print:hidden print-hidden">
               <div className="flex items-center gap-2 text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4">
                 <History className="w-4 h-4 text-gray-400" /> Historical Payment & Record Log
               </div>
@@ -616,14 +925,16 @@ export default function ClientsView({ onShowToast }) {
               </div>
             </div>
 
-            {/* Print specific CSS */}
-            <style dangerouslySetInnerHTML={{__html: `
-              @media print {
-                body * { visibility: hidden; }
-                .printable-area-container * { visibility: visible; }
-                .print-hidden { display: none !important; }
-              }
-            `}} />
+            {/* Single Client Signatory (Visible in Print) */}
+            <div className="hidden print:flex mt-12 pt-6 border-t border-gray-300 justify-between items-end text-[10px] text-gray-500">
+              <div>
+                <span>TaxPro Practice Management System • Official Record Verification</span>
+              </div>
+              <div className="text-right">
+                <div className="h-10 border-b border-gray-400 w-48 mb-1"></div>
+                <span>Authorized Signatory</span>
+              </div>
+            </div>
             
           </div>
         </div>

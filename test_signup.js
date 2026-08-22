@@ -1,27 +1,22 @@
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-dotenv.config();
+import axios from 'axios';
 
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.VITE_SUPABASE_ANON_KEY
-);
-
-async function testSignup() {
+async function testPostgresSignup() {
   const testEmail = `test.taxpro.${Date.now()}@gmail.com`;
-  console.log(`[TEST] Attempting SignUp with: ${testEmail}`);
+  console.log(`[PostgreSQL Diagnostic] Testing Direct PostgreSQL Signup with: ${testEmail}`);
 
-  const { data, error } = await supabase.auth.signUp({
-    email: testEmail,
-    password: 'SecurePassword123!',
-  });
+  try {
+    const res = await axios.post('http://localhost:5000/api/auth/signup', {
+      email: testEmail,
+      password: 'SecurePassword123!',
+      name: 'Test Administrator',
+      role: 'Administrator',
+      department: 'Executive Management'
+    });
 
-  if (error) {
-    console.error("[TEST FAILED]", error.message);
-  } else {
-    console.log("[TEST PASSED]", "Response properties:", Object.keys(data));
-    console.log("User Object:", data.user ? "Exists" : "Null");
+    console.log('[PostgreSQL Test Passed]:', res.data);
+  } catch (error) {
+    console.error('[PostgreSQL Test Error]:', error.response ? error.response.data : error.message);
   }
 }
 
-testSignup();
+testPostgresSignup();

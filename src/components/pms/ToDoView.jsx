@@ -260,22 +260,57 @@ export default function ToDoView({ onShowToast }) {
 
       {/* Record New Task Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-[20px] p-6 w-full max-w-sm shadow-2xl relative animate-fade-in">
-            <button onClick={() => setIsAddModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-black">
-              <X className="w-5 h-5" />
-            </button>
-            <h3 className="text-lg font-extrabold font-outfit mb-5">Create New Task</h3>
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsAddModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box">
+            {/* Premium Gradient Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                  <ListTodo className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                    Add To-Do Item
+                  </h3>
+                  <p className="text-xs text-gray-300 mt-0.5">
+                    Personal workflow item, compliance checklist & priority tagging
+                  </p>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setIsAddModalOpen(false)} 
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
             
-            <form onSubmit={addTodo} className="flex flex-col gap-4">
+            <form onSubmit={addTodo} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
               <div>
-                <label className="text-xs font-bold text-gray-500 mb-1.5 block">Task Description</label>
-                <input autoFocus type="text" value={newTask.text} onChange={e => setNewTask({...newTask, text: e.target.value})} className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 bg-gray-50 focus:bg-white" placeholder="What needs to be done?" />
+                <label className="text-gray-700 block mb-1">Task Description <span className="text-red-500">*</span></label>
+                <input 
+                  autoFocus 
+                  type="text" 
+                  value={newTask.text} 
+                  onChange={e => setNewTask({...newTask, text: e.target.value})} 
+                  className="w-full text-xs border border-gray-300 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 bg-gray-50 focus:bg-white" 
+                  placeholder="What needs to be done?" 
+                  required
+                />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-gray-500 mb-1.5 block">Category / Tag</label>
-                <select value={newTask.category} onChange={e => setNewTask({...newTask, category: e.target.value})} className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 bg-gray-50 focus:bg-white">
+                <label className="text-gray-700 block mb-1">Category / Tag</label>
+                <select 
+                  value={newTask.category} 
+                  onChange={e => setNewTask({...newTask, category: e.target.value})} 
+                  className="w-full text-xs border border-gray-300 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 bg-gray-50 focus:bg-white cursor-pointer"
+                >
                   <option value="General">General</option>
                   <option value="GST Return">GST Return</option>
                   <option value="Client Call">Client Call</option>
@@ -285,18 +320,44 @@ export default function ToDoView({ onShowToast }) {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-gray-500 mb-1.5 block">Due Date</label>
-                <input type="date" value={newTask.dueDate} onChange={e => setNewTask({...newTask, dueDate: e.target.value})} className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 bg-gray-50 focus:bg-white" />
+                <label className="text-gray-700 block mb-1">Due Date</label>
+                <input 
+                  type="date" 
+                  value={newTask.dueDate} 
+                  onChange={e => setNewTask({...newTask, dueDate: e.target.value})} 
+                  className="w-full text-xs border border-gray-300 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 bg-gray-50 focus:bg-white" 
+                />
               </div>
 
               <div className="flex items-center gap-2 mt-1">
-                <input type="checkbox" checked={newTask.isStarred} onChange={e => setNewTask({...newTask, isStarred: e.target.checked})} className="w-4 h-4 text-amber-500 border-gray-300 rounded focus:ring-amber-500" />
-                <label className="text-xs font-bold text-gray-700">Mark as Priority (Star)</label>
+                <input 
+                  type="checkbox" 
+                  id="todo-priority-check"
+                  checked={newTask.isStarred} 
+                  onChange={e => setNewTask({...newTask, isStarred: e.target.checked})} 
+                  className="w-4 h-4 text-amber-500 border-gray-300 rounded focus:ring-amber-500 cursor-pointer" 
+                />
+                <label htmlFor="todo-priority-check" className="text-xs font-bold text-gray-700 cursor-pointer">
+                  Mark as Priority (Starred)
+                </label>
               </div>
 
-              <button type="submit" className="mt-4 w-full py-3 bg-[#5b52e0] hover:bg-indigo-600 text-white font-bold text-sm rounded-xl">
-                Add Task
-              </button>
+              {/* Bottom Sticky Actions */}
+              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  Add To-Do Item
+                </button>
+              </div>
             </form>
           </div>
         </div>

@@ -1,37 +1,51 @@
 import express from 'express';
+import { query } from '../db.js';
+
 const router = express.Router();
 
-const reports = [
-  { id: 'REP-2026-01', title: 'Q2 Global Financial Audit & Tax Filing', type: 'Tax Return', status: 'Verified', date: 'Jul 24, 2026', size: '2.4 MB' },
-  { id: 'REP-2026-02', title: 'SOC2 Type II Security & Data Ledger Log', type: 'Security Audit', status: 'Compliant', date: 'Jul 20, 2026', size: '4.1 MB' },
-  { id: 'REP-2026-03', title: 'Workforce Automated Payroll & Deduction Summary', type: 'Payroll', status: 'Dispatched', date: 'Jul 15, 2026', size: '1.8 MB' },
-  { id: 'REP-2026-04', title: 'AI Expense Neural Forecast Variance Report', type: 'AI Analytics', status: 'Generated', date: 'Jul 10, 2026', size: '3.2 MB' }
-];
+// GET /api/reports (Fetch reports from PostgreSQL)
+router.get('/', async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT id, title, type, status, date, size, created_at 
+      FROM reports 
+      ORDER BY created_at DESC;
+    `);
 
-router.get('/', (req, res) => {
-  res.json({
-    success: true,
-    count: reports.length,
-    reports
-  });
+    res.json({
+      success: true,
+      count: result.rowCount,
+      reports: result.rows
+    });
+  } catch (err) {
+    console.error('[reports GET PG Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-router.post('/generate', (req, res) => {
+// POST /api/reports/generate (Save generated report in PostgreSQL)
+router.post('/generate', async (req, res) => {
   const { type, title } = req.body;
-  const newRep = {
-    id: `REP-2026-${reports.length + 10}`,
-    title: title || `${type || 'Compliance'} Automated AI Audit`,
-    type: type || 'Tax Filing',
-    status: 'Verified',
-    date: 'Just Now',
-    size: '2.8 MB'
-  };
-  reports.unshift(newRep);
-  res.json({
-    success: true,
-    message: `Report "${newRep.title}" generated successfully!`,
-    report: newRep
-  });
+  const newId = `REP-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+  const repTitle = title || `${type || 'Compliance'} Automated AI Audit`;
+  const repType = type || 'Tax Filing';
+
+  try {
+    const result = await query(`
+      INSERT INTO reports (id, title, type, status, date, size)
+      VALUES ($1, $2, $3, 'Verified', 'Just Now', '2.8 MB')
+      RETURNING *;
+    `, [newId, repTitle, repType]);
+
+    res.json({
+      success: true,
+      message: `Report "${repTitle}" generated and saved to PostgreSQL!`,
+      report: result.rows[0]
+    });
+  } catch (err) {
+    console.error('[reports generate PG Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 export default router;
