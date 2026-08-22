@@ -16,10 +16,11 @@ if (!rawConnStr) {
 
 // Clean connection string (strip sslmode query param to avoid pg library SSL conflict)
 const cleanConnStr = rawConnStr ? rawConnStr.split('?')[0] : '';
+const isLocal = cleanConnStr.includes('localhost') || cleanConnStr.includes('127.0.0.1');
 
 export const pool = new Pool({
   connectionString: cleanConnStr,
-  ssl: {
+  ssl: isLocal ? false : {
     rejectUnauthorized: false
   },
   max: 20,
@@ -600,11 +601,21 @@ export async function initDatabase() {
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS client_name TEXT;
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS reference TEXT;
         ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes TEXT;
-        ALTER TABLE payments ALTER COLUMN company_id DROP NOT NULL;
-        ALTER TABLE payments ALTER COLUMN employee_id DROP NOT NULL;
-        ALTER TABLE payments ALTER COLUMN due_date DROP NOT NULL;
-        ALTER TABLE payments ALTER COLUMN payment_method DROP NOT NULL;
-        ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_status_check;
+        DO $$ BEGIN
+          ALTER TABLE payments ALTER COLUMN company_id DROP NOT NULL;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
+        DO $$ BEGIN
+          ALTER TABLE payments ALTER COLUMN employee_id DROP NOT NULL;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
+        DO $$ BEGIN
+          ALTER TABLE payments ALTER COLUMN due_date DROP NOT NULL;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
+        DO $$ BEGIN
+          ALTER TABLE payments ALTER COLUMN payment_method DROP NOT NULL;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
+        DO $$ BEGIN
+          ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_status_check;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
         -- Receipts & Payments column migrations
         ALTER TABLE receipts_payments ADD COLUMN IF NOT EXISTS party TEXT;
@@ -616,11 +627,21 @@ export async function initDatabase() {
         ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punch_out TEXT;
         ALTER TABLE attendance ADD COLUMN IF NOT EXISTS working_hours NUMERIC DEFAULT 8.0;
         ALTER TABLE attendance ADD COLUMN IF NOT EXISTS notes TEXT;
-        ALTER TABLE attendance ALTER COLUMN company_id DROP NOT NULL;
-        ALTER TABLE attendance ALTER COLUMN employee_id DROP NOT NULL;
-        ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_status_check;
-        ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_employee_id_fkey;
-        ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_company_id_fkey;
+        DO $$ BEGIN
+          ALTER TABLE attendance ALTER COLUMN company_id DROP NOT NULL;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
+        DO $$ BEGIN
+          ALTER TABLE attendance ALTER COLUMN employee_id DROP NOT NULL;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
+        DO $$ BEGIN
+          ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_status_check;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
+        DO $$ BEGIN
+          ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_employee_id_fkey;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
+        DO $$ BEGIN
+          ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_company_id_fkey;
+        EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
         -- Private messages column migrations
         ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS sender_name TEXT;
