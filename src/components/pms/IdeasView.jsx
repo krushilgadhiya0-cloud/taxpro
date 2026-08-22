@@ -23,17 +23,49 @@ export default function IdeasView({ onShowToast }) {
 
   useEffect(() => {
     const fetchLiveOptions = async () => {
-      const { data: deptData } = await supabase.from('departments').select('name');
-      if (deptData) {
-        setAvailableDepts(deptData.map(d => d.name));
-      } else {
-        setAvailableDepts(['General', 'Finance', 'Taxation', 'Audit']);
-      }
-      
-      const { data: memData } = await supabase.from('team_members').select('name');
-      if (memData) {
-        setAvailableMembers(memData.map(m => m.name));
-      }
+      try {
+        const [deptData, memData, ideasData] = await Promise.all([
+          supabase.from('departments').select('name'),
+          supabase.from('team_members').select('name'),
+          supabase.from('ideas').select('*').order('created_at', { ascending: false })
+        ]);
+
+        if (deptData?.data) {
+          setAvailableDepts(deptData.data.map(d => d.name));
+        } else {
+          setAvailableDepts(['General', 'Finance', 'Taxation', 'Audit']);
+        }
+        
+        if (memData?.data) {
+          setAvailableMembers(memData.data.map(m => m.name));
+        }
+
+        if (ideasData?.data && ideasData.data.length > 0) {
+          const dbMapped = ideasData.data.map(i => ({
+            id: i.id,
+            title: i.title || "What's on your mind?",
+            content: i.description || i.content || '',
+            author: i.author || 'Current User',
+            upvotes: i.votes || 0,
+            downvotes: 0,
+            status: i.status || 'New',
+            tags: Array.isArray(i.tags) ? i.tags : [],
+            visibility: 'Public',
+            comments: Array.isArray(i.comments) ? i.comments.length : 0,
+            commentList: Array.isArray(i.comments) ? i.comments : []
+          }));
+
+          setIdeas(prev => {
+            const merged = [...dbMapped];
+            prev.forEach(item => {
+              if (!merged.some(m => String(m.id) === String(item.id))) {
+                merged.push(item);
+              }
+            });
+            return merged;
+          });
+        }
+      } catch (e) {}
     };
     fetchLiveOptions();
   }, []);
@@ -55,30 +87,48 @@ export default function IdeasView({ onShowToast }) {
     dueDate: ''
   });
 
-  const handleAddIdea = (e) => {
+  const handleAddIdea = async (e) => {
     e.preventDefault();
     if (!formData.content) return;
     
-    setIdeas(prev => [
-      {
-        id: Date.now(),
-        title: "What's on your mind?",
-        content: formData.content,
-        author: 'Current User',
-        upvotes: 0,
-        downvotes: 0,
-        status: 'New',
-        tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
-        visibility: formData.visibility,
-        attachment: formData.attachment,
-        comments: 0,
-        commentList: []
-      },
-      ...prev
-    ]);
-    
+    const ideaId = `IDEA-${Date.now()}`;
+    const parsedTags = formData.tags.split(',').map(t => t.trim()).filter(Boolean);
+    const newIdea = {
+      id: ideaId,
+      title: "What's on your mind?",
+      content: formData.content,
+      author: 'Current User',
+      upvotes: 0,
+      downvotes: 0,
+      status: 'New',
+      tags: parsedTags,
+      visibility: formData.visibility,
+      attachment: formData.attachment,
+      comments: 0,
+      commentList: []
+    };
+
+    setIdeas(prev => [newIdea, ...prev]);
     setIsModalOpen(false);
     setFormData({ content: '', tags: '', autoConvert: 'Manual', assignDepartment: 'All', visibility: 'Public', attachment: '' });
+
+    // Direct save to PostgreSQL ideas table
+    try {
+      await supabase.from('ideas').insert([{
+        id: ideaId,
+        title: "What's on your mind?",
+        description: formData.content,
+        author: 'Current User',
+        department: formData.assignDepartment || 'General',
+        votes: 0,
+        status: 'Under Review',
+        tags: parsedTags,
+        comments: []
+      }]);
+    } catch (err) {
+      console.warn('[Idea DB Insert Note]:', err.message);
+    }
+
     if (onShowToast) onShowToast('Idea dropped successfully to the board.', 'success');
   };
 

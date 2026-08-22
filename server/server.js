@@ -37,6 +37,48 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/chat', chatRoutes);
 
+// Register Complaint / Support Ticket Handler (Persisted in support_tickets table)
+app.post('/api/complain', async (req, res) => {
+  const { reporterEmail, reporterName, complaintText, category = 'General', priority = 'Medium' } = req.body;
+  if (!complaintText || !complaintText.trim()) {
+    return res.status(400).json({ success: false, error: 'Complaint text is required.' });
+  }
+
+  try {
+    const { query } = await import('./db.js');
+    const ticketNo = `TKT-${Date.now().toString().slice(-6)}`;
+    const result = await query(`
+      INSERT INTO support_tickets (id, ticket_no, user_email, user_name, subject, category, message, priority, status, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Open', NOW())
+      RETURNING *;
+    `, [
+      `ST-${Date.now()}`,
+      ticketNo,
+      reporterEmail || 'Anonymous',
+      reporterName || 'Authorized User',
+      complaintText.slice(0, 50),
+      category,
+      complaintText.trim(),
+      priority
+    ]);
+
+    res.json({ success: true, ticket: result.rows[0] });
+  } catch (err) {
+    console.error('[Complaint Route Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/complaints', async (req, res) => {
+  try {
+    const { query } = await import('./db.js');
+    const result = await query('SELECT * FROM support_tickets ORDER BY created_at DESC');
+    res.json({ success: true, complaints: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({

@@ -24,6 +24,7 @@ const SYNCED_STORAGE_KEYS = [
   'taxpro_todos',
   'taxpro_ideas',
   'taxpro_fin_entries',
+  'taxpro_calendar_transactions',
   'taxpro_payroll_history',
   'taxpro_payroll_configs',
   'taxpro_fees_invoices',
@@ -34,6 +35,16 @@ const SYNCED_STORAGE_KEYS = [
   'taxpro_gc',
   'taxpro_ai_training_logs',
   'taxpro_contact_persons',
+  'taxpro_firm_name',
+  'taxpro_firm_gst',
+  'taxpro_firm_address',
+  'taxpro_lock_pin',
+  'taxpro_user_avatar',
+  'taxpro_user_phone',
+  'taxpro_user_fullname',
+  'taxpro_user_department',
+  'taxpro_complaints',
+  'taxpro_communication_logs',
   'taxpro_theme'
 ];
 
@@ -48,7 +59,7 @@ if (typeof window !== 'undefined') {
           if (json.success && json.exists && json.data !== null && json.data !== undefined) {
             const currentLocal = localStorage.getItem(key);
             const remoteStr = typeof json.data === 'string' ? json.data : JSON.stringify(json.data);
-            if (!currentLocal || currentLocal === '[]' || currentLocal === '{}') {
+            if (!currentLocal || currentLocal === '[]' || currentLocal === '{}' || currentLocal === '""') {
               localStorage.setItem(key, remoteStr);
             }
           }
@@ -57,7 +68,7 @@ if (typeof window !== 'undefined') {
     }
   };
 
-  setTimeout(hydrateFromPostgres, 500);
+  setTimeout(hydrateFromPostgres, 300);
 
   // 2. Sync localStorage mutations directly to PostgreSQL app_storage table
   const originalSetItem = localStorage.setItem.bind(localStorage);
@@ -66,7 +77,8 @@ if (typeof window !== 'undefined') {
   localStorage.setItem = function(key, value) {
     originalSetItem(key, value);
 
-    if (SYNCED_STORAGE_KEYS.includes(key) || key.startsWith('taxpro_upi_')) {
+    // Sync any taxpro-related key to PostgreSQL app_storage
+    if (key.startsWith('taxpro_') || SYNCED_STORAGE_KEYS.includes(key)) {
       clearTimeout(debounceTimers[key]);
       debounceTimers[key] = setTimeout(async () => {
         try {
@@ -85,7 +97,7 @@ if (typeof window !== 'undefined') {
         } catch (e) {
           console.warn(`[Sync Warning] Failed to sync ${key}:`, e.message);
         }
-      }, 400);
+      }, 300);
     }
   };
 }

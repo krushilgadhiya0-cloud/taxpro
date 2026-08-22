@@ -11,24 +11,52 @@ export default function ContactPersonView({ onShowToast }) {
   const fetchContactsData = async () => {
     setIsLoading(true);
     try {
-      const { data: clientsData } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
-      if (clientsData) {
+      const [clientsRes, contactsRes] = await Promise.all([
+        supabase.from('clients').select('*').order('created_at', { ascending: false }),
+        supabase.from('contact_persons').select('*').order('created_at', { ascending: false })
+      ]);
+
+      const clientsData = clientsRes.data || [];
+      const directContacts = contactsRes.data || [];
+
+      if (clientsData.length > 0) {
         setClientOptions(clientsData.map(c => c.name));
-        
-        // Generate contacts list from database clients with fallback
-        const clientContacts = clientsData.map(c => ({
-          id: `CP-${c.id}`,
-          name: c.contact_person || c.name,
-          designation: 'Managing Director / Authorized Signatory',
-          client: c.name,
-          email: c.email || 'contact@client.com',
-          phone: c.phone || '+91 98000 00000',
-          pan: c.pan || '—',
-          fileNo: c.file_no || '—'
-        }));
-        
-        setContacts(clientContacts);
       }
+      
+      // Merge client default contacts with custom contact_persons table entries
+      const clientContacts = clientsData.map(c => ({
+        id: `CP-${c.id}`,
+        name: c.contact_person || c.name,
+        designation: 'Managing Director / Authorized Signatory',
+        client: c.name,
+        email: c.email || 'contact@client.com',
+        phone: c.phone || '+91 98000 00000',
+        pan: c.pan || '—',
+        fileNo: c.file_no || '—'
+      }));
+
+      const customContacts = directContacts.map(c => ({
+        id: c.id,
+        name: c.name,
+        designation: c.designation || 'Authorized Corporate Liaison',
+        client: c.client_name || 'Enterprise Client',
+        email: c.email || '',
+        phone: c.phone || '',
+        pan: '—',
+        fileNo: '—'
+      }));
+
+      const merged = [...customContacts, ...clientContacts];
+      const unique = [];
+      const seen = new Set();
+      merged.forEach(item => {
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          unique.push(item);
+        }
+      });
+
+      setContacts(unique);
     } catch (e) {
       console.error('[Contact Person Fetch Error]:', e);
     } finally {
@@ -70,8 +98,9 @@ export default function ContactPersonView({ onShowToast }) {
       return;
     }
 
+    const contactId = `CP-${Date.now()}`;
     const newContact = {
-      id: `CP-${Date.now()}`,
+      id: contactId,
       name: formData.name,
       designation: formData.desc || 'Primary Corporate Liaison',
       client: formData.client || 'Enterprise Client',
@@ -82,12 +111,33 @@ export default function ContactPersonView({ onShowToast }) {
     setContacts(prev => [newContact, ...prev]);
     setIsAddModalOpen(false);
     setFormData({ name: '', client: '', email: '', phone: '', desc: '' });
+
+    // Direct save to PostgreSQL contact_persons table
+    try {
+      await supabase.from('contact_persons').insert([{
+        id: contactId,
+        name: formData.name.trim(),
+        designation: formData.desc || 'Primary Corporate Liaison',
+        client_name: formData.client || 'Enterprise Client',
+        email: formData.email.trim(),
+        phone: purePhone
+      }]);
+    } catch (err) {
+      console.warn('[Contact Person DB Insert Note]:', err.message);
+    }
+
     if (onShowToast) onShowToast(`Contact person "${formData.name}" successfully added!`, 'success');
   };
 
-  const executeDelete = () => {
-    setContacts(prev => prev.filter(x => x.id !== deleteId));
+  const executeDelete = async () => {
+    const idToDelete = deleteId;
+    setContacts(prev => prev.filter(x => x.id !== idToDelete));
     setDeleteId(null);
+
+    try {
+      await supabase.from('contact_persons').delete().eq('id', String(idToDelete));
+    } catch (e) {}
+
     if (onShowToast) onShowToast('Contact person removed successfully.', 'info');
   };
 

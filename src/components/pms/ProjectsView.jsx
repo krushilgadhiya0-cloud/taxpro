@@ -42,14 +42,46 @@ export default function ProjectsView({ onShowToast }) {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('keydown', handleKeyDown);
     
-    // Fetch live team members for the Assignee Dropdown
-    const fetchLiveMembers = async () => {
-      const { data, error } = await supabase.from('team_members').select('name');
-      if (!error && data) {
-         setAvailableMembers(data.map(m => m.name));
+    // Fetch live team members and live projects from PostgreSQL
+    const fetchLiveDbData = async () => {
+      try {
+        const [memRes, projRes] = await Promise.all([
+          supabase.from('team_members').select('name'),
+          supabase.from('projects').select('*').order('created_at', { ascending: false })
+        ]);
+
+        if (memRes.data) {
+          setAvailableMembers(memRes.data.map(m => m.name).filter(Boolean));
+        }
+
+        if (projRes.data && projRes.data.length > 0) {
+          const dbMapped = projRes.data.map(p => ({
+            id: p.id,
+            name: p.name,
+            description: p.description || '',
+            startDate: p.start_date || '',
+            dueDate: p.deadline || '',
+            priority: p.priority || 'Medium',
+            status: p.status || 'Active',
+            tasks: Array.isArray(p.tasks) ? p.tasks : [],
+            attachment: p.attachment || null
+          }));
+
+          setProjectsList(prev => {
+            const merged = [...dbMapped];
+            prev.forEach(item => {
+              if (!merged.some(m => String(m.id) === String(item.id))) {
+                merged.push(item);
+              }
+            });
+            return merged;
+          });
+        }
+      } catch (e) {
+        console.warn('[Projects DB Sync Note]:', e.message);
       }
     };
-    fetchLiveMembers();
+    fetchLiveDbData();
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
@@ -75,32 +107,51 @@ export default function ProjectsView({ onShowToast }) {
     attachment: ''
   });
 
-  const handleCreateProject = (e) => {
+  const handleCreateProject = async (e) => {
     e.preventDefault();
     if (!formData.name) return;
+
+    const newProjId = `PRJ-${Date.now()}`;
+    const newProj = { 
+      id: newProjId, 
+      ...formData, 
+      status: 'Active',
+      tasks: [],
+      attachment: formData.attachment || null
+    };
     
-    setProjectsList([
-      { 
-        id: Date.now(), 
-        ...formData, 
-        status: 'Active',
-        tasks: [],
-        attachment: formData.attachment || null
-      },
-      ...projectsList
-    ]);
-    
+    setProjectsList([newProj, ...projectsList]);
     setIsModalOpen(false);
     setFormData({name:'', description:'', startDate:'', dueDate:'', priority:'Medium', attachment: ''});
+
+    // Save directly to PostgreSQL projects table
+    try {
+      await supabase.from('projects').insert([{
+        id: newProjId,
+        name: formData.name.trim(),
+        description: formData.description || '',
+        start_date: formData.startDate || '',
+        deadline: formData.dueDate || '',
+        priority: formData.priority || 'Medium',
+        status: 'In Progress',
+        tasks: [],
+        attachment: formData.attachment || null
+      }]);
+    } catch (err) {
+      console.warn('[Project DB Insert Note]:', err.message);
+    }
+
     if (onShowToast) onShowToast(`✓ Project "${formData.name}" initialized successfully!`, 'success');
   };
 
-  const toggleTaskStatus = (projectId, taskId) => {
+  const toggleTaskStatus = async (projectId, taskId) => {
+    let updatedTasks = [];
     setProjectsList(prevList => prevList.map(p => {
       if (p.id === projectId) {
+        updatedTasks = p.tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t);
         return {
           ...p,
-          tasks: p.tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t)
+          tasks: updatedTasks
         };
       }
       return p;
@@ -111,6 +162,10 @@ export default function ProjectsView({ onShowToast }) {
         tasks: prev.tasks.map(t => t.id === taskId ? { ...t, completed: !t.completed } : t)
       }));
     }
+
+    try {
+      await supabase.from('projects').update({ tasks: updatedTasks }).eq('id', String(projectId));
+    } catch (e) {}
   };
 
   const handleCreateProjectTask = (e) => {

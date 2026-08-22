@@ -48,7 +48,7 @@ export async function initDatabase() {
   console.log('[PostgreSQL Engine] Initializing and verifying database tables...');
 
   const schemaSQL = `
-    -- Users Table (Authentication & Access)
+    -- Users Table (Authentication, Profile & Firm Lock)
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
@@ -59,8 +59,16 @@ export async function initDatabase() {
       company TEXT DEFAULT 'TaxPro Enterprise',
       phone TEXT,
       phone_verified BOOLEAN DEFAULT FALSE,
+      avatar TEXT,
+      lock_pin TEXT DEFAULT '1234',
+      gstin TEXT,
+      address TEXT,
+      city TEXT,
+      state TEXT,
+      pincode TEXT,
       last_communication_read_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Team Members Table
@@ -80,7 +88,14 @@ export async function initDatabase() {
       avatar TEXT,
       rating NUMERIC DEFAULT 5.0,
       permissions JSONB DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      pan TEXT,
+      bank_account TEXT,
+      ifsc TEXT,
+      emergency_contact TEXT,
+      date_of_joining TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Departments Table
@@ -90,7 +105,10 @@ export async function initDatabase() {
       manager TEXT,
       initials TEXT,
       description TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      head_count INT DEFAULT 0,
+      budget TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Clients Table
@@ -103,10 +121,34 @@ export async function initDatabase() {
       file_no TEXT,
       email TEXT,
       phone TEXT,
+      address TEXT,
+      city TEXT,
+      state TEXT,
+      pincode TEXT,
+      contact_person TEXT,
       attached_doc TEXT,
       status TEXT DEFAULT 'Active',
+      notes TEXT,
+      category TEXT DEFAULT 'Regular',
       payment_history JSONB DEFAULT '[]'::jsonb,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      custom_fields JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Authorized Contact Persons Table
+    CREATE TABLE IF NOT EXISTS contact_persons (
+      id TEXT PRIMARY KEY,
+      client_id TEXT,
+      client_name TEXT,
+      name TEXT NOT NULL,
+      designation TEXT,
+      email TEXT,
+      phone TEXT,
+      notes TEXT,
+      is_primary BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Global Tasks Table
@@ -114,14 +156,21 @@ export async function initDatabase() {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       client TEXT,
+      client_id TEXT,
       category TEXT DEFAULT 'General',
       due_date TEXT,
       status TEXT DEFAULT 'To Do',
       priority TEXT DEFAULT 'Medium',
       assignee TEXT,
       project TEXT,
+      project_id TEXT,
       attachment TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      description TEXT,
+      tags JSONB DEFAULT '[]'::jsonb,
+      subtasks JSONB DEFAULT '[]'::jsonb,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Projects Table
@@ -129,14 +178,22 @@ export async function initDatabase() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       client TEXT,
+      client_id TEXT,
       lead TEXT,
       deadline TEXT,
+      start_date TEXT,
       status TEXT DEFAULT 'In Progress',
       priority TEXT DEFAULT 'Medium',
       budget TEXT DEFAULT '$10,000',
       progress INT DEFAULT 0,
       description TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      category TEXT DEFAULT 'General',
+      tasks JSONB DEFAULT '[]'::jsonb,
+      team_assigned JSONB DEFAULT '[]'::jsonb,
+      milestones JSONB DEFAULT '[]'::jsonb,
+      attachment TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- ToDos Table
@@ -145,10 +202,13 @@ export async function initDatabase() {
       user_email TEXT,
       text TEXT NOT NULL,
       completed BOOLEAN DEFAULT FALSE,
+      is_starred BOOLEAN DEFAULT FALSE,
       priority TEXT DEFAULT 'Medium',
       category TEXT DEFAULT 'General',
       due_date TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Ideas Table
@@ -162,7 +222,8 @@ export async function initDatabase() {
       status TEXT DEFAULT 'Under Review',
       tags JSONB DEFAULT '[]'::jsonb,
       comments JSONB DEFAULT '[]'::jsonb,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Attendance Logs Table
@@ -178,7 +239,11 @@ export async function initDatabase() {
       anti_spoof_passed BOOLEAN DEFAULT TRUE,
       date DATE DEFAULT CURRENT_DATE,
       logged_at TEXT,
+      punch_in TEXT,
+      punch_out TEXT,
+      working_hours NUMERIC DEFAULT 8.0,
       status TEXT DEFAULT 'Present',
+      notes TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -190,6 +255,12 @@ export async function initDatabase() {
       status TEXT DEFAULT 'Verified',
       date TEXT,
       size TEXT DEFAULT '2.5 MB',
+      file_url TEXT,
+      client TEXT,
+      client_id TEXT,
+      month TEXT,
+      year TEXT,
+      metadata JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -197,6 +268,7 @@ export async function initDatabase() {
     CREATE TABLE IF NOT EXISTS payments (
       id TEXT PRIMARY KEY,
       recipient TEXT NOT NULL,
+      client_name TEXT,
       category TEXT DEFAULT 'General',
       method TEXT DEFAULT 'UPI',
       amount TEXT NOT NULL,
@@ -205,10 +277,12 @@ export async function initDatabase() {
       payment_id TEXT,
       order_id TEXT,
       date TEXT,
+      reference TEXT,
+      notes TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- Receipts & Financial Entries Table
+    -- Receipts & Financial Entries Table (Calendar Daily Ledger & Practice Cash Flow)
     CREATE TABLE IF NOT EXISTS receipts_payments (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -223,26 +297,63 @@ export async function initDatabase() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- Fees Invoices Table
+    -- Fees & Invoices Table
     CREATE TABLE IF NOT EXISTS fees (
       id TEXT PRIMARY KEY,
       client_name TEXT NOT NULL,
+      client_id TEXT,
       invoice_no TEXT,
       amount NUMERIC DEFAULT 0,
+      paid NUMERIC DEFAULT 0,
+      pending NUMERIC DEFAULT 0,
       service TEXT DEFAULT 'Audit & Tax Filing',
       status TEXT DEFAULT 'Pending',
       due_date TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      paid_date TEXT,
+      payment_mode TEXT,
+      gstin TEXT,
+      pan TEXT,
+      notes TEXT,
+      date TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS fees_invoices (
       id TEXT PRIMARY KEY,
       client_name TEXT NOT NULL,
+      client_id TEXT,
       invoice_no TEXT,
       amount NUMERIC DEFAULT 0,
+      paid NUMERIC DEFAULT 0,
+      pending NUMERIC DEFAULT 0,
       service TEXT DEFAULT 'Audit & Tax Filing',
       status TEXT DEFAULT 'Pending',
       due_date TEXT,
+      paid_date TEXT,
+      payment_mode TEXT,
+      gstin TEXT,
+      pan TEXT,
+      notes TEXT,
+      date TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Member Payouts / Payroll History Table
+    CREATE TABLE IF NOT EXISTS member_payouts (
+      id TEXT PRIMARY KEY,
+      member_id TEXT,
+      member_name TEXT NOT NULL,
+      amount NUMERIC DEFAULT 0,
+      type TEXT DEFAULT 'Salary',
+      month TEXT,
+      year TEXT,
+      status TEXT DEFAULT 'Processed',
+      payment_date TEXT,
+      method TEXT DEFAULT 'Bank Transfer',
+      transaction_ref TEXT,
+      notes TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -254,6 +365,7 @@ export async function initDatabase() {
       receiver_id TEXT NOT NULL,
       receiver_name TEXT,
       content TEXT NOT NULL,
+      attachments JSONB DEFAULT '[]'::jsonb,
       read BOOLEAN DEFAULT FALSE,
       read_by JSONB DEFAULT '[]'::jsonb,
       is_deleted BOOLEAN DEFAULT FALSE,
@@ -272,8 +384,81 @@ export async function initDatabase() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    CREATE INDEX IF NOT EXISTS idx_pmsg_lookup ON private_messages (sender_id, receiver_id);
-    CREATE INDEX IF NOT EXISTS idx_bmsg_channel ON broadcast_messages (channel);
+    -- Communication Logs Table (Client Notices, Emails, WhatsApp, SMS)
+    CREATE TABLE IF NOT EXISTS communication_logs (
+      id TEXT PRIMARY KEY,
+      client_name TEXT NOT NULL,
+      client_email TEXT,
+      client_phone TEXT,
+      subject TEXT NOT NULL,
+      channel TEXT DEFAULT 'Email',
+      type TEXT DEFAULT 'Notice',
+      content TEXT,
+      status TEXT DEFAULT 'Sent',
+      sent_by TEXT,
+      sent_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Calendar Events & Activity Hub Table
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL,
+      title TEXT NOT NULL,
+      type TEXT DEFAULT 'event',
+      amount NUMERIC DEFAULT 0,
+      client_name TEXT,
+      category TEXT,
+      status TEXT DEFAULT 'Active',
+      notes TEXT,
+      user_email TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Support Tickets & Complaints Table
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id TEXT PRIMARY KEY,
+      ticket_no TEXT,
+      user_id TEXT,
+      user_email TEXT,
+      user_name TEXT,
+      subject TEXT NOT NULL,
+      category TEXT DEFAULT 'General',
+      message TEXT NOT NULL,
+      priority TEXT DEFAULT 'Medium',
+      status TEXT DEFAULT 'Open',
+      response TEXT,
+      resolved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- Firm Profile & Settings Table
+    CREATE TABLE IF NOT EXISTS firm_profile (
+      id TEXT PRIMARY KEY,
+      practice_name TEXT DEFAULT 'TaxPro Enterprise',
+      gstin TEXT,
+      pan TEXT,
+      email TEXT,
+      phone TEXT,
+      address TEXT,
+      city TEXT,
+      state TEXT,
+      pincode TEXT,
+      authorized_signatory TEXT,
+      din TEXT,
+      logo_url TEXT,
+      lock_pin TEXT DEFAULT '1234',
+      config JSONB DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- App Settings Table
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id TEXT PRIMARY KEY,
+      key TEXT UNIQUE NOT NULL,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
 
     -- App Integrations Config Table
     CREATE TABLE IF NOT EXISTS integrations (
@@ -284,7 +469,7 @@ export async function initDatabase() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- App Storage (General Key-Value JSONB Store)
+    -- App Storage (Universal Key-Value JSONB Sync Store)
     CREATE TABLE IF NOT EXISTS app_storage (
       key TEXT PRIMARY KEY,
       data JSONB NOT NULL,
@@ -306,37 +491,148 @@ export async function initDatabase() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users (email);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_team_members_email ON team_members (email);
     CREATE INDEX IF NOT EXISTS idx_ai_logs_user ON ai_action_logs (user_email);
+    CREATE INDEX IF NOT EXISTS idx_pmsg_lookup ON private_messages (sender_id, receiver_id);
+    CREATE INDEX IF NOT EXISTS idx_bmsg_channel ON broadcast_messages (channel);
+    CREATE INDEX IF NOT EXISTS idx_clients_status ON clients (status);
+    CREATE INDEX IF NOT EXISTS idx_global_tasks_status ON global_tasks (status);
+    CREATE INDEX IF NOT EXISTS idx_fees_status ON fees (status);
   `;
 
   try {
     await query(schemaSQL);
 
-    // Relax any legacy strict NOT NULL constraints if tables existed previously
+    // Run dynamic column alterations to ensure existing database gains all new fields
     try {
       await query(`
-        ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS sender_name TEXT;
-        ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS receiver_name TEXT;
+        -- Users column migrations
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS lock_pin TEXT DEFAULT '1234';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS gstin TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS pincode TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT DEFAULT 'TaxPro Enterprise';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+        ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 
+        -- Team members column migrations
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS pan TEXT;
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS bank_account TEXT;
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS ifsc TEXT;
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS emergency_contact TEXT;
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS date_of_joining TEXT;
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+        -- Departments column migrations
+        ALTER TABLE departments ADD COLUMN IF NOT EXISTS head_count INT DEFAULT 0;
+        ALTER TABLE departments ADD COLUMN IF NOT EXISTS budget TEXT;
+        ALTER TABLE departments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+        -- Clients column migrations
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS trade_name TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS city TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS state TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS pincode TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_person TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Regular';
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS custom_fields JSONB DEFAULT '{}'::jsonb;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+        -- Contact persons column migrations
+        ALTER TABLE contact_persons ADD COLUMN IF NOT EXISTS client_name TEXT;
+        ALTER TABLE contact_persons ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT TRUE;
+
+        -- Global tasks column migrations
+        ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS client_id TEXT;
+        ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS project_id TEXT;
+        ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS description TEXT;
+        ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS subtasks JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+        ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+        -- Projects column migrations
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_id TEXT;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date TEXT;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'General';
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS tasks JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS team_assigned JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS milestones JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS attachment TEXT;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+        -- ToDos column migrations
+        ALTER TABLE todos ADD COLUMN IF NOT EXISTS is_starred BOOLEAN DEFAULT FALSE;
+        ALTER TABLE todos ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE todos ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+        -- Fees column migrations
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS client_id TEXT;
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS paid NUMERIC DEFAULT 0;
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS pending NUMERIC DEFAULT 0;
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS paid_date TEXT;
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS payment_mode TEXT;
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS gstin TEXT;
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS pan TEXT;
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS date TEXT;
+        ALTER TABLE fees ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+        -- Fees invoices column migrations
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS client_id TEXT;
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS paid NUMERIC DEFAULT 0;
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS pending NUMERIC DEFAULT 0;
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS paid_date TEXT;
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS payment_mode TEXT;
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS gstin TEXT;
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS pan TEXT;
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS date TEXT;
+        ALTER TABLE fees_invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+        -- Payments column migrations
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS client_name TEXT;
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS reference TEXT;
+        ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes TEXT;
         ALTER TABLE payments ALTER COLUMN company_id DROP NOT NULL;
         ALTER TABLE payments ALTER COLUMN employee_id DROP NOT NULL;
         ALTER TABLE payments ALTER COLUMN due_date DROP NOT NULL;
         ALTER TABLE payments ALTER COLUMN payment_method DROP NOT NULL;
         ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_status_check;
 
+        -- Receipts & Payments column migrations
+        ALTER TABLE receipts_payments ADD COLUMN IF NOT EXISTS party TEXT;
+        ALTER TABLE receipts_payments ADD COLUMN IF NOT EXISTS reference TEXT;
+        ALTER TABLE receipts_payments ADD COLUMN IF NOT EXISTS notes TEXT;
+
+        -- Attendance column migrations
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punch_in TEXT;
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punch_out TEXT;
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS working_hours NUMERIC DEFAULT 8.0;
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS notes TEXT;
         ALTER TABLE attendance ALTER COLUMN company_id DROP NOT NULL;
         ALTER TABLE attendance ALTER COLUMN employee_id DROP NOT NULL;
         ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_status_check;
         ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_employee_id_fkey;
         ALTER TABLE attendance DROP CONSTRAINT IF EXISTS attendance_company_id_fkey;
 
-        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
-        ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT DEFAULT 'TaxPro Enterprise';
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+        -- Private messages column migrations
+        ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS sender_name TEXT;
+        ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS receiver_name TEXT;
+        ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE private_messages ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
       `);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[PostgreSQL Engine] Notice during column migrations:', e.message);
+    }
 
-    console.log('✓ [PostgreSQL Engine] Schema verified and synchronized.');
+    console.log('✓ [PostgreSQL Engine] Schema verified and synchronized with all tables and columns.');
     
     // Seed initial data if tables are empty
     await seedInitialData();

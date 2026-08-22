@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CheckSquare, Square, Plus, Trash2, Star, Calendar, Clock, AlertCircle, ListTodo, Search, Filter, X } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function ToDoView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Today');
@@ -25,20 +26,59 @@ export default function ToDoView({ onShowToast }) {
     localStorage.setItem('taxpro_todos', JSON.stringify(todos));
   }, [todos]);
 
-  const addTodo = (e) => {
+  // Fetch live todos from PostgreSQL
+  useEffect(() => {
+    const fetchLiveTodos = async () => {
+      try {
+        const { data, error } = await supabase.from('todos').select('*').order('created_at', { ascending: false });
+        if (!error && data && data.length > 0) {
+          const dbMapped = data.map(t => ({
+            id: t.id,
+            text: t.text,
+            category: t.category || 'General',
+            completed: !!t.completed,
+            isStarred: !!t.is_starred,
+            dueDate: t.due_date || ''
+          }));
+
+          setTodos(prev => {
+            const merged = [...dbMapped];
+            prev.forEach(item => {
+              if (!merged.some(m => String(m.id) === String(item.id))) {
+                merged.push(item);
+              }
+            });
+            return merged;
+          });
+        }
+      } catch (e) {}
+    };
+    fetchLiveTodos();
+  }, []);
+
+  const addTodo = async (e) => {
     if (e) e.preventDefault();
     if (!newTask.text.trim()) {
        onShowToast && onShowToast('Task description cannot be empty.', 'warning');
        return;
     }
     
-    // Assign due date based on active tab context if left blank
-    let contextDate = newTask.dueDate || '2026-07-27'; 
-    if (!newTask.dueDate && activeTab === 'Tomorrow') contextDate = '2026-07-28';
-    if (!newTask.dueDate && activeTab === 'Next 7 Days') contextDate = '2026-08-01';
+    const todayStr = new Date().toISOString().split('T')[0];
+    let contextDate = newTask.dueDate || todayStr; 
+    if (!newTask.dueDate && activeTab === 'Tomorrow') {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      contextDate = tomorrow.toISOString().split('T')[0];
+    }
+    if (!newTask.dueDate && activeTab === 'Next 7 Days') {
+      const next7 = new Date();
+      next7.setDate(next7.getDate() + 7);
+      contextDate = next7.toISOString().split('T')[0];
+    }
 
+    const todoId = `TODO-${Date.now()}`;
     const newTaskObj = { 
-      id: Date.now(), 
+      id: todoId, 
       text: newTask.text.trim(), 
       category: newTask.category, 
       completed: false,
@@ -50,18 +90,62 @@ export default function ToDoView({ onShowToast }) {
     setNewTask({ text: '', category: 'General', dueDate: '', isStarred: false });
     setIsAddModalOpen(false);
     
-    // Automatically swap to a visible perspective if they added it from a hidden one
     if (activeTab === 'Completed' || activeTab === 'Overdue') {
       setActiveTab('Today');
+    }
+
+    // Direct save to PostgreSQL
+    try {
+      await supabase.from('todos').insert([{
+        id: todoId,
+        text: newTaskObj.text,
+        category: newTaskObj.category,
+        completed: false,
+        is_starred: newTaskObj.isStarred,
+        due_date: contextDate
+      }]);
+    } catch (err) {
+      console.warn('[Todo DB Insert Note]:', err.message);
     }
 
     if (onShowToast) onShowToast('Task mapped to your checklist successfully!', 'success');
   };
 
-  const toggleTodo = (id) => setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-  const toggleStar = (id) => setTodos(todos.map(t => t.id === id ? { ...t, isStarred: !t.isStarred } : t));
-  const deleteTodo = (id) => {
+  const toggleTodo = async (id) => {
+    let nextStatus = false;
+    setTodos(todos.map(t => {
+      if (t.id === id) {
+        nextStatus = !t.completed;
+        return { ...t, completed: nextStatus };
+      }
+      return t;
+    }));
+
+    try {
+      await supabase.from('todos').update({ completed: nextStatus }).eq('id', String(id));
+    } catch (e) {}
+  };
+
+  const toggleStar = async (id) => {
+    let nextStar = false;
+    setTodos(todos.map(t => {
+      if (t.id === id) {
+        nextStar = !t.isStarred;
+        return { ...t, isStarred: nextStar };
+      }
+      return t;
+    }));
+
+    try {
+      await supabase.from('todos').update({ is_starred: nextStar }).eq('id', String(id));
+    } catch (e) {}
+  };
+
+  const deleteTodo = async (id) => {
     setTodos(todos.filter(t => t.id !== id));
+    try {
+      await supabase.from('todos').delete().eq('id', String(id));
+    } catch (e) {}
     onShowToast && onShowToast('Task shredded.', 'info');
   };
 
