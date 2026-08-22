@@ -37,6 +37,47 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/chat', chatRoutes);
 
+// Direct Invitation & Instant PostgreSQL Registration API
+app.post('/api/invite', async (req, res) => {
+  const { memberName, name, targetEmail, email, generatedPassword, password, role, department, phone, salary, permissions, origin, smtpConfig } = req.body;
+  
+  const recipientEmail = (targetEmail || email || '').trim().toLowerCase();
+  const recipientName = (memberName || name || '').trim();
+  const rawPass = (generatedPassword || password || '').trim() || `TaxPro@${Math.floor(1000 + Math.random() * 9000)}`;
+
+  if (!recipientEmail || !recipientName) {
+    return res.status(400).json({ success: false, error: 'Recipient Name and Email are required.' });
+  }
+
+  try {
+    const { registerInvitedUser } = await import('./routes/auth.js');
+    const result = await registerInvitedUser({
+      email: recipientEmail,
+      name: recipientName,
+      password: rawPass,
+      role: role || 'Employee',
+      department: department || 'General',
+      phone: phone || '',
+      salary: salary || '$10,000/mo',
+      permissions: permissions || {},
+      origin: origin || req.headers.origin || 'http://localhost:5173',
+      smtpConfig
+    });
+
+    res.json({
+      success: true,
+      message: `✓ ${recipientName} (${recipientEmail}) registered & activated in database! Ready for instant login.`,
+      user: result.user,
+      member: result.member,
+      credentials: result.credentials,
+      emailDispatched: result.emailResult?.success || false
+    });
+  } catch (err) {
+    console.error('[Global Invite API Error]:', err.message);
+    res.status(500).json({ success: false, error: 'Registration failed: ' + err.message });
+  }
+});
+
 // Register Complaint / Support Ticket Handler (Persisted in support_tickets table)
 app.post('/api/complain', async (req, res) => {
   const { reporterEmail, reporterName, complaintText, category = 'General', priority = 'Medium' } = req.body;

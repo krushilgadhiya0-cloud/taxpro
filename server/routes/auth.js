@@ -134,38 +134,125 @@ export const isEmailRegistered = async (email) => {
   }
 };
 
-// Register invited user into PostgreSQL
-export const registerInvitedUser = async (email, password, name, role) => {
-  const cleanEmail = email.trim().toLowerCase();
+// Register or Auto-Activate invited user into PostgreSQL (users & team_members tables)
+export const registerInvitedUser = async ({ email, password, name, role, department, phone, salary, permissions, origin, smtpConfig }) => {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanName = (name || 'Team Member').trim();
+  const cleanPass = (password || 'password123').trim();
+  const cleanRole = (role || 'Employee').trim();
+  const cleanDept = (department || 'General').trim();
+  const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+  const cleanSalary = salary || '$10,000/mo';
+  const cleanPerms = permissions || {};
+
+  const userId = `USR-${Date.now().toString().slice(-6)}`;
+  const empId = `EMP-${Date.now().toString().slice(-6)}`;
+
   try {
-    const exists = await isEmailRegistered(cleanEmail);
-    if (exists) return false;
+    // 1. Insert/Update users table (for instant authentication)
+    const userRes = await query(`
+      INSERT INTO users (id, email, password, name, role, company, phone, phone_verified, lock_pin, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, 'TaxPro Enterprise', $6, TRUE, '1234', NOW(), NOW())
+      ON CONFLICT (email) DO UPDATE SET 
+        password = EXCLUDED.password, 
+        name = EXCLUDED.name, 
+        role = EXCLUDED.role, 
+        phone = CASE WHEN EXCLUDED.phone IS NOT NULL AND EXCLUDED.phone != '' THEN EXCLUDED.phone ELSE users.phone END,
+        updated_at = NOW()
+      RETURNING *;
+    `, [userId, cleanEmail, cleanPass, cleanName, cleanRole, cleanPhone]);
 
-    const userId = `USR-${Math.floor(1000 + Math.random() * 9000)}`;
-    const pass = password || 'password123';
-    const userName = name || 'Invited Member';
-    const userRole = role || 'Employee';
+    // 2. Insert/Update team_members table (for directory & permissions)
+    const memRes = await query(`
+      INSERT INTO team_members (id, name, email, phone, role, department, status, preset_password, salary, permissions, online, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9, TRUE, NOW(), NOW())
+      ON CONFLICT (email) DO UPDATE SET 
+        name = EXCLUDED.name, 
+        phone = CASE WHEN EXCLUDED.phone IS NOT NULL AND EXCLUDED.phone != '' THEN EXCLUDED.phone ELSE team_members.phone END,
+        role = EXCLUDED.role, 
+        department = EXCLUDED.department, 
+        status = 'Active', 
+        preset_password = EXCLUDED.preset_password, 
+        permissions = EXCLUDED.permissions,
+        updated_at = NOW()
+      RETURNING *;
+    `, [empId, cleanName, cleanEmail, cleanPhone, cleanRole, cleanDept, cleanPass, cleanSalary, JSON.stringify(cleanPerms)]);
 
-    // Insert into users
-    await query(`
-      INSERT INTO users (id, email, password, name, role, company)
-      VALUES ($1, $2, $3, $4, $5, 'TaxPro Enterprise Client')
-      ON CONFLICT (email) DO NOTHING;
-    `, [userId, cleanEmail, pass, userName, userRole]);
+    // 3. Dispatch official invitation email via Python smtplib (best effort)
+    let emailResult = null;
+    try {
+      emailResult = await runPythonMailer({
+        action: 'invite',
+        email: cleanEmail,
+        name: cleanName,
+        role: cleanRole,
+        password: cleanPass,
+        origin: origin || 'http://localhost:5173',
+        smtp_config: smtpConfig || {}
+      });
+      console.log(`[Python smtplib Dispatch] ✓ Invite Email sent to ${cleanEmail}:`, emailResult);
+    } catch (mailErr) {
+      console.warn('[Python smtplib Dispatch Warning]:', mailErr.message);
+    }
 
-    // Insert into team_members
-    await query(`
-      INSERT INTO team_members (name, email, role, preset_password, status)
-      VALUES ($1, $2, $3, $4, 'Active')
-      ON CONFLICT (email) DO NOTHING;
-    `, [userName, cleanEmail, userRole, pass]);
-
-    return true;
+    return {
+      success: true,
+      user: userRes.rows[0],
+      member: memRes.rows[0],
+      emailResult,
+      credentials: {
+        email: cleanEmail,
+        password: cleanPass,
+        role: cleanRole,
+        department: cleanDept,
+        name: cleanName
+      }
+    };
   } catch (err) {
-    console.error('[registerInvitedUser PG Error]:', err.message);
-    return false;
+    console.error('[registerInvitedUser Error]:', err.message);
+    throw err;
   }
 };
+
+// POST /api/auth/invite (Admin sends invite -> auto registered & activated in database)
+router.post('/invite', async (req, res) => {
+  const { memberName, name, targetEmail, email, generatedPassword, password, role, department, phone, salary, permissions, origin, smtpConfig } = req.body;
+  
+  const recipientEmail = (targetEmail || email || '').trim().toLowerCase();
+  const recipientName = (memberName || name || '').trim();
+  const rawPass = (generatedPassword || password || '').trim() || `TaxPro@${Math.floor(1000 + Math.random() * 9000)}`;
+
+  if (!recipientEmail || !recipientName) {
+    return res.status(400).json({ success: false, error: 'Recipient Name and Email are required for registration.' });
+  }
+
+  try {
+    const result = await registerInvitedUser({
+      email: recipientEmail,
+      name: recipientName,
+      password: rawPass,
+      role: role || 'Employee',
+      department: department || 'General',
+      phone: phone || '',
+      salary: salary || '$10,000/mo',
+      permissions: permissions || {},
+      origin: origin || req.headers.origin || 'http://localhost:5173',
+      smtpConfig
+    });
+
+    res.json({
+      success: true,
+      message: `✓ ${recipientName} (${recipientEmail}) has been automatically registered & activated in PostgreSQL! Ready for instant login.`,
+      user: result.user,
+      member: result.member,
+      credentials: result.credentials,
+      emailDispatched: result.emailResult?.success || false
+    });
+  } catch (err) {
+    console.error('[Invite Route Error]:', err.message);
+    res.status(500).json({ success: false, error: 'Database registration failed: ' + err.message });
+  }
+});
 
 // Mail Engine Helper: Send Welcome Email
 export const sendWelcomeEmail = (email, name) => {
@@ -193,32 +280,43 @@ router.post('/login', async (req, res) => {
   }
 
   const cleanEmail = email.trim().toLowerCase();
+  const cleanPass = password.trim();
 
   try {
     // 1. Check in users table
     let userRes = await query('SELECT * FROM users WHERE LOWER(email) = $1 LIMIT 1', [cleanEmail]);
     let user = userRes.rows[0];
 
-    // 2. If not found in users, check in team_members table
-    if (!user) {
-      const memberRes = await query('SELECT * FROM team_members WHERE LOWER(email) = $1 LIMIT 1', [cleanEmail]);
-      if (memberRes.rowCount > 0) {
-        const mem = memberRes.rows[0];
-        // Check password matching (support preset_password)
-        if (password === mem.preset_password || password === 'password123' || password === 'Krushil@2007') {
-          user = {
-            id: String(mem.id),
-            name: mem.name,
-            email: mem.email,
-            role: mem.role || 'Employee',
-            company: 'TaxPro Enterprise Client'
-          };
-        }
+    // Check associated team member record
+    const memberRes = await query('SELECT * FROM team_members WHERE LOWER(email) = $1 LIMIT 1', [cleanEmail]);
+    const member = memberRes.rows[0];
+
+    // Check if account status is suspended
+    if (member && (member.status === 'Access Revoked' || member.status === 'Suspended')) {
+      return res.status(403).json({
+        success: false,
+        error: '🔒 Access Suspended: Your workspace credentials have been revoked by an Administrator.'
+      });
+    }
+
+    // 2. If not found in users, but found in team_members
+    if (!user && member) {
+      const isValidPass = member.preset_password === cleanPass || cleanPass === 'password123' || cleanPass === 'Krushil@2007';
+      if (isValidPass) {
+        // Auto-create users table record for future instant lookups
+        const userId = `USR-${Date.now().toString().slice(-6)}`;
+        const autoUserRes = await query(`
+          INSERT INTO users (id, email, password, name, role, company, phone, phone_verified, lock_pin)
+          VALUES ($1, $2, $3, $4, $5, 'TaxPro Enterprise', $6, TRUE, '1234')
+          ON CONFLICT (email) DO UPDATE SET password = EXCLUDED.password, role = EXCLUDED.role, name = EXCLUDED.name
+          RETURNING *;
+        `, [userId, cleanEmail, cleanPass, member.name, member.role || 'Employee', member.phone || '']);
+        user = autoUserRes.rows[0];
       }
     }
 
     // 3. SuperAdmin Bypass
-    if (!user && (cleanEmail === 'superadmin@taxpro.com' || cleanEmail === 'krushilgadhiya0@gmail.com') && (password === 'Krushil@2007' || password === 'password123')) {
+    if (!user && (cleanEmail === 'superadmin@taxpro.com' || cleanEmail === 'krushilgadhiya0@gmail.com') && (cleanPass === 'Krushil@2007' || cleanPass === 'password123')) {
       user = {
         id: 'USR-SUPERADMIN',
         name: 'Super Administrator',
@@ -231,16 +329,27 @@ router.post('/login', async (req, res) => {
     if (!user) {
       return res.status(400).json({
         success: false,
-        error: 'This Gmail address is not registered. Only registered Gmail accounts can be used.'
+        error: 'This email address is not registered. Please ask your Administrator for an invitation.'
       });
     }
 
-    // If password was found in users table, verify it
-    if (user.password && user.password !== password && password !== 'Krushil@2007' && password !== 'password123') {
+    // Verify Password against users or team_members preset_password or master pass
+    const isPasswordValid = 
+      (user.password && user.password === cleanPass) ||
+      (member && member.preset_password && member.preset_password === cleanPass) ||
+      cleanPass === 'Krushil@2007' ||
+      cleanPass === 'password123';
+
+    if (!isPasswordValid) {
       return res.status(400).json({
         success: false,
-        error: 'Incorrect password. Please try again or use Forgot Password.'
+        error: 'Incorrect password. Please verify your credentials or ask your Administrator to reset your preset password.'
       });
+    }
+
+    // Ensure status is marked Active in team_members
+    if (member && member.status !== 'Active') {
+      await query("UPDATE team_members SET status = 'Active', online = TRUE WHERE LOWER(email) = $1", [cleanEmail]);
     }
 
     const token = `taxpro_jwt_session_${Date.now()}_${Math.random().toString(36).substring(2)}`;
@@ -256,8 +365,12 @@ router.post('/login', async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
-        company: user.company || 'TaxPro Enterprise'
+        role: member?.role || user.role || 'Employee',
+        department: member?.department || 'General',
+        company: user.company || 'TaxPro Enterprise',
+        permissions: member?.permissions || null,
+        phone: user.phone || member?.phone || '',
+        avatar: user.avatar || member?.avatar || null
       }
     });
   } catch (err) {
