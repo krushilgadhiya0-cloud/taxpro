@@ -3,19 +3,15 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-// Resolve PostgreSQL Connection String
+// Resolve Native PostgreSQL Connection String
 const rawConnStr = 
   process.env.DATABASE_URL ||
-  process.env.taxpro_POSTGRES_URL_NON_POOLING ||
-  process.env.taxpro_POSTGRES_URL ||
-  process.env.taxpro_POSTGRES_PRISMA_URL;
+  'postgresql://postgres:Krushil%402007@localhost:5432/taxpro';
 
-if (!rawConnStr) {
-  console.warn('⚠️ No PostgreSQL connection string found in environment variables.');
-}
+console.log(`[PostgreSQL Engine] Target Connection: ${rawConnStr.replace(/:[^:@]+@/, ':****@')}`);
 
 // Clean connection string (strip sslmode query param to avoid pg library SSL conflict)
-const cleanConnStr = rawConnStr ? rawConnStr.split('?')[0] : '';
+const cleanConnStr = rawConnStr.split('?')[0];
 const isLocal = cleanConnStr.includes('localhost') || cleanConnStr.includes('127.0.0.1');
 
 export const pool = new Pool({
