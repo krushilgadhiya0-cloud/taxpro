@@ -652,13 +652,15 @@ export default function App() {
         email={userEmail}
         onClose={() => setIsOTPModalOpen(false)}
         onSuccessRedirect={async () => {
-          showToast('✓ OTP Verification Successful!', 'success');
+          showToast('✓ OTP Verification Successful! Opening Workspace...', 'success');
           localStorage.setItem('taxpro_profile_completed', 'true');
           
           let targetRole = localStorage.getItem('taxpro_user_role') || 'Admin';
           const cleanEmail = (userEmail || localStorage.getItem('taxpro_user_email') || '').trim();
 
           if (cleanEmail) {
+            localStorage.setItem('taxpro_user_email', cleanEmail);
+            setUserEmail(cleanEmail);
             try {
               const { data: memberCheck } = await supabase.from('team_members').select('id, role').ilike('email', cleanEmail).single();
               if (memberCheck) {
@@ -673,9 +675,12 @@ export default function App() {
           localStorage.setItem('taxpro_user_role', targetRole);
           setUserRole(targetRole);
           setIsAuthenticated(true);
-          setActiveTab(pendingTab || 'dashboard');
+          setLoading(false);
+          setActiveTab('dashboard');
           setPendingTab(null);
           setIsOTPModalOpen(false);
+          setIsAuthModalOpen(false);
+          window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
         }}
       />
 
