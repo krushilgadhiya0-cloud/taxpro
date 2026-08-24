@@ -35,7 +35,7 @@ export default async function handler(req, res) {
   const smtpPort = parseInt(smtpConfig?.port || process.env.SMTP_PORT || 587);
 
   try {
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
       secure: smtpPort === 465,
