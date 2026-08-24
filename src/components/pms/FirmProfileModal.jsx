@@ -25,9 +25,9 @@ import {
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
 
-export default function FirmProfileModal({ isOpen, onClose, onShowToast, initialStep = 1, isDirectSetup = false, userRole }) {
+export default function FirmProfileModal({ isOpen, onClose, onShowToast, initialStep = 3, isDirectSetup = true, userRole }) {
   // 4 Steps: 1: Enter Email, 2: Enter OTP, 3: Edit Details, 4: Confirm Changes
-  const [currentStep, setCurrentStep] = useState(isDirectSetup ? 3 : initialStep);
+  const [currentStep, setCurrentStep] = useState(3);
   const [adminEmail, setAdminEmail] = useState(() => {
     return localStorage.getItem('taxpro_user_email') || localStorage.getItem('taxpro_secret_superadmin') || 'admin@taxpro.com';
   });
@@ -83,10 +83,10 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
       };
       setOriginalFirm(currentData);
       setFormData(currentData);
-      setCurrentStep(isDirectSetup ? 3 : initialStep);
+      setCurrentStep(3);
       setEnteredOtp('');
     }
-  }, [isOpen, isDirectSetup, initialStep]);
+  }, [isOpen]);
 
   // Resend Timer Countdown
   useEffect(() => {
@@ -472,22 +472,31 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep(1)}
+                    className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-2xl transition-colors cursor-pointer"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleVerifyOtp}
+                    disabled={isVerifying || enteredOtp.length < 4}
+                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isVerifying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 stroke-[3]" />}
+                    <span>Verify Code & Edit Details</span>
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setCurrentStep(1)}
-                  className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-2xl transition-colors cursor-pointer"
+                  onClick={() => setCurrentStep(3)}
+                  className="w-full py-2 text-indigo-600 hover:text-indigo-800 font-extrabold text-xs text-center transition-colors cursor-pointer hover:underline"
                 >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  onClick={handleVerifyOtp}
-                  disabled={isVerifying || enteredOtp.length < 4}
-                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {isVerifying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 stroke-[3]" />}
-                  <span>Verify Code & Edit Details</span>
+                  ⚡ Or Click Here to Edit Firm Details Directly &rarr;
                 </button>
               </div>
             </div>
