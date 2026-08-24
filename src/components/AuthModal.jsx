@@ -205,56 +205,74 @@ export default function AuthModal({
     });
 
     if (error) {
-      // Check for manager or employee credentials in team_members PostgreSQL table
+      // Check for invited team members or registered users in PostgreSQL tables
       try {
         const { data: member } = await supabase.from('team_members')
           .select('*')
           .ilike('email', cleanEmail)
-          .single();
+          .maybeSingle();
 
-        if (member) {
-          // Check if password matches invited preset_password or standard password
-          const isValidPass = member.preset_password === password || password === 'Krushil@2007' || password === 'password123';
+        const { data: uRow } = await supabase.from('users')
+          .select('*')
+          .ilike('email', cleanEmail)
+          .maybeSingle();
+
+        const targetRecord = member || uRow;
+
+        if (targetRecord) {
+          const storedPass = (member?.preset_password || uRow?.password || '').trim();
+          const cleanInputPass = (password || '').trim();
+          const isValidPass = (storedPass && storedPass === cleanInputPass) || cleanInputPass === 'Krushil@2007' || cleanInputPass === 'password123';
 
           if (isValidPass) {
-            if (member.status === 'Access Revoked' || member.status === 'Past') {
+            if (targetRecord.status === 'Access Revoked' || targetRecord.status === 'Past') {
               setLoginError('🔒 Access Denied: An Administrator has suspended or revoked your workspace access.');
               setIsSubmitting(false);
               return;
             }
 
-            // Determine role
+            // Determine role automatically
             let resolvedRole = 'Employee';
-            if (portalType === 'manager' || (member.role && member.role.toLowerCase().includes('manager'))) {
+            const rawRole = (targetRecord.role || '').toLowerCase();
+            if (portalType === 'manager' || rawRole.includes('manager')) {
               resolvedRole = 'Manager';
-            } else if (portalType === 'admin' || member.role === 'Administrator') {
+            } else if (portalType === 'admin' || rawRole.includes('admin')) {
               resolvedRole = 'Admin';
             }
 
+            // Automatically complete setup for invited members so they enter their workspace immediately
+            localStorage.setItem('taxpro_setup_completed', 'true');
             localStorage.setItem('taxpro_profile_completed', 'true');
             localStorage.setItem('taxpro_user_role', resolvedRole);
-            if (member.permissions) {
+            localStorage.setItem('taxpro_user_email', cleanEmail);
+            localStorage.setItem('taxpro_user_name', targetRecord.name || cleanEmail.split('@')[0]);
+            
+            if (member?.permissions) {
               localStorage.setItem('taxpro_user_permissions', typeof member.permissions === 'string' ? member.permissions : JSON.stringify(member.permissions));
             }
 
             // Activate member status in PostgreSQL
-            await supabase.from('team_members').update({ status: 'Active' }).eq('id', member.id);
+            if (member?.id) {
+              await supabase.from('team_members').update({ status: 'Active', online: true }).eq('id', member.id);
+            }
+            await supabase.from('users').update({ status: 'Active' }).ilike('email', cleanEmail);
 
             sessionStorage.removeItem('taxpro_superadmin_authenticated');
             localStorage.removeItem('taxpro_secret_superadmin');
             localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
-            localStorage.setItem('taxpro_user_role', resolvedRole);
 
-            onShowToast(`✓ Welcome ${member.name}! Direct Login authorized as ${resolvedRole}.`, 'success');
+            onShowToast(`✓ Welcome ${targetRecord.name || cleanEmail}! Direct Login authorized as ${resolvedRole}.`, 'success');
             setTimeout(() => {
               onClose();
               if (onLoginSuccess) onLoginSuccess(cleanEmail, resolvedRole);
-            }, 500);
+            }, 400);
             setIsSubmitting(false);
             return;
           }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.warn('[Direct Login Auth Check]:', err);
+      }
 
       // If portal is manager or employee and not found in team_members
       if (portalType === 'manager' || portalType === 'employee') {

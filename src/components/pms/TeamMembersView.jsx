@@ -267,6 +267,50 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       let emailSent = false;
 
       // 1. Dispatch to server invitation and dual-table PostgreSQL registration endpoint
+      // 1. Direct reliable upsert to PostgreSQL team_members table
+      const empId = `EMP-${Date.now().toString().slice(-6)}`;
+      const memberPayload = {
+        id: empId,
+        name: cleanName,
+        email: cleanEmail,
+        phone: purePhone,
+        role: formData.role,
+        department: formData.department,
+        status: 'Pending Invite',
+        preset_password: effectivePassword,
+        permissions: initialPerms,
+        upi_id: formData.upi_id ? formData.upi_id.trim() : null,
+        salary: '$10,000/mo',
+        online: false
+      };
+
+      try {
+        await supabase.from('team_members').upsert([memberPayload], { onConflict: 'email' });
+      } catch (tmErr) {
+        console.warn('[team_members upsert]:', tmErr);
+      }
+
+      // 2. Direct reliable upsert to PostgreSQL users table
+      const userPayload = {
+        id: `USR-${Date.now().toString().slice(-6)}`,
+        email: cleanEmail,
+        password: effectivePassword,
+        name: cleanName,
+        role: formData.role,
+        company: firmName || 'TaxPro Enterprise',
+        phone: purePhone,
+        phone_verified: true,
+        lock_pin: '1234',
+        status: 'Active'
+      };
+
+      try {
+        await supabase.from('users').upsert([userPayload], { onConflict: 'email' });
+      } catch (uErr) {
+        console.warn('[users upsert]:', uErr);
+      }
+
+      // 3. Dispatch to server invitation mailer
       try {
         const resp = await fetch(`${baseUrl}/api/invite`, {
           method: 'POST',
@@ -287,73 +331,21 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
         const data = await resp.json();
         if (data && data.success) {
-          registeredCredentials = data.credentials || {
-            email: cleanEmail,
-            password: effectivePassword,
-            role: formData.role,
-            department: formData.department,
-            name: cleanName
-          };
           emailSent = data.emailDispatched || false;
-        } else if (data && !data.success) {
-          if (onShowToast) onShowToast(data.error || 'Invitation failed: Account already exists.', 'error');
-          setIsInviting(false);
-          return;
         }
       } catch (networkErr) {
-        console.warn('[Invite API Network Note]:', networkErr);
+        console.warn('[Invite Mailer Network Note]:', networkErr);
       }
 
-      // 2. Direct client-side fallback upsert to both PostgreSQL tables
-      const userId = `USR-${Date.now().toString().slice(-6)}`;
-      const empId = `EMP-${Date.now().toString().slice(-6)}`;
+      registeredCredentials = {
+        email: cleanEmail,
+        password: effectivePassword,
+        role: formData.role,
+        department: formData.department,
+        name: cleanName
+      };
 
-      try {
-        await supabase.from('users').insert([{
-          id: userId,
-          email: cleanEmail,
-          password: effectivePassword,
-          name: cleanName,
-          role: formData.role,
-          company: 'TaxPro Enterprise',
-          phone: purePhone,
-          phone_verified: true,
-          lock_pin: '1234'
-        }]);
-      } catch (uErr) {}
-
-      try {
-        if (formData.upi_id) {
-          localStorage.setItem(`taxpro_upi_${empId}`, formData.upi_id.trim());
-          localStorage.setItem(`taxpro_upi_${cleanEmail}`, formData.upi_id.trim());
-        }
-        await supabase.from('team_members').insert([{
-          id: empId,
-          name: cleanName,
-          email: cleanEmail,
-          phone: purePhone,
-          role: formData.role,
-          department: formData.department,
-          status: 'Pending Invite',
-          preset_password: effectivePassword,
-          permissions: initialPerms,
-          upi_id: formData.upi_id ? formData.upi_id.trim() : null,
-          salary: '$10,000/mo',
-          online: false
-        }]);
-      } catch (tErr) {}
-
-      if (!registeredCredentials) {
-        registeredCredentials = {
-          email: cleanEmail,
-          password: effectivePassword,
-          role: formData.role,
-          department: formData.department,
-          name: cleanName
-        };
-      }
-
-      // Re-fetch directory from database
+      // Re-fetch directory and immediately switch to 'Invitations' tab
       await fetchMembers();
       setActiveTab('Invitations');
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));

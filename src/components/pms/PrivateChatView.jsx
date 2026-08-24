@@ -282,9 +282,16 @@ export default function PrivateChatView({ onShowToast, preSelectedUser }) {
       const res = await fetch(`${baseUrl}/api/chat/contacts?currentUserEmail=${encodeURIComponent(currentUserEmail)}`);
       const data = await res.json();
       if (data.success && Array.isArray(data.contacts)) {
-        // Filter out current user from chatting with themselves unless they are the only user
-        const otherContacts = data.contacts.filter(c => (c.email || '').toLowerCase().trim() !== currentUserEmail);
-        const finalList = otherContacts.length > 0 ? otherContacts : data.contacts;
+        // Filter out current user and hidden system accounts from regular staff private chat
+        const systemAdmins = ['superadmin@taxpro.com', 'workforcepro09@gmail.com'];
+        const otherContacts = data.contacts.filter(c => {
+          const mEmail = (c.email || '').toLowerCase().trim();
+          if (mEmail === currentUserEmail) return false;
+          if (systemAdmins.includes(mEmail) && !systemAdmins.includes(currentUserEmail)) return false;
+          if (c.role === 'Super Admin' && userRole !== 'super admin') return false;
+          return true;
+        });
+        const finalList = otherContacts.length > 0 ? otherContacts : (systemAdmins.includes(currentUserEmail) ? data.contacts : []);
         setContacts(finalList);
 
         // If preSelectedUser provided, select them
