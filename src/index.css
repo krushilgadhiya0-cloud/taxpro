@@ -1001,4 +1001,45 @@ html.dark-mode-global table tbody tr:hover {
   }
 }
 
+/* ==========================================================================
+   MOBILE VIEW (375px) & SMALL DEVICE RESPONSIVE SUITE
+   ========================================================================== */
+@media (max-width: 480px) {
+  html, body {
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Prevent elements from blowing out width on 375px */
+  .max-w-7xl, .max-w-6xl, .max-w-5xl, .max-w-4xl, .max-w-3xl, .max-w-2xl, .max-w-xl, .max-w-lg {
+    max-width: 100% !important;
+  }
+
+  /* Compact responsive padding on mobile screens */
+  .p-6, .p-8 {
+    padding: 1rem !important;
+  }
+
+  /* Ensure tables scroll smoothly without breaking the layout */
+  table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Optimize modal viewport on 375px devices */
+  .fixed.inset-0 > div {
+    max-width: calc(100vw - 1rem) !important;
+    margin: 0.5rem auto !important;
+  }
+
+  /* Touch tap targets */
+  button, a {
+    min-height: 38px;
+    touch-action: manipulation;
+  }
+}
+
 
