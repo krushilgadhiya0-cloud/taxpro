@@ -404,29 +404,6 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
           </button>
         </div>
 
-        {/* Instant Code Auto-Fill Helper */}
-        {devOtpHint && stage === 'input' && (
-          <div className="mt-3 p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-between text-xs animate-fade-in">
-            <span className="text-cyan-300 font-mono">
-              Active OTP: <strong className="text-white tracking-widest">{devOtpHint}</strong>
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                const digits = devOtpHint.split('').slice(0, 4);
-                setOtp(digits);
-                // Trigger auto verification
-                setTimeout(() => {
-                  triggerVerification(devOtpHint);
-                }, 300);
-              }}
-              className="px-2.5 py-1 bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer shadow-sm"
-            >
-              1-Click Fill & Verify
-            </button>
-          </div>
-        )}
-
         {/* Security Info */}
         <div className="mt-4 text-[10px] text-gray-500 font-mono">
           <span>Protected by Python smtplib TLS Transmission</span>
