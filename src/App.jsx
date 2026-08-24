@@ -526,18 +526,34 @@ export default function App() {
        );
     }
 
+    const isSetupCompleted = localStorage.getItem('taxpro_setup_completed') === 'true';
+
     return (
       <div className="relative min-h-screen bg-[#f3f4f6]">
         <ToastContainer toasts={toasts} onCloseToast={closeToast} />
         
-        <MainPMSShell 
-          userRole={isMasterAdmin ? 'Super Admin' : userRole}
-          isSuperAdmin={isMasterAdmin}
-          onSwitchToSuperAdmin={handleSwitchToSuperAdmin}
-          onLogout={handleLogout}
-          onTriggerAI={() => setIsAIAssistantOpen(true)}
-          onShowToast={showToast}
-        />
+        {/* MANDATORY PRACTICE & FIRM SETUP GATEKEEPER */}
+        {!isSetupCompleted && !isMasterAdmin ? (
+          <ProfileSetupModal
+            isOpen={true}
+            onComplete={(data) => {
+              localStorage.setItem('taxpro_setup_completed', 'true');
+              showToast(`✓ Practice "${data.firmName}" configured successfully! Welcome to TaxPro.`, 'success');
+              window.dispatchEvent(new CustomEvent('taxpro_firm_updated'));
+              window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+              window.location.reload();
+            }}
+          />
+        ) : (
+          <MainPMSShell 
+            userRole={isMasterAdmin ? 'Super Admin' : userRole}
+            isSuperAdmin={isMasterAdmin}
+            onSwitchToSuperAdmin={handleSwitchToSuperAdmin}
+            onLogout={handleLogout}
+            onTriggerAI={() => setIsAIAssistantOpen(true)}
+            onShowToast={showToast}
+          />
+        )}
 
         {/* SuperAdmin Master Password Verification Gate Modal */}
         <SuperAdminAuthModal
