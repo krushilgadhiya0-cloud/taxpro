@@ -27,7 +27,9 @@ import {
   AlertTriangle,
   RotateCcw,
   SlidersHorizontal,
-  ChevronDown
+  ChevronDown,
+  FolderKanban,
+  Briefcase
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -61,16 +63,18 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
   const [tasks, setTasks] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [departmentsList, setDepartmentsList] = useState([]);
+  const [projects, setProjects] = useState([]);
 
   const loadData = async () => {
     const dept = localStorage.getItem('taxpro_user_department');
     if (dept) setUserDepartment(dept);
 
     try {
-      const [tasksRes, membersRes, deptsRes] = await Promise.all([
+      const [tasksRes, membersRes, deptsRes, projRes] = await Promise.all([
          supabase.from('global_tasks').select('*'),
          supabase.from('team_members').select('*'),
-         supabase.from('departments').select('*')
+         supabase.from('departments').select('*'),
+         supabase.from('projects').select('*').order('created_at', { ascending: false })
       ]);
       
       if (tasksRes.data) {
@@ -82,6 +86,38 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
       
       if (membersRes.data) setTeamMembers(membersRes.data);
       if (deptsRes.data) setDepartmentsList(deptsRes.data);
+
+      if (projRes.data && projRes.data.length > 0) {
+        setProjects(projRes.data.map(p => ({
+          id: p.id,
+          name: p.name,
+          clientName: p.client_name || p.client_id || '',
+          projectManager: p.manager || '',
+          category: p.category || 'General',
+          dueDate: p.deadline || p.due_date || '',
+          status: p.status || 'Active',
+          createdAt: p.created_at || ''
+        })));
+      } else {
+        const localProj = localStorage.getItem('taxpro_projects');
+        if (localProj) {
+          try {
+            const parsed = JSON.parse(localProj);
+            if (Array.isArray(parsed)) {
+              setProjects(parsed.map(p => ({
+                id: p.id,
+                name: p.name || p.title,
+                clientName: p.clientName || p.client_name || '',
+                projectManager: p.projectManager || p.manager || '',
+                category: p.category || 'General',
+                dueDate: p.dueDate || p.deadline || '',
+                status: p.status || 'Active',
+                createdAt: p.createdAt || p.created_at || ''
+              })));
+            }
+          } catch(e) {}
+        }
+      }
       
     } catch (e) {}
   };
@@ -239,58 +275,133 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
     });
   }, [tasks, dateRangeFilter, customStartDate, customEndDate, selectedDepts, selectedAssignee, selectedStatus, selectedPriority, teamMembers]);
 
-  // Interactive Task Counts
-  const [taskMetrics, setTaskMetrics] = useState({
-    dueToday: 0,
-    dueTomorrow: 0,
-    dueIn7Days: 0,
-    dueAfter7Days: 0,
-    dueIn30Days: 0,
-    dueAfter30Days: 0,
-    overdueUpTo7Days: 0,
-    overdueMoreThan7Days: 0,
-    dueTotal: 0
-  });
+  const currentUserEmail = (localStorage.getItem('taxpro_user_email') || 'admin@taxpro.com').toLowerCase().trim();
+  const currentUserName = localStorage.getItem('taxpro_user_name') || localStorage.getItem('taxpro_user_fullname') || 'Administrator';
 
-  useEffect(() => {
+  // Task Status & Workload Metrics
+  const taskStatusMetrics = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    let dToday = 0, dTomorrow = 0, d7 = 0, dAfter7 = 0, dto30 = 0, dAfter30 = 0, ov7 = 0, ovMore7 = 0, dTotal = 0;
-    
+
+    const total = activeFilteredTasks.length;
+    let myTasks = 0;
+    let pending = 0;
+    let completed = 0;
+    let inProgress = 0;
+    let overdue = 0;
+
     activeFilteredTasks.forEach(t => {
-       if (t.status === 'Completed') return;    
-       
-       if (t.dueDate) {
-         const dDate = new Date(t.dueDate);
-         if (isNaN(dDate.getTime())) return;
-         const targetDate = new Date(dDate.getFullYear(), dDate.getMonth(), dDate.getDate());
-         const diffTime = targetDate.getTime() - today.getTime();
-         const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-         
-         if (diffDays === 0) dToday++;
-         else if (diffDays === 1) dTomorrow++;
-         else if (diffDays > 1 && diffDays <= 7) d7++;
-         else if (diffDays > 7 && diffDays <= 30) dto30++;
-         else if (diffDays > 30) dAfter30++;
-         else if (diffDays < 0 && diffDays >= -7) ov7++;
-         else if (diffDays < -7) ovMore7++;
-         dTotal++;
-       }
+      const assigneeStr = (t.assignee || t.assigned_to || '').toLowerCase();
+      if (
+        assigneeStr.includes(currentUserEmail) ||
+        assigneeStr.includes(currentUserName.toLowerCase()) ||
+        (currentUserName && currentUserName !== 'Administrator' && assigneeStr.includes(currentUserName.toLowerCase().split(' ')[0]))
+      ) {
+        myTasks++;
+      }
+
+      const st = (t.status || 'Pending').toLowerCase();
+      if (st === 'completed') {
+        completed++;
+      } else if (st === 'in progress' || st === 'working' || st === 'under review') {
+        inProgress++;
+      } else {
+        pending++;
+      }
+
+      // Overdue check (only for non-completed tasks)
+      if (st !== 'completed' && t.dueDate) {
+        const dDate = new Date(t.dueDate);
+        if (!isNaN(dDate.getTime())) {
+          const targetDate = new Date(dDate.getFullYear(), dDate.getMonth(), dDate.getDate());
+          if (targetDate.getTime() < today.getTime()) {
+            overdue++;
+          }
+        }
+      }
     });
 
-    setTaskMetrics({
-      dueToday: dToday,
-      dueTomorrow: dTomorrow,
-      dueIn7Days: d7,
-      dueAfter7Days: d7 + dto30 + dAfter30,
-      dueIn30Days: dto30,
-      dueAfter30Days: dAfter30,
-      overdueUpTo7Days: ov7,
-      overdueMoreThan7Days: ovMore7,
-      dueTotal: dTotal
-    });
-  }, [activeFilteredTasks]);
+    const pendingPercent = total > 0 ? Math.round((pending / total) * 100) : 0;
+    const completedPercent = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const inProgressPercent = total > 0 ? Math.round((inProgress / total) * 100) : 0;
+    const overduePercent = total > 0 ? Math.round((overdue / total) * 100) : 0;
+
+    return {
+      myTasks,
+      total,
+      pending,
+      completed,
+      inProgress,
+      overdue,
+      pendingPercent,
+      completedPercent,
+      inProgressPercent,
+      overduePercent
+    };
+  }, [activeFilteredTasks, currentUserEmail, currentUserName]);
+
+  const taskDashboardCards = [
+    {
+      key: 'myTasks',
+      title: 'My Tasks',
+      count: taskStatusMetrics.myTasks,
+      subtitle: 'Assigned to me',
+      borderColor: 'border-indigo-200',
+      bgColor: 'bg-indigo-50/50',
+      textColor: 'text-indigo-600',
+      subTextColor: 'text-indigo-500'
+    },
+    {
+      key: 'totalTasks',
+      title: 'Total Tasks',
+      count: taskStatusMetrics.total,
+      subtitle: 'All assigned tasks',
+      borderColor: 'border-blue-200',
+      bgColor: 'bg-blue-50/50',
+      textColor: 'text-blue-600',
+      subTextColor: 'text-blue-500'
+    },
+    {
+      key: 'pending',
+      title: 'Pending',
+      count: taskStatusMetrics.pending,
+      subtitle: `${taskStatusMetrics.pendingPercent}% of total`,
+      borderColor: 'border-amber-200',
+      bgColor: 'bg-amber-50/50',
+      textColor: 'text-amber-600',
+      subTextColor: 'text-amber-700'
+    },
+    {
+      key: 'completed',
+      title: 'Completed',
+      count: taskStatusMetrics.completed,
+      subtitle: `${taskStatusMetrics.completedPercent}% of total`,
+      borderColor: 'border-emerald-200',
+      bgColor: 'bg-emerald-50/50',
+      textColor: 'text-emerald-600',
+      subTextColor: 'text-emerald-700'
+    },
+    {
+      key: 'inProgress',
+      title: 'In Progress',
+      count: taskStatusMetrics.inProgress,
+      subtitle: `${taskStatusMetrics.inProgressPercent}% of total`,
+      borderColor: 'border-purple-200',
+      bgColor: 'bg-purple-50/50',
+      textColor: 'text-purple-600',
+      subTextColor: 'text-purple-700'
+    },
+    {
+      key: 'overdue',
+      title: 'Overdue',
+      count: taskStatusMetrics.overdue,
+      subtitle: `${taskStatusMetrics.overduePercent}% of total`,
+      borderColor: 'border-rose-200',
+      bgColor: 'bg-rose-50/50',
+      textColor: 'text-rose-600',
+      subTextColor: 'text-rose-700'
+    }
+  ];
 
   const openFilterDrawer = () => {
     setTempDateRange(dateRangeFilter);
@@ -357,13 +468,13 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
     return summary;
   }, [activeFilteredTasks]);
 
-  const recentTasks = useMemo(() => {
-    return [...activeFilteredTasks].sort((a,b) => {
-       const da = new Date(a.dueDate || 0);
-       const db = new Date(b.dueDate || 0);
+  const recentProjects = useMemo(() => {
+    return [...projects].sort((a, b) => {
+       const da = new Date(a.createdAt || a.dueDate || 0);
+       const db = new Date(b.createdAt || b.dueDate || 0);
        return db - da;
     }).slice(0, 5);
-  }, [activeFilteredTasks]);
+  }, [projects]);
 
   const sidebarItems = [
     { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
@@ -381,18 +492,6 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
     { name: 'Fees Tracking', icon: DollarSign, hasSub: true },
   ];
 
-  const dueCards = [
-    { key: 'dueToday', label: 'Due Today', count: taskMetrics.dueToday, borderColor: 'border-[#fde047]', bgColor: 'bg-[#fefce8]', textColor: 'text-[#ca8a04]' },
-    { key: 'dueTomorrow', label: 'Due Tomorrow', count: taskMetrics.dueTomorrow, borderColor: 'border-[#86efac]', bgColor: 'bg-[#f0fdf4]', textColor: 'text-[#16a34a]' },
-    { key: 'dueIn7Days', label: 'Due In 7 Days', count: taskMetrics.dueIn7Days, borderColor: 'border-[#93c5fd]', bgColor: 'bg-[#eff6ff]', textColor: 'text-[#2563eb]' },
-    { key: 'dueAfter7Days', label: 'Due After 7 Days', count: taskMetrics.dueAfter7Days, borderColor: 'border-[#93c5fd]', bgColor: 'bg-[#eff6ff]', textColor: 'text-[#2563eb]' },
-    { key: 'dueIn30Days', label: 'Due In 30 Days', count: taskMetrics.dueIn30Days, borderColor: 'border-[#93c5fd]', bgColor: 'bg-[#eff6ff]', textColor: 'text-[#2563eb]' },
-    { key: 'dueAfter30Days', label: 'Due After 30 Days', count: taskMetrics.dueAfter30Days, borderColor: 'border-[#93c5fd]', bgColor: 'bg-[#eff6ff]', textColor: 'text-[#2563eb]' },
-    { key: 'overdueUpTo7Days', label: 'Overdue Up To 7 Days', count: taskMetrics.overdueUpTo7Days, borderColor: 'border-[#fca5a5]', bgColor: 'bg-[#fef2f2]', textColor: 'text-[#dc2626]' },
-    { key: 'overdueMoreThan7Days', label: 'Overdue More Than 7 Days', count: taskMetrics.overdueMoreThan7Days, borderColor: 'border-[#fca5a5]', bgColor: 'bg-[#fef2f2]', textColor: 'text-[#dc2626]' },
-    { key: 'dueTotal', label: 'Due Total', count: taskMetrics.dueTotal, borderColor: 'border-[#c084fc]', bgColor: 'bg-[#faf5ff]', textColor: 'text-[#9333ea]' }
-  ];
-
   return (
     <div className="flex-1 bg-[#f3f4f6] text-gray-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       
@@ -404,23 +503,44 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
           {/* PURPLE DASHBOARD HEADER BANNER */}
           <div className="w-full rounded-2xl bg-gradient-to-r from-[#5b52e0] via-[#7c3aed] to-[#9333ea] p-6 shadow-md text-white mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-extrabold font-outfit tracking-tight">Dashboard</h1>
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <span className="text-[10px] uppercase font-black tracking-widest px-2.5 py-0.5 rounded-full bg-white/20 text-white font-mono border border-white/30 flex items-center gap-1 shadow-2xs">
+                  🏢 {localStorage.getItem('taxpro_firm_tag') || 'TaxPro'}
+                </span>
+                <span className="text-xs text-indigo-100 font-bold truncate max-w-xs">
+                  {localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates'}
+                </span>
+              </div>
+              <h1 className="text-3xl font-extrabold font-outfit tracking-tight">Practice Dashboard</h1>
               <p className="text-xs text-indigo-100 mt-1">TaxPro PMS Real-Time Tax & Compliance Overview</p>
             </div>
 
-            {/* Last Refreshed Badge */}
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/20 border border-white/20 backdrop-blur-md text-xs font-medium">
-              <span>Last Refreshed: {currentTime}</span>
-              <button 
+            {/* Actions: Firm Profile & Last Refreshed */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
                 onClick={() => {
-                  loadData();
-                  setCurrentTime(new Date().toLocaleString());
+                  window.dispatchEvent(new CustomEvent('taxpro_open_firm_modal', { detail: { isDirectSetup: false } }));
                 }}
-                className="hover:rotate-180 transition-transform duration-500 cursor-pointer"
-                title="Refresh Metrics"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/30 text-xs font-bold text-white transition-all cursor-pointer shadow-xs active:scale-95"
+                title="Manage Firm Identity & Member Badges via OTP"
               >
-                <RefreshCw className="w-3.5 h-3.5 text-white" />
+                <span>🏢 Firm Profile</span>
               </button>
+
+              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/20 border border-white/20 backdrop-blur-md text-xs font-medium">
+                <span>Last Refreshed: {currentTime}</span>
+                <button 
+                  onClick={() => {
+                    loadData();
+                    setCurrentTime(new Date().toLocaleString());
+                  }}
+                  className="hover:rotate-180 transition-transform duration-500 cursor-pointer"
+                  title="Refresh Metrics"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-white" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -792,19 +912,22 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
             </>
           )}
 
-          {/* 9 DUE METRIC CARDS GRID (White Cards + Colored Borders + Soft Fills) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-9 gap-3.5 mb-8">
-            {dueCards.map((card) => (
+          {/* 6 MODERN METRIC CARDS (My Tasks, Total Tasks, Pending, Completed, In Progress, Overdue) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5 mb-8">
+            {taskDashboardCards.map((card) => (
               <div 
                 key={card.key}
-                className={`bg-white p-4 rounded-2xl border-2 ${card.borderColor} ${card.bgColor} flex flex-col justify-between text-center shadow-xs hover:shadow-md hover:scale-105 transition-all duration-200 cursor-default`}
+                className={`bg-white p-4 sm:p-5 rounded-2xl border-2 ${card.borderColor} ${card.bgColor} flex flex-col justify-between text-center shadow-xs hover:shadow-md hover:scale-105 transition-all duration-200 cursor-default`}
               >
-                <span className="text-[11px] font-bold text-gray-600 leading-tight">
-                  {card.label}
+                <span className="text-xs font-bold text-gray-700 leading-tight uppercase tracking-wider">
+                  {card.title}
                 </span>
-                <div className={`text-3xl font-black font-outfit mt-3 ${card.textColor}`}>
+                <div className={`text-3xl font-black font-outfit my-2 ${card.textColor}`}>
                   {card.count}
                 </div>
+                <span className={`text-[11px] font-bold ${card.subTextColor}`}>
+                  {card.subtitle}
+                </span>
               </div>
             ))}
           </div>
@@ -878,32 +1001,46 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
           {/* TWO COLUMN LOWER DASHBOARD SECTION */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
-            {/* Left Card: Recent Tasks */}
+            {/* Left Card: Recent Projects */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-extrabold text-[#1e1e2d] font-outfit">Recent Tasks</h3>
+                <div className="flex items-center gap-2">
+                  <FolderKanban className="w-5 h-5 text-indigo-600" />
+                  <h3 className="text-base font-extrabold text-[#1e1e2d] font-outfit">Recent Projects</h3>
+                </div>
               </div>
 
               {/* Table */}
               <div className="w-full border border-gray-200 rounded-xl overflow-hidden mt-2 flex flex-col">
                 <div className="grid grid-cols-[1fr,auto] bg-gray-50 p-3 text-xs font-extrabold text-gray-500 border-b border-gray-200 uppercase">
-                  <span>TASK NAME</span>
-                  <span className="text-right">DUE DATE</span>
+                  <span>PROJECT & CLIENT</span>
+                  <span className="text-right">DUE DATE / STATUS</span>
                 </div>
-                {recentTasks.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-gray-700 font-bold bg-white">
-                    No Recent Tasks
+                {recentProjects.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-gray-500 font-bold bg-white">
+                    No Recent Projects
                   </div>
                 ) : (
                   <div className="flex flex-col bg-white">
-                    {recentTasks.map((t, idx) => (
-                      <div key={idx} className="grid grid-cols-[1fr,auto] p-3 border-b last:border-b-0 border-gray-100 hover:bg-gray-50 transition-colors">
+                    {recentProjects.map((p, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr,auto] p-3 border-b last:border-b-0 border-gray-100 hover:bg-gray-50 transition-colors items-center">
                         <div className="flex flex-col min-w-0 pr-4">
-                          <span className="text-xs font-bold text-gray-800 truncate">{t.title}</span>
-                          <span className="text-[10px] font-semibold text-gray-500 truncate">{t.client}</span>
+                          <span className="text-xs font-bold text-gray-900 truncate">{p.name}</span>
+                          <span className="text-[10px] font-semibold text-gray-500 truncate">
+                            {p.clientName || 'General Client'} • {p.category || 'Practice'}
+                          </span>
                         </div>
-                        <div className="text-xs font-bold text-gray-700 flex items-center">
-                          {t.dueDate || 'N/A'}
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            p.status === 'Completed' ? 'bg-emerald-50 text-emerald-700' :
+                            p.status === 'In Progress' ? 'bg-purple-50 text-purple-700' :
+                            'bg-indigo-50 text-indigo-700'
+                          }`}>
+                            {p.status || 'Active'}
+                          </span>
+                          <span className="text-xs font-bold text-gray-600 hidden sm:inline">
+                            {p.dueDate || 'No Due Date'}
+                          </span>
                         </div>
                       </div>
                     ))}

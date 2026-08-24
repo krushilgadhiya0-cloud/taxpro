@@ -2,46 +2,74 @@ import express from 'express';
 import { query } from '../db.js';
 import { spawn } from 'child_process';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
 // In-Memory OTP Store with 10-Minute Expiry
-const otpStore = new Map();
+export const otpStore = new Map();
 
 // Universal Python smtplib Mail Dispatcher
 export const runPythonMailer = (payload) => {
   return new Promise((resolve) => {
-    const scriptPath = path.join(process.cwd(), 'server', 'python_mailer.py');
-    const pyProcess = spawn('py', [scriptPath]);
+    const scriptPath = path.resolve(__dirname, '..', 'python_mailer.py');
+    
+    // Try py first (Windows launcher), with fallback to python and python3
+    const runners = ['py', 'python', 'python3'];
+    let currentIdx = 0;
 
-    let output = '';
-    let errorOutput = '';
-
-    pyProcess.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    pyProcess.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-    });
-
-    pyProcess.on('close', (code) => {
-      if (code !== 0 && !output) {
-        console.warn('[Python smtplib Process Warning]:', errorOutput || `Process exited with code ${code}`);
-        return resolve({ success: false, error: errorOutput || `Exit code ${code}` });
+    const trySpawn = (idx) => {
+      if (idx >= runners.length) {
+        return resolve({ success: false, error: 'No Python interpreter found (py/python/python3)' });
       }
+
+      const runner = runners[idx];
+      let output = '';
+      let errorOutput = '';
+      let hasError = false;
 
       try {
-        const result = JSON.parse(output.trim());
-        resolve(result);
-      } catch (err) {
-        resolve({ success: true, raw: output });
-      }
-    });
+        const pyProcess = spawn(runner, [scriptPath]);
 
-    // Write JSON payload to Python stdin
-    pyProcess.stdin.write(JSON.stringify(payload));
-    pyProcess.stdin.end();
+        pyProcess.on('error', (err) => {
+          hasError = true;
+          trySpawn(idx + 1);
+        });
+
+        pyProcess.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+
+        pyProcess.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        pyProcess.on('close', (code) => {
+          if (hasError) return;
+          if (code !== 0 && !output) {
+            console.warn(`[Python smtplib (${runner}) Process Warning]:`, errorOutput || `Process exited with code ${code}`);
+            return resolve({ success: false, error: errorOutput || `Exit code ${code}` });
+          }
+
+          try {
+            const result = JSON.parse(output.trim());
+            resolve(result);
+          } catch (err) {
+            resolve({ success: true, raw: output });
+          }
+        });
+
+        pyProcess.stdin.write(JSON.stringify(payload));
+        pyProcess.stdin.end();
+      } catch (err) {
+        trySpawn(idx + 1);
+      }
+    };
+
+    trySpawn(0);
   });
 };
 
@@ -73,6 +101,7 @@ router.post('/send-otp', async (req, res) => {
     success: true,
     message: `Verification code successfully dispatched via Python smtplib to ${cleanEmail}`,
     email: cleanEmail,
+    devOtp: otpCode,
     dispatchResult
   });
 });
@@ -126,7 +155,15 @@ export const isEmailRegistered = async (email) => {
     const userRes = await query('SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1', [cleanEmail]);
     if (userRes.rowCount > 0) return true;
 
-    const memberRes = await query('SELECT id FROM team_members WHERE LOWER(email) = $1 LIMIT 1', [cleanEmail]);
+    // Only count team_members who are fully active with configured passwords
+    const memberRes = await query(`
+      SELECT id FROM team_members 
+      WHERE LOWER(email) = $1 
+        AND status = 'Active' 
+        AND preset_password IS NOT NULL 
+        AND preset_password != '' 
+      LIMIT 1
+    `, [cleanEmail]);
     return memberRes.rowCount > 0;
   } catch (err) {
     console.error('[isEmailRegistered PG Error]:', err.message);
@@ -149,7 +186,20 @@ export const registerInvitedUser = async ({ email, password, name, role, departm
   const empId = `EMP-${Date.now().toString().slice(-6)}`;
 
   try {
-    // 1. Insert/Update users table (for instant authentication)
+    // 0. Check if account is already registered
+    const existingUser = await query('SELECT id, role, email FROM users WHERE LOWER(email) = $1 LIMIT 1', [cleanEmail]);
+    const existingMember = await query('SELECT id, role, email, status FROM team_members WHERE LOWER(email) = $1 LIMIT 1', [cleanEmail]);
+    
+    if (existingUser.rowCount > 0 || existingMember.rowCount > 0) {
+      const foundRole = existingMember.rows[0]?.role || existingUser.rows[0]?.role || 'Staff';
+      return {
+        success: false,
+        alreadyRegistered: true,
+        error: `⚠️ Account Already Exists: "${cleanEmail}" is already registered as ${foundRole} in the practice database. Cannot send duplicate invitation.`
+      };
+    }
+
+    // 1. Insert into users table (for instant authentication)
     const userRes = await query(`
       INSERT INTO users (id, email, password, name, role, company, phone, phone_verified, lock_pin, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, 'TaxPro Enterprise', $6, TRUE, '1234', NOW(), NOW())
@@ -165,13 +215,13 @@ export const registerInvitedUser = async ({ email, password, name, role, departm
     // 2. Insert/Update team_members table (for directory & permissions)
     const memRes = await query(`
       INSERT INTO team_members (id, name, email, phone, role, department, status, preset_password, salary, permissions, online, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, 'Active', $7, $8, $9, TRUE, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, 'Pending Invite', $7, $8, $9, FALSE, NOW(), NOW())
       ON CONFLICT (email) DO UPDATE SET 
         name = EXCLUDED.name, 
         phone = CASE WHEN EXCLUDED.phone IS NOT NULL AND EXCLUDED.phone != '' THEN EXCLUDED.phone ELSE team_members.phone END,
         role = EXCLUDED.role, 
         department = EXCLUDED.department, 
-        status = 'Active', 
+        status = CASE WHEN team_members.status = 'Active' THEN 'Active' ELSE 'Pending Invite' END, 
         preset_password = EXCLUDED.preset_password, 
         permissions = EXCLUDED.permissions,
         updated_at = NOW()
@@ -254,19 +304,41 @@ router.post('/invite', async (req, res) => {
   }
 });
 
-// Mail Engine Helper: Send Welcome Email
-export const sendWelcomeEmail = (email, name) => {
+// Mail Engine Helper: Send Welcome Email via Python smtplib
+export const sendWelcomeEmail = async (email, name, role = 'Employee', origin = 'http://localhost:3000', smtpConfig = {}) => {
   const targetEmail = (email || 'krushilgadhiya0@gmail.com').trim().toLowerCase();
-  const userName = name || 'Krushil Gadhiya';
+  const userName = name || 'Team Member';
 
-  console.log(`[TaxPro Email Engine] 📧 Official Welcome Email dispatched to ${targetEmail}`);
-  return {
-    sent: true,
-    to: targetEmail,
-    subject: 'Welcome to TaxPro PMS Enterprise — Account Activation & Quick Start Guide',
-    timestamp: new Date().toISOString()
-  };
+  try {
+    const result = await runPythonMailer({
+      action: 'welcome',
+      email: targetEmail,
+      name: userName,
+      role: role,
+      origin: origin,
+      smtp_config: smtpConfig
+    });
+    console.log(`[TaxPro Email Engine] 📧 Official Welcome Email dispatched to ${targetEmail}:`, result);
+    return result;
+  } catch (err) {
+    console.warn('[Welcome Email Warning]:', err.message);
+    return { success: false, error: err.message };
+  }
 };
+
+// POST /api/auth/send-welcome (Dispatch welcome email via Python smtplib)
+router.post('/send-welcome', async (req, res) => {
+  const { email, name, role, smtpConfig } = req.body;
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail) return res.status(400).json({ success: false, error: 'Email is required.' });
+
+  try {
+    const mailResult = await sendWelcomeEmail(cleanEmail, name, role, req.headers.origin || 'http://localhost:3000', smtpConfig);
+    res.json({ success: true, message: `Welcome email dispatched to ${cleanEmail}`, mailResult });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -475,6 +547,60 @@ router.post('/reset-password', async (req, res) => {
   } catch (err) {
     console.error('[Auth Reset Password PG Error]:', err.message);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/find-account (Check if account exists in users or team_members)
+router.post('/find-account', async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ success: false, error: 'Email address is required.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  try {
+    // 1. Check in users table
+    const userRes = await query('SELECT id, email, name, role, company FROM users WHERE LOWER(email) = $1 LIMIT 1', [cleanEmail]);
+    if (userRes.rowCount > 0) {
+      const u = userRes.rows[0];
+      return res.json({
+        success: true,
+        account: {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role || 'Admin',
+          company: u.company
+        }
+      });
+    }
+
+    // 2. Check in team_members table
+    const memRes = await query('SELECT id, email, name, role, department, designation FROM team_members WHERE LOWER(email) = $1 LIMIT 1', [cleanEmail]);
+    if (memRes.rowCount > 0) {
+      const m = memRes.rows[0];
+      return res.json({
+        success: true,
+        account: {
+          id: m.id,
+          name: m.name,
+          email: m.email,
+          role: m.designation || m.role || 'Team Member',
+          department: m.department
+        }
+      });
+    }
+
+    // Account not found in directory
+    return res.status(404).json({
+      success: false,
+      notRegistered: true,
+      error: `Account not found. "${cleanEmail}" is not registered in the system directory.`
+    });
+  } catch (err) {
+    console.error('[Find Account PG Error]:', err.message);
+    res.status(500).json({ success: false, error: 'Database search error: ' + err.message });
   }
 });
 

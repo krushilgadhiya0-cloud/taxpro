@@ -561,7 +561,7 @@ async function applyToDb(label, connectionString, sslConfig) {
       await pool.query(`
         INSERT INTO users (id, email, password, name, role, company)
         VALUES 
-          ('USR-1000', 'krushilgadhiya0@gmail.com', 'password123', 'Krushil Gadhiya', 'Managing Director & CFO', 'Finexo PMS Enterprise'),
+          ('USR-1000', 'krushilgadhiya0@gmail.com', 'password123', 'Krushil Gadhiya', 'Managing Director & CFO', 'TaxPro PMS Enterprise'),
           ('USR-1001', 'superadmin@taxpro.com', 'password123', 'Super Admin', 'Super Administrator', 'TaxPro Core'),
           ('USR-1002', 'admin@gmail.com', 'password123', 'Admin CFO', 'Administrator', 'TaxPro AI Core')
         ON CONFLICT (email) DO NOTHING;

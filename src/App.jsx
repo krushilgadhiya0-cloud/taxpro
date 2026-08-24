@@ -8,8 +8,6 @@ import ReportsView from './components/ReportsView';
 import PaymentsView from './components/PaymentsView';
 import WorkersView from './components/WorkersView';
 import AttendanceView from './components/AttendanceView';
-import AIAssistant from './components/AIAssistant';
-import VoicePillTrigger from './components/VoicePillTrigger';
 import AuthModal from './components/AuthModal';
 import SecurityPanel from './components/SecurityPanel';
 import PricingSection from './components/PricingSection';
@@ -21,7 +19,9 @@ import PWAModal from './components/PWAModal';
 import MainPMSShell from './components/MainPMSShell';
 import SuperAdminShell from './components/SuperAdminShell';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
+import SuperAdminAuthModal from './components/pms/SuperAdminAuthModal';
 import { supabase } from './lib/supabaseClient';
+import soundFX from './lib/audioFX';
 
 import { 
   Sparkles, 
@@ -37,8 +37,17 @@ import {
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryRole = urlParams.get('role');
+      if (queryRole) {
+        const clean = queryRole.trim().toLowerCase().replace(/[\s_-]+/g, '');
+        if (clean === 'superadmin' || clean === 'super') {
+          return sessionStorage.getItem('taxpro_superadmin_authenticated') === 'true';
+        }
+        return true;
+      }
       const session = localStorage.getItem('taxpro_pg_session');
-      const superadmin = localStorage.getItem('taxpro_secret_superadmin');
+      const superadmin = sessionStorage.getItem('taxpro_superadmin_authenticated') === 'true' && localStorage.getItem('taxpro_secret_superadmin');
       const profile = localStorage.getItem('taxpro_profile_completed');
       const email = localStorage.getItem('taxpro_user_email');
       return Boolean(session || superadmin || (profile && email));
@@ -48,6 +57,47 @@ export default function App() {
   });
 
   const [userRole, setUserRole] = useState(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const queryRole = urlParams.get('role');
+      if (queryRole) {
+        const clean = queryRole.trim().toLowerCase().replace(/[\s_-]+/g, '');
+        if (clean === 'superadmin' || clean === 'super') {
+          const isSuperAuthed = sessionStorage.getItem('taxpro_superadmin_authenticated') === 'true';
+          if (isSuperAuthed) {
+            localStorage.setItem('taxpro_user_role', 'Super Admin');
+            localStorage.setItem('taxpro_secret_superadmin', 'superadmin@taxpro.com');
+            localStorage.setItem('taxpro_user_email', 'superadmin@taxpro.com');
+            localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
+            localStorage.setItem('taxpro_profile_completed', 'true');
+            return 'Super Admin';
+          }
+          // If not authenticated with password, fallback to Admin and prompt for pass
+          return 'Admin';
+        } else if (clean === 'admin' || clean === 'administrator') {
+          localStorage.removeItem('taxpro_secret_superadmin');
+          localStorage.setItem('taxpro_user_role', 'Admin');
+          localStorage.setItem('taxpro_user_email', 'admin@taxpro.com');
+          localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+          localStorage.setItem('taxpro_profile_completed', 'true');
+          return 'Admin';
+        } else if (clean === 'manager') {
+          localStorage.removeItem('taxpro_secret_superadmin');
+          localStorage.setItem('taxpro_user_role', 'Manager');
+          localStorage.setItem('taxpro_user_email', 'manager@taxpro.com');
+          localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+          localStorage.setItem('taxpro_profile_completed', 'true');
+          return 'Manager';
+        } else if (clean === 'employee' || clean === 'staff') {
+          localStorage.removeItem('taxpro_secret_superadmin');
+          localStorage.setItem('taxpro_user_role', 'Employee');
+          localStorage.setItem('taxpro_user_email', 'employee@taxpro.com');
+          localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+          localStorage.setItem('taxpro_profile_completed', 'true');
+          return 'Employee';
+        }
+      }
+    } catch (e) {}
     return localStorage.getItem('taxpro_user_role') || 'Admin';
   });
 
@@ -72,6 +122,7 @@ export default function App() {
 
   const [isOTPModalOpen, setIsOTPModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isSuperAdminAuthModalOpen, setIsSuperAdminAuthModalOpen] = useState(false);
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
   const [isPWAModalOpen, setIsPWAModalOpen] = useState(false);
   const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
@@ -80,25 +131,86 @@ export default function App() {
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
 
-  // GLOBAL SHORTCUT KEY LISTENER FOR VOICE AI (Ctrl+M / Alt+M / Cmd+M)
+  // DYNAMIC ROLE URL SYNCHRONIZATION LISTENER (?role=superadmin, ?role=admin, ?role=manager, ?role=employee)
   useEffect(() => {
-    const handleVoiceShortcut = (e) => {
-      if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 'm' || e.key === 'M')) {
-        e.preventDefault();
-        setIsAIAssistantOpen((prev) => {
-          const next = !prev;
-          if (next) {
-            setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('taxpro_start_voice'));
-            }, 150);
-            showToast('🎙️ AI Voice Activated via Shortcut (Ctrl + M / Alt + M)', 'info');
+    const handleUrlRoleSync = () => {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryRole = urlParams.get('role');
+        if (queryRole) {
+          const clean = queryRole.trim().toLowerCase().replace(/[\s_-]+/g, '');
+          if (clean === 'superadmin' || clean === 'super') {
+            const isSuperAuthed = sessionStorage.getItem('taxpro_superadmin_authenticated') === 'true';
+            if (isSuperAuthed) {
+              localStorage.setItem('taxpro_user_role', 'Super Admin');
+              localStorage.setItem('taxpro_secret_superadmin', 'superadmin@taxpro.com');
+              localStorage.setItem('taxpro_user_email', 'superadmin@taxpro.com');
+              localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
+              localStorage.setItem('taxpro_profile_completed', 'true');
+              setUserRole('Super Admin');
+              setUserEmail('superadmin@taxpro.com');
+              setWorkspaceMode('superadmin_core');
+              setIsAuthenticated(true);
+            } else {
+              setIsSuperAdminAuthModalOpen(true);
+            }
+          } else if (clean === 'admin' || clean === 'administrator') {
+            localStorage.removeItem('taxpro_secret_superadmin');
+            localStorage.setItem('taxpro_user_role', 'Admin');
+            localStorage.setItem('taxpro_user_email', 'admin@taxpro.com');
+            localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+            localStorage.setItem('taxpro_profile_completed', 'true');
+            setUserRole('Admin');
+            setUserEmail('admin@taxpro.com');
+            setWorkspaceMode('pms_workspace');
+            setIsAuthenticated(true);
+          } else if (clean === 'manager') {
+            localStorage.removeItem('taxpro_secret_superadmin');
+            localStorage.setItem('taxpro_user_role', 'Manager');
+            localStorage.setItem('taxpro_user_email', 'manager@taxpro.com');
+            localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+            localStorage.setItem('taxpro_profile_completed', 'true');
+            setUserRole('Manager');
+            setUserEmail('manager@taxpro.com');
+            setWorkspaceMode('pms_workspace');
+            setIsAuthenticated(true);
+          } else if (clean === 'employee' || clean === 'staff') {
+            localStorage.removeItem('taxpro_secret_superadmin');
+            localStorage.setItem('taxpro_user_role', 'Employee');
+            localStorage.setItem('taxpro_user_email', 'employee@taxpro.com');
+            localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+            localStorage.setItem('taxpro_profile_completed', 'true');
+            setUserRole('Employee');
+            setUserEmail('employee@taxpro.com');
+            setWorkspaceMode('pms_workspace');
+            setIsAuthenticated(true);
           }
-          return next;
-        });
-      }
+        }
+      } catch (e) {}
     };
-    window.addEventListener('keydown', handleVoiceShortcut);
-    return () => window.removeEventListener('keydown', handleVoiceShortcut);
+
+    window.addEventListener('popstate', handleUrlRoleSync);
+    window.addEventListener('taxpro_switch_role_url', handleUrlRoleSync);
+
+    const handleSuperAdminLoginEvent = () => {
+      sessionStorage.setItem('taxpro_superadmin_authenticated', 'true');
+      localStorage.setItem('taxpro_secret_superadmin', 'superadmin@taxpro.com');
+      localStorage.setItem('taxpro_user_email', 'superadmin@taxpro.com');
+      localStorage.setItem('taxpro_user_role', 'Super Admin');
+      localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
+      localStorage.setItem('taxpro_profile_completed', 'true');
+      setUserRole('Super Admin');
+      setUserEmail('superadmin@taxpro.com');
+      setWorkspaceMode('superadmin_core');
+      setIsAuthenticated(true);
+    };
+    window.addEventListener('taxpro_superadmin_login', handleSuperAdminLoginEvent);
+
+    return () => {
+      window.removeEventListener('popstate', handleUrlRoleSync);
+      window.removeEventListener('taxpro_switch_role_url', handleUrlRoleSync);
+      window.removeEventListener('taxpro_superadmin_login', handleSuperAdminLoginEvent);
+    };
   }, []);
 
   // GLOBAL DARK MODE INJECTOR ON BOOTUP
@@ -106,6 +218,34 @@ export default function App() {
     if (localStorage.getItem('taxpro_theme') === 'dark') {
       document.documentElement.classList.add('dark-mode-global');
     }
+
+    // Initialize Global Zoom from LocalStorage
+    const savedZoom = localStorage.getItem('taxpro_global_zoom') || '90';
+    document.documentElement.style.zoom = `${savedZoom}%`;
+
+    const handleZoomChange = (e) => {
+      const zoom = e.detail || 90;
+      document.documentElement.style.zoom = `${zoom}%`;
+      localStorage.setItem('taxpro_global_zoom', String(zoom));
+    };
+
+    window.addEventListener('taxpro_zoom_changed', handleZoomChange);
+    return () => window.removeEventListener('taxpro_zoom_changed', handleZoomChange);
+  }, []);
+
+  // GLOBAL UI CLICK SOUND ACOUSTIC FEEDBACK LISTENER
+  useEffect(() => {
+    const handleGlobalClick = (e) => {
+      const target = e.target;
+      if (!target) return;
+      const interactive = target.closest('button, a, [role="button"], input[type="submit"], input[type="button"], .cursor-pointer');
+      if (interactive) {
+        soundFX.playClick();
+      }
+    };
+
+    window.addEventListener('pointerdown', handleGlobalClick, { capture: true });
+    return () => window.removeEventListener('pointerdown', handleGlobalClick, { capture: true });
   }, []);
 
   useEffect(() => {
@@ -318,12 +458,37 @@ export default function App() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    sessionStorage.removeItem('taxpro_superadmin_authenticated');
     localStorage.removeItem('taxpro_profile_completed');
     localStorage.removeItem('taxpro_user_role');
     localStorage.removeItem('taxpro_secret_superadmin');
     setIsAuthenticated(false);
     setActiveTab('home');
     showToast('Signed out of TaxPro AI session.', 'info');
+  };
+
+  const [workspaceMode, setWorkspaceMode] = useState(() => {
+    return localStorage.getItem('taxpro_workspace_mode') || 'auto';
+  });
+
+  const handleSwitchToPMS = (targetTab = 'Dashboard') => {
+    localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+    localStorage.setItem('taxpro_active_nav', targetTab);
+    setWorkspaceMode('pms_workspace');
+    window.dispatchEvent(new CustomEvent('taxpro_nav_switch', { detail: targetTab }));
+    showToast(`✓ Opened ${targetTab} in Practice Workspace as SuperAdmin!`, 'success');
+  };
+
+  const handleSwitchToSuperAdmin = () => {
+    const isSuperAuthed = sessionStorage.getItem('taxpro_superadmin_authenticated') === 'true';
+    if (isSuperAuthed) {
+      localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
+      setWorkspaceMode('superadmin_core');
+      setUserRole('Super Admin');
+      showToast('✓ Switched to SaaS Master SuperAdmin Core', 'info');
+    } else {
+      setIsSuperAdminAuthModalOpen(true);
+    }
   };
 
   if (loading) {
@@ -335,10 +500,29 @@ export default function App() {
     const isMasterAdmin = 
       userRole === 'Super Admin' || 
       userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com' || 
-      userEmail?.toLowerCase().trim() === 'superadmin@taxpro.com';
+      userEmail?.toLowerCase().trim() === 'superadmin@taxpro.com' ||
+      Boolean(localStorage.getItem('taxpro_secret_superadmin')) ||
+      sessionStorage.getItem('taxpro_superadmin_authenticated') === 'true';
 
-    if (isMasterAdmin) {
-       return <SuperAdminShell onLogout={handleLogout} onShowToast={showToast} />;
+    if (isMasterAdmin && workspaceMode !== 'pms_workspace') {
+       return (
+         <>
+           <SuperAdminShell 
+             onLogout={handleLogout} 
+             onShowToast={showToast} 
+             onSwitchToPMS={handleSwitchToPMS}
+           />
+           <SuperAdminAuthModal
+             isOpen={isSuperAdminAuthModalOpen}
+             onClose={() => setIsSuperAdminAuthModalOpen(false)}
+             onSuccess={() => {
+               setUserRole('Super Admin');
+               setWorkspaceMode('superadmin_core');
+             }}
+             onShowToast={showToast}
+           />
+         </>
+       );
     }
 
     return (
@@ -346,24 +530,23 @@ export default function App() {
         <ToastContainer toasts={toasts} onCloseToast={closeToast} />
         
         <MainPMSShell 
-          userRole={userRole}
+          userRole={isMasterAdmin ? 'Super Admin' : userRole}
+          isSuperAdmin={isMasterAdmin}
+          onSwitchToSuperAdmin={handleSwitchToSuperAdmin}
           onLogout={handleLogout}
           onTriggerAI={() => setIsAIAssistantOpen(true)}
           onShowToast={showToast}
         />
 
-        {/* FLOATING HOLOGRAPHIC AI VOICE PILL */}
-        <VoicePillTrigger
-          onOpenAI={() => setIsAIAssistantOpen(true)}
-          isAIAssistantOpen={isAIAssistantOpen}
-        />
-
-        <AIAssistant
-          isOpen={isAIAssistantOpen}
-          onClose={() => setIsAIAssistantOpen(false)}
+        {/* SuperAdmin Master Password Verification Gate Modal */}
+        <SuperAdminAuthModal
+          isOpen={isSuperAdminAuthModalOpen}
+          onClose={() => setIsSuperAdminAuthModalOpen(false)}
+          onSuccess={() => {
+            setUserRole('Super Admin');
+            setWorkspaceMode('superadmin_core');
+          }}
           onShowToast={showToast}
-          onLogout={handleLogout}
-          screenContext={{ activeTab: localStorage.getItem('taxpro_active_nav') || 'Dashboard', userRole, userEmail }}
         />
       </div>
     );
@@ -522,8 +705,14 @@ export default function App() {
           localStorage.setItem('taxpro_profile_completed', 'true');
           
           let targetRole = roleOverride || localStorage.getItem('taxpro_user_role') || 'Admin';
-          
-          if (finalEmail) {
+
+          if (finalEmail.toLowerCase() === 'superadmin@taxpro.com' || roleOverride === 'Super Admin' || finalEmail.toLowerCase() === 'workforcepro09@gmail.com') {
+            targetRole = 'Super Admin';
+            sessionStorage.setItem('taxpro_superadmin_authenticated', 'true');
+            localStorage.setItem('taxpro_secret_superadmin', 'superadmin@taxpro.com');
+            localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
+            setWorkspaceMode('superadmin_core');
+          } else if (finalEmail) {
             try {
               const { data: memberCheck } = await supabase.from('team_members').select('id, role, status').ilike('email', finalEmail).single();
               if (memberCheck) {
@@ -588,34 +777,31 @@ export default function App() {
         }}
       />
 
-      {/* FLOATING HOLOGRAPHIC AI VOICE PILL (LANDING VIEW) */}
-      <VoicePillTrigger
-        onOpenAI={() => setIsAIAssistantOpen(true)}
-        isAIAssistantOpen={isAIAssistantOpen}
-      />
-
-      {/* AUTONOMOUS NEURAL VOICE AI ASSISTANT */}
-      <AIAssistant
-        isOpen={isAIAssistantOpen}
-        onClose={() => setIsAIAssistantOpen(false)}
+      {/* SuperAdmin Master Password Verification Gate Modal */}
+      <SuperAdminAuthModal
+        isOpen={isSuperAdminAuthModalOpen}
+        onClose={() => setIsSuperAdminAuthModalOpen(false)}
+        onSuccess={() => {
+          setIsAuthenticated(true);
+          setUserRole('Super Admin');
+          setWorkspaceMode('superadmin_core');
+        }}
         onShowToast={showToast}
-        onLogout={handleLogout}
-        screenContext={{ activeTab, userRole: 'Public / Guest', userEmail: userEmail || 'Guest' }}
       />
 
       {/* FOOTER */}
-      <footer className="relative z-10 border-t border-white/10 bg-black/80 backdrop-blur-2xl py-12">
+      <footer className="relative z-10 border-t border-white/15 bg-black/85 backdrop-blur-2xl py-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-6 h-6 text-cyan-400" />
-            <span className="font-extrabold text-lg text-white font-outfit">TAXPRO AI 3.0</span>
-            <span className="text-xs text-gray-500">© 2026 TaxPro Global Financial Inc. All rights reserved.</span>
+            <span className="font-extrabold text-lg text-white font-outfit">TAXPRO 3.0</span>
+            <span className="text-xs text-slate-300 font-medium">© 2026 TaxPro Global Financial Inc. All rights reserved.</span>
           </div>
 
-          <div className="flex items-center gap-6 text-xs text-gray-400">
-            <button onClick={() => setActiveTab('security')} className="hover:text-white transition-colors">Security Audit</button>
-            <button onClick={() => setActiveTab('reports')} className="hover:text-white transition-colors">Compliance Reports</button>
-            <button onClick={() => setActiveTab('pricing')} className="hover:text-white transition-colors">Enterprise Pricing</button>
+          <div className="flex items-center gap-6 text-xs text-slate-300 font-semibold">
+            <button onClick={() => setActiveTab('security')} className="hover:text-cyan-300 transition-colors cursor-pointer">Security Audit</button>
+            <button onClick={() => setActiveTab('reports')} className="hover:text-cyan-300 transition-colors cursor-pointer">Compliance Reports</button>
+            <button onClick={() => setActiveTab('pricing')} className="hover:text-cyan-300 transition-colors cursor-pointer">Enterprise Pricing</button>
           </div>
         </div>
       </footer>

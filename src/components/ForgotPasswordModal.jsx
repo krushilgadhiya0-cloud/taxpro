@@ -11,6 +11,7 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
   const [showPass, setShowPass] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [accountFoundInfo, setAccountFoundInfo] = useState(null);
+  const [unregisteredError, setUnregisteredError] = useState(null);
 
   const inputRefs = useRef([]);
 
@@ -27,73 +28,102 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
 
     setIsSubmitting(true);
     setAccountFoundInfo(null);
+    setUnregisteredError(null);
     
     try {
-       const superAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com'];
-       const savedSuperAdmin = localStorage.getItem('taxpro_secret_superadmin');
-       const savedUserEmail = localStorage.getItem('taxpro_user_email');
-       
-       let matchedAccount = null;
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+      let matchedAccount = null;
 
-       if (
-         superAdmins.includes(cleanEmail) || 
-         (savedSuperAdmin && savedSuperAdmin.toLowerCase() === cleanEmail) ||
-         (savedUserEmail && savedUserEmail.toLowerCase() === cleanEmail)
-       ) {
+      // 1. Check native PostgreSQL API endpoint first
+      try {
+        const findRes = await fetch(`${baseUrl}/api/auth/find-account`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail })
+        });
+        const findJson = await findRes.json();
+        if (findJson.success && findJson.account) {
+          matchedAccount = findJson.account;
+        } else if (findJson.notRegistered) {
+          matchedAccount = null;
+        }
+      } catch (apiErr) {
+        console.warn('[Find Account API fallback]:', apiErr.message);
+      }
+
+      // 2. Client-side query fallback
+      if (!matchedAccount) {
+        const superAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'superadmin@taxpro.com'];
+        const savedSuperAdmin = localStorage.getItem('taxpro_secret_superadmin');
+        const savedUserEmail = localStorage.getItem('taxpro_user_email');
+        
+        if (
+          superAdmins.includes(cleanEmail) || 
+          (savedSuperAdmin && savedSuperAdmin.toLowerCase() === cleanEmail) ||
+          (savedUserEmail && savedUserEmail.toLowerCase() === cleanEmail)
+        ) {
           matchedAccount = {
             name: localStorage.getItem('taxpro_user_fullname') || 'Primary Administrator',
             role: 'System Administrator',
             email: cleanEmail
           };
-       } else {
-          // Query PostgreSQL team_members table
-          const { data, error } = await supabase
+        } else {
+          // Query team_members
+          const { data: memberData } = await supabase
             .from('team_members')
-            .select('id, name, designation, email')
+            .select('id, name, designation, role, email')
             .ilike('email', cleanEmail)
             .maybeSingle();
 
-          if (data) {
-             matchedAccount = {
-               name: data.name,
-               role: data.designation || 'Team Member',
-               email: data.email
-             };
-          }
-       }
-
-       // Also check general users table if available
-       if (!matchedAccount) {
-          try {
+          if (memberData) {
+            matchedAccount = {
+              name: memberData.name,
+              role: memberData.designation || memberData.role || 'Team Member',
+              email: memberData.email
+            };
+          } else {
+            // Query users
             const { data: userData } = await supabase
               .from('users')
-              .select('id, full_name, email, role')
+              .select('id, name, full_name, role, email')
               .ilike('email', cleanEmail)
               .maybeSingle();
 
             if (userData) {
               matchedAccount = {
-                name: userData.full_name || 'Staff Member',
+                name: userData.name || userData.full_name || 'Staff Member',
                 role: userData.role || 'Staff',
                 email: userData.email
               };
             }
-          } catch(e) {}
-       }
+          }
+        }
+      }
 
-       if (!matchedAccount) {
-          if (onShowToast) onShowToast('Account not found in directory. Please verify your Gmail address.', 'error');
-          setIsSubmitting(false);
-          return;
-       }
+      // 3. If account is not registered, show popup alert and notify
+      if (!matchedAccount) {
+        setUnregisteredError(cleanEmail);
+        if (onShowToast) onShowToast(`⚠️ Account Not Registered: "${cleanEmail}" was not found in the practice directory.`, 'error');
+        setIsSubmitting(false);
+        return;
+      }
 
-       setAccountFoundInfo(matchedAccount);
-       setStep(2);
-       if (onShowToast) onShowToast(`✓ Account verified! 6-digit Reset OTP code (123456) dispatched to ${cleanEmail}`, 'success');
+      // 4. Account found: dispatch OTP via Python smtplib
+      try {
+        await fetch(`${baseUrl}/api/auth/send-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail })
+        });
+      } catch (otpErr) {}
+
+      setAccountFoundInfo(matchedAccount);
+      setStep(2);
+      if (onShowToast) onShowToast(`✓ Account verified! Reset OTP code dispatched to ${cleanEmail}`, 'success');
     } catch(err) {
-       if (onShowToast) onShowToast(`Error locating account: ${err.message}`, 'error');
+      if (onShowToast) onShowToast(`Error locating account: ${err.message}`, 'error');
     } finally {
-       setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -110,9 +140,9 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
 
   const handleResetPassword = async (e) => {
     if (e) e.preventDefault();
-    const enteredCode = otp.join('');
-    if (enteredCode !== '123456') {
-      if (onShowToast) onShowToast('Incorrect verification OTP code. Enter 123456.', 'error');
+    const enteredCode = otp.join('').trim();
+    if (!enteredCode || enteredCode.length < 4) {
+      if (onShowToast) onShowToast('Please enter the verification OTP code received in your inbox.', 'error');
       return;
     }
 
@@ -130,24 +160,44 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
 
     try {
       const cleanEmail = email.toLowerCase().trim();
-      
-      // Update team_members password in PostgreSQL if member
-      await supabase.from('team_members').update({
-         preset_password: newPassword
-      }).ilike('email', cleanEmail);
-      
-      // Try Supabase Auth password update
-      try {
-        await supabase.auth.updateUser({ password: newPassword });
-      } catch(sbErr) {}
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
 
+      // 1. Verify OTP with backend
+      const verifyRes = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, otp: enteredCode })
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyData.success || !verifyData.verified) {
+        throw new Error(verifyData.error || 'Invalid or expired OTP verification code.');
+      }
+
+      // 2. Reset Password via backend
+      const resetRes = await fetch(`${baseUrl}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, newPassword })
+      });
+      const resetData = await resetRes.json();
+      if (!resetData.success) {
+        throw new Error(resetData.error || 'Could not update password in database.');
+      }
+
+      // 3. Update team_members password in PostgreSQL if member
+      try {
+        await supabase.from('team_members').update({
+           preset_password: newPassword
+        }).ilike('email', cleanEmail);
+      } catch (err) {}
+      
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
-      if (onShowToast) onShowToast('✓ Password successfully updated! Signing in...', 'success');
+      if (onShowToast) onShowToast('✓ Password successfully updated and verified in PostgreSQL!', 'success');
       onClose();
       if (onOpenLogin) onOpenLogin();
     } catch (err) {
-      if (onShowToast) onShowToast(`Password sync failed: ${err.message}`, 'error');
+      if (onShowToast) onShowToast(`Password reset failed: ${err.message}`, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -182,6 +232,19 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
           </p>
         </div>
 
+        {/* UNREGISTERED ACCOUNT POPUP ALERT */}
+        {step === 1 && unregisteredError && (
+          <div className="mb-4 p-4 rounded-2xl bg-red-500/15 border border-red-500/40 text-left animate-shake shadow-lg shadow-red-500/10">
+            <div className="flex items-center gap-2 text-red-400 font-bold text-xs mb-1.5">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>Account Not Registered in System</span>
+            </div>
+            <p className="text-xs text-gray-300 leading-relaxed">
+              No account was found for <strong className="text-white font-mono">{unregisteredError}</strong> in the practice directory. Please check for spelling mistakes or contact your Administrator to obtain an invite.
+            </p>
+          </div>
+        )}
+
         {step === 1 ? (
           <form onSubmit={handleFindAccountAndSendOTP} className="flex flex-col gap-4">
             <div>
@@ -194,7 +257,10 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
                   autoFocus
                   placeholder="Enter your registered email (e.g. user@gmail.com)"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (unregisteredError) setUnregisteredError(null);
+                  }}
                   className="w-full px-4 py-3 bg-black/60 border border-white/15 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/30 rounded-2xl outline-none font-mono text-xs text-white placeholder-gray-500 transition-all"
                   required
                 />
@@ -241,13 +307,13 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
 
             {/* OTP CODE DISPATCH BANNER */}
             <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-xs text-cyan-300 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-cyan-400" /> 
-                <span>Verification Code Sent:</span>
+              <span className="flex items-center gap-1.5 truncate">
+                <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" /> 
+                <span className="truncate">OTP Sent to: <strong className="font-mono text-white">{email}</strong></span>
               </span>
-              <strong className="font-mono font-black text-white bg-cyan-500/20 px-2 py-0.5 rounded border border-cyan-500/40 tracking-wider">
-                123456
-              </strong>
+              <span className="font-mono font-bold text-[10px] text-cyan-200 bg-cyan-500/20 px-2 py-0.5 rounded border border-cyan-500/40 tracking-wider shrink-0 ml-2">
+                Valid 10m
+              </span>
             </div>
 
             {/* 6-DIGIT OTP INPUT MATRIX */}

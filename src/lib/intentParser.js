@@ -149,7 +149,7 @@ export const executeVoiceIntent = async (transcript, showToastCallback) => {
     const originalTarget = rawTarget;
     
     // Exact mapping dictionary
-    if (rawTarget.includes('to do') || rawTarget.includes('todo') || rawTarget.includes('checklist')) rawTarget = 'Todo';
+    if (rawTarget.includes('to do') || rawTarget.includes('todo') || rawTarget.includes('checklist')) rawTarget = 'Tasks';
     else if (rawTarget.includes('client') || rawTarget.includes('customer')) rawTarget = 'Clients';
     else if (rawTarget.includes('project') || rawTarget.includes('pipeline')) rawTarget = 'Projects';
     else if (rawTarget.includes('task') || rawTarget.includes('kanban')) rawTarget = 'Tasks';

@@ -220,8 +220,78 @@ router.post('/private', async (req, res) => {
 });
 
 /**
+ * GET /api/chat/notifications
+ * Returns recent incoming private messages for a specific user
+ */
+router.get('/notifications', async (req, res) => {
+  const { userEmail = '' } = req.query;
+  const u = (userEmail || '').toLowerCase().trim();
+
+  if (!u) {
+    return res.json({ success: true, messages: [] });
+  }
+
+  try {
+    const result = await query(`
+      SELECT id, sender_id, sender_name, receiver_id, receiver_name, content, read, created_at
+      FROM private_messages
+      WHERE LOWER(receiver_id) = $1
+      ORDER BY created_at DESC
+      LIMIT 50
+    `, [u]);
+
+    const formatted = result.rows.map(row => ({
+      id: row.id,
+      text: row.content,
+      senderId: row.sender_id,
+      senderName: row.sender_name,
+      receiverId: row.receiver_id,
+      receiverName: row.receiver_name,
+      time: new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: row.created_at,
+      read: row.read
+    }));
+
+    res.json({ success: true, messages: formatted });
+  } catch (error) {
+    console.error('[Chat Notifications Fetch Error]:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/chat/mark-seen
+ * Marks private messages as seen/read
+ */
+router.post('/mark-seen', async (req, res) => {
+  const { messageId, receiverId, senderId } = req.body;
+
+  try {
+    if (messageId) {
+      await query(`UPDATE private_messages SET read = TRUE, updated_at = NOW() WHERE id = $1`, [messageId]);
+    } else if (receiverId) {
+      if (senderId) {
+        await query(
+          `UPDATE private_messages SET read = TRUE, updated_at = NOW() WHERE LOWER(receiver_id) = LOWER($1) AND LOWER(sender_id) = LOWER($2)`,
+          [receiverId.trim(), senderId.trim()]
+        );
+      } else {
+        await query(
+          `UPDATE private_messages SET read = TRUE, updated_at = NOW() WHERE LOWER(receiver_id) = LOWER($1)`,
+          [receiverId.trim()]
+        );
+      }
+    }
+    res.json({ success: true, message: 'Marked as seen successfully.' });
+  } catch (error) {
+    console.error('[Chat Mark Seen Error]:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * GET /api/chat/broadcast
- * Returns global broadcast team messages
+ * Returns global broadcast team messages with sender role information
  */
 router.get('/broadcast', async (req, res) => {
   const { channel = 'general-hq', currentUserEmail = '' } = req.query;
@@ -229,10 +299,13 @@ router.get('/broadcast', async (req, res) => {
 
   try {
     const result = await query(`
-      SELECT id, sender_id, sender_name, sender_avatar, content, channel, created_at
-      FROM broadcast_messages
-      WHERE channel = $1
-      ORDER BY created_at ASC
+      SELECT bm.id, bm.sender_id, bm.sender_name, bm.sender_avatar, bm.content, bm.channel, bm.created_at,
+             COALESCE(tm.role, u.role, '') as sender_role
+      FROM broadcast_messages bm
+      LEFT JOIN team_members tm ON LOWER(tm.email) = LOWER(bm.sender_id)
+      LEFT JOIN users u ON LOWER(u.email) = LOWER(bm.sender_id)
+      WHERE bm.channel = $1
+      ORDER BY bm.created_at ASC
     `, [channel]);
 
     const messages = result.rows.map(row => ({
@@ -241,6 +314,7 @@ router.get('/broadcast', async (req, res) => {
       senderId: row.sender_avatar || (row.sender_name ? row.sender_name.substring(0, 2).toUpperCase() : 'TM'),
       senderEmail: row.sender_id,
       senderName: row.sender_name,
+      senderRole: row.sender_role || (row.sender_id && row.sender_id.toLowerCase().includes('admin') ? 'Administrator' : 'Employee'),
       channel: row.channel,
       isMe: curEmail && (row.sender_id || '').toLowerCase().trim() === curEmail,
       time: new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -259,7 +333,7 @@ router.get('/broadcast', async (req, res) => {
  * Posts a message to the team-wide broadcast channel
  */
 router.post('/broadcast', async (req, res) => {
-  const { sender_id, sender_name, sender_avatar, content, channel = 'general-hq' } = req.body;
+  const { sender_id, sender_name, sender_avatar, content, channel = 'general-hq', sender_role } = req.body;
 
   if (!sender_id || !content || !content.trim()) {
     return res.status(400).json({ success: false, error: 'sender_id and content are required.' });
@@ -283,6 +357,23 @@ router.post('/broadcast', async (req, res) => {
     ]);
 
     const saved = insertRes.rows[0];
+
+    // Determine sender role if not passed
+    let resolvedRole = sender_role || '';
+    if (!resolvedRole) {
+      try {
+        const roleRes = await query(`
+          SELECT COALESCE(tm.role, u.role, '') as role
+          FROM (SELECT $1::text as email) s
+          LEFT JOIN team_members tm ON LOWER(tm.email) = LOWER(s.email)
+          LEFT JOIN users u ON LOWER(u.email) = LOWER(s.email)
+        `, [sender_id.trim()]);
+        resolvedRole = roleRes.rows[0]?.role || (sender_id.toLowerCase().includes('admin') ? 'Administrator' : 'Employee');
+      } catch (e) {
+        resolvedRole = sender_id.toLowerCase().includes('admin') ? 'Administrator' : 'Employee';
+      }
+    }
+
     res.json({
       success: true,
       message: {
@@ -291,6 +382,7 @@ router.post('/broadcast', async (req, res) => {
         senderId: saved.sender_avatar,
         senderEmail: saved.sender_id,
         senderName: saved.sender_name,
+        senderRole: resolvedRole,
         channel: saved.channel,
         isMe: true,
         time: new Date(saved.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),

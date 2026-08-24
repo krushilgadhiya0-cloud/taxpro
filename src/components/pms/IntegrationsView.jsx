@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, MessageCircle, Check, Info, Settings, X, Loader2 } from 'lucide-react';
+import { logAuditActivity } from '../../lib/auditLogger';
 
 export default function IntegrationsView({ onShowToast }) {
   const [activeModal, setActiveModal] = useState(null); // 'whatsapp', 'smtp'
@@ -16,7 +17,7 @@ export default function IntegrationsView({ onShowToast }) {
   useEffect(() => {
     const fetchSqlConfig = async () => {
       try {
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
         const res = await fetch(`${baseUrl}/api/integrations/config`);
         const data = await res.json();
         if (data.success && data.configs) {
@@ -58,7 +59,7 @@ export default function IntegrationsView({ onShowToast }) {
     }
 
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
       const response = await fetch(`${baseUrl}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,6 +77,13 @@ export default function IntegrationsView({ onShowToast }) {
       // Save locally as cache
       if (type === 'smtp') { localStorage.setItem('taxpro_smtp', JSON.stringify(smtpConfig)); }
       if (type === 'whatsapp') { localStorage.setItem('taxpro_wa', JSON.stringify(whatsappConfig)); }
+
+      logAuditActivity({
+        action: 'UPDATE_INTEGRATION',
+        module: 'Integrations',
+        details: `Connected & verified ${type.toUpperCase()} integration node in system`,
+        metadata: { integrationType: type }
+      });
 
       setStatus(prev => ({...prev, [type]: true}));
       setActiveModal(null);

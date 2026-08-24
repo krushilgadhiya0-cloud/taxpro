@@ -104,7 +104,10 @@ export default function AuthModal({
 
     setTimeout(() => {
       if (isSuperIdValid && isSuperPassValid) {
+        sessionStorage.setItem('taxpro_superadmin_authenticated', 'true');
         localStorage.setItem('taxpro_secret_superadmin', 'superadmin@taxpro.com');
+        localStorage.setItem('taxpro_user_email', 'superadmin@taxpro.com');
+        localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
         localStorage.setItem('taxpro_profile_completed', 'true');
         localStorage.setItem('taxpro_user_role', 'Super Admin');
 
@@ -139,11 +142,14 @@ export default function AuthModal({
     setLoginError('');
 
     // 1. Check if user typed superadmin credentials
-    const isSuperEmail = cleanEmail === 'superadmin@taxpro.com' || cleanEmail === (import.meta.env.VITE_SUPERADMIN_EMAIL || '').toLowerCase();
+    const isSuperEmail = cleanEmail === 'superadmin@taxpro.com' || cleanEmail === 'superadmin' || cleanEmail === (import.meta.env.VITE_SUPERADMIN_EMAIL || '').toLowerCase();
     const isSuperPass = password === 'Krushil@2007' || password === import.meta.env.VITE_SUPERADMIN_PASSWORD;
 
     if (isSuperEmail && isSuperPass) {
+      sessionStorage.setItem('taxpro_superadmin_authenticated', 'true');
       localStorage.setItem('taxpro_secret_superadmin', cleanEmail);
+      localStorage.setItem('taxpro_user_email', cleanEmail);
+      localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
       localStorage.setItem('taxpro_profile_completed', 'true');
       localStorage.setItem('taxpro_user_role', 'Super Admin');
       onShowToast('✓ Master Root Override Recognized. Welcome SuperAdmin.', 'success');

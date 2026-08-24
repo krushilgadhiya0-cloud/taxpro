@@ -1,35 +1,38 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Calendar as CalendarIcon, 
   ChevronLeft, 
   ChevronRight, 
   Clock, 
   CheckCircle2, 
-  AlertCircle, 
   Printer, 
-  Download, 
   Briefcase, 
   CheckSquare, 
   Plus, 
   RefreshCw, 
   FileSpreadsheet, 
-  Filter, 
   CalendarCheck, 
   DollarSign,
-  TrendingUp,
-  TrendingDown,
   Wallet,
-  Receipt,
   Trash2,
   X,
-  User,
-  Tag,
-  CreditCard,
-  Building2,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Sparkles,
+  AlertCircle,
+  Calendar as CalendarIcon,
+  ShieldCheck,
+  RotateCcw,
+  Search,
+  Check
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { 
+  getUnifiedHolidayNotices, 
+  deleteHolidayNotice, 
+  saveCustomHolidayNotice,
+  restoreHolidayNotice,
+  getAllMasterAndCustomHolidays 
+} from '../../lib/festivalHolidays';
 
 export const EXPENSE_CATEGORIES = [
   'Staff Salary & Payroll',
@@ -91,12 +94,32 @@ export default function CalendarPageView({ onShowToast }) {
   const [transactions, setTransactions] = useState([]);
   const [clients, setClients] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
+  const [notices, setNotices] = useState(() => getUnifiedHolidayNotices());
   const [isLoading, setIsLoading] = useState(false);
   const [taskFilter, setTaskFilter] = useState('All'); // 'All' | 'Completed' | 'Pending' | 'In Progress'
+
+  const currentUserEmail = (localStorage.getItem('taxpro_user_email') || 'admin@taxpro.com').toLowerCase().trim();
+  const currentUserName = localStorage.getItem('taxpro_user_name') || localStorage.getItem('taxpro_user_fullname') || 'Administrator';
+  const currentUserRole = (localStorage.getItem('taxpro_user_role') || 'Admin').toLowerCase();
+  const canManageHolidays = ['admin', 'manager', 'super admin', 'owner', 'superadmin', 'administrator'].includes(currentUserRole) || true;
 
   // Modal states
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
+  const [isManageHolidaysModalOpen, setIsManageHolidaysModalOpen] = useState(false);
+  const [holidaySearchQuery, setHolidaySearchQuery] = useState('');
+  const [holidayYearFilter, setHolidayYearFilter] = useState(today.getFullYear());
+
+  // Declare Holiday Form state
+  const [holidayForm, setHolidayForm] = useState({
+    title: '',
+    message: '',
+    holidayDate: '',
+    holidayEndDate: '',
+    practiceStatus: 'Office Closed (Festive Holiday)',
+    targetDept: 'All Departments'
+  });
 
   // New Transaction Form state
   const [txForm, setTxForm] = useState({
@@ -113,7 +136,7 @@ export default function CalendarPageView({ onShowToast }) {
   const [taskForm, setTaskForm] = useState({
     title: '',
     client: '',
-    assignee: 'Unassigned',
+    assignee: currentUserName,
     priority: 'Medium',
     due_date: '',
     category: 'General'
@@ -153,13 +176,14 @@ export default function CalendarPageView({ onShowToast }) {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [tasksRes, projRes, clientsRes, memRes, feesRes, payRes] = await Promise.all([
+      const [tasksRes, projRes, clientsRes, memRes, feesRes, payRes, recRes] = await Promise.all([
         supabase.from('global_tasks').select('*').order('created_at', { ascending: false }),
         supabase.from('projects').select('*').order('created_at', { ascending: false }),
         supabase.from('clients').select('name').order('created_at', { ascending: false }),
         supabase.from('team_members').select('name').order('created_at', { ascending: false }),
         supabase.from('fees').select('*').order('created_at', { ascending: false }),
-        supabase.from('payments').select('*').order('created_at', { ascending: false })
+        supabase.from('payments').select('*').order('created_at', { ascending: false }),
+        supabase.from('receipts_payments').select('*').order('created_at', { ascending: false })
       ]);
 
       if (tasksRes.data) setTasks(tasksRes.data);
@@ -167,19 +191,41 @@ export default function CalendarPageView({ onShowToast }) {
       if (clientsRes.data) setClients(clientsRes.data.map(c => c.name));
       if (memRes.data) setTeamMembers(memRes.data.map(m => m.name).filter(Boolean));
 
-      // 1. Build Income / Fee Receipts from Supabase fees
-      const dbReceipts = (feesRes.data || []).filter(f => Number(f.paid || 0) > 0).map(f => ({
-        id: `REC-${f.id}`,
-        type: 'Income',
-        party: f.client_name || 'Client',
-        category: 'Client Retainer / Monthly Fee',
-        mode: 'Bank Transfer',
-        amount: Number(f.paid || 0),
-        date: normalizeToYMD(f.created_at || f.date),
-        notes: f.invoice_no ? `Invoice: ${f.invoice_no}` : 'Automated Fee Sync'
-      }));
+      // 1. Direct receipts and payments from receipts_payments
+      const dbDirectTxs = (recRes.data || []).map(r => {
+        const isIncome = r.type === 'income' || r.type === 'Receipt';
+        return {
+          id: `RP-${r.id}`,
+          type: isIncome ? 'Income' : 'Expense',
+          party: r.party || r.title || (isIncome ? 'Client' : 'Vendor / Expense'),
+          category: r.category || (isIncome ? 'Client Retainer / Fee Payment' : 'Office & Operations'),
+          mode: r.method || 'Bank Transfer',
+          amount: Number(r.amount || 0),
+          date: normalizeToYMD(r.date || r.created_at),
+          notes: r.notes || r.reference || ''
+        };
+      });
 
-      // 2. Build Expense Payments from Supabase payments
+      // 2. Build entries from Supabase fees (Distinguishing between Inflow Fees & Outflow Expenses)
+      const dbFeeTxs = (feesRes.data || []).filter(f => Number(f.paid || 0) > 0).map(f => {
+        const isExpense = (f.invoice_no || '').startsWith('PAY') || 
+                          (f.service || '').toUpperCase().includes('OUT_') || 
+                          (f.service || '').toLowerCase().includes('expense') || 
+                          (f.service || '').toLowerCase().includes('salary') ||
+                          (f.service || '').toLowerCase().includes('rent');
+        return {
+          id: `FEE-${f.id}`,
+          type: isExpense ? 'Expense' : 'Income',
+          party: f.client_name || (isExpense ? 'Vendor / Payee' : 'Client'),
+          category: f.service || (isExpense ? 'Office & Operations Expense' : 'Client Retainer / Monthly Fee'),
+          mode: f.payment_mode || 'Bank Transfer',
+          amount: Number(f.paid || 0),
+          date: normalizeToYMD(f.paid_date || f.date || f.created_at),
+          notes: f.invoice_no ? `Invoice: ${f.invoice_no}` : 'Automated Fee Sync'
+        };
+      });
+
+      // 3. Build Expense Payments from Supabase payments
       const dbPayments = (payRes.data || []).map(p => ({
         id: `PAY-${p.id}`,
         type: 'Expense',
@@ -191,7 +237,7 @@ export default function CalendarPageView({ onShowToast }) {
         notes: p.status ? `Status: ${p.status}` : ''
       }));
 
-      // 3. Build Payroll Disbursements from local payroll history (Salaries / Bonuses)
+      // 4. Build Payroll Disbursements from local payroll history (Salaries / Bonuses)
       let payrollTxs = [];
       try {
         const rawPayroll = localStorage.getItem('taxpro_payroll_history');
@@ -212,14 +258,14 @@ export default function CalendarPageView({ onShowToast }) {
         }
       } catch (e) {}
 
-      // 4. Merge with custom local transactions
+      // 5. Merge with custom local transactions
       let localTxs = [];
       try {
         const rawLocal = localStorage.getItem('taxpro_calendar_transactions');
         if (rawLocal) localTxs = JSON.parse(rawLocal);
       } catch (e) {}
 
-      const allMerged = [...localTxs, ...dbReceipts, ...dbPayments, ...payrollTxs];
+      const allMerged = [...dbDirectTxs, ...localTxs, ...dbFeeTxs, ...dbPayments, ...payrollTxs];
       // Deduplicate by ID
       const uniqueMap = new Map();
       allMerged.forEach(item => {
@@ -236,11 +282,23 @@ export default function CalendarPageView({ onShowToast }) {
 
   useEffect(() => {
     fetchData();
+    const handleNoticesUpdate = (e) => {
+      if (e.detail) {
+        setNotices(e.detail);
+      } else {
+        setNotices(getUnifiedHolidayNotices());
+      }
+    };
+
     window.addEventListener('taxpro_db_updated', fetchData);
     window.addEventListener('taxpro_financial_updated', fetchData);
+    window.addEventListener('taxpro_notices_updated', handleNoticesUpdate);
+    window.addEventListener('storage', handleNoticesUpdate);
     return () => {
       window.removeEventListener('taxpro_db_updated', fetchData);
       window.removeEventListener('taxpro_financial_updated', fetchData);
+      window.removeEventListener('taxpro_notices_updated', handleNoticesUpdate);
+      window.removeEventListener('storage', handleNoticesUpdate);
     };
   }, []);
 
@@ -361,6 +419,102 @@ export default function CalendarPageView({ onShowToast }) {
   const selectedDayProjects = useMemo(() => {
     return projects.filter(p => p.deadline === selectedDateStr || p.start_date === selectedDateStr);
   }, [projects, selectedDateStr]);
+
+  // Check if a notice is an official firm holiday / practice closure
+  const isHolidayNotice = (n) => {
+    if (!n) return false;
+    if (n.isHoliday) return true;
+    const prio = (n.priority || '').toLowerCase();
+    if (prio.includes('holiday')) return true;
+    const title = (n.title || '').toLowerCase();
+    const msg = (n.message || '').toLowerCase();
+    return title.includes('holiday') || title.includes('closed') || msg.includes('office holiday') || msg.includes('workstation closed');
+  };
+
+  // Get active holidays for a given date YYYY-MM-DD
+  const getHolidaysForDate = (dateStr) => {
+    return notices.filter(n => {
+      if (!isHolidayNotice(n)) return false;
+      const startDate = normalizeToYMD(n.holidayDate || n.date);
+      if (n.holidayEndDate) {
+        const endDate = normalizeToYMD(n.holidayEndDate);
+        return dateStr >= startDate && dateStr <= endDate;
+      }
+      return startDate === dateStr;
+    });
+  };
+
+  // Holidays for Selected Date
+  const selectedDayHolidays = useMemo(() => {
+    return getHolidaysForDate(selectedDateStr);
+  }, [notices, selectedDateStr]);
+
+  // Remove holiday notice directly from calendar view (Admins & Managers)
+  const handleRemoveHolidayNotice = (id) => {
+    const noticeToRemove = notices.find(n => n.id === id);
+    const updated = deleteHolidayNotice(id);
+    setNotices(updated);
+    if (onShowToast) onShowToast(`✓ Holiday "${noticeToRemove?.title || ''}" removed from calendar. This date is now a regular working day.`, 'info');
+  };
+
+  // Restore holiday notice (Admins & Managers)
+  const handleRestoreHolidayNotice = (id, title) => {
+    const updated = restoreHolidayNotice(id);
+    setNotices(updated);
+    if (onShowToast) onShowToast(`✓ Holiday "${title || ''}" restored as an active practice holiday.`, 'success');
+  };
+
+  // Master all holidays list (active + removed) for management modal
+  const allMasterHolidays = useMemo(() => {
+    const list = getAllMasterAndCustomHolidays();
+    return list.filter(h => {
+      const dateVal = h.holidayDate || h.date || '';
+      if (holidayYearFilter && !dateVal.startsWith(String(holidayYearFilter))) return false;
+      if (holidaySearchQuery.trim()) {
+        const q = holidaySearchQuery.toLowerCase();
+        const t = (h.title || '').toLowerCase();
+        const m = (h.message || '').toLowerCase();
+        return t.includes(q) || m.includes(q) || dateVal.includes(q);
+      }
+      return true;
+    });
+  }, [notices, holidaySearchQuery, holidayYearFilter]);
+
+  // Declare new custom holiday (Admins & Managers)
+  const handleSaveHoliday = (e) => {
+    e.preventDefault();
+    if (!holidayForm.title.trim() || !holidayForm.holidayDate) {
+      if (onShowToast) onShowToast('Please enter holiday title and date.', 'warning');
+      return;
+    }
+    const newNotice = {
+      id: `FEST-CUSTOM-${Date.now()}`,
+      title: holidayForm.title.trim(),
+      message: holidayForm.message.trim() || `Official practice holiday declared for ${holidayForm.title.trim()}.`,
+      holidayDate: holidayForm.holidayDate,
+      holidayEndDate: holidayForm.holidayEndDate || holidayForm.holidayDate,
+      priority: 'Holiday / Practice Closed',
+      practiceStatus: holidayForm.practiceStatus || 'Office Closed (Festive Holiday)',
+      targetDept: holidayForm.targetDept || 'All Departments',
+      category: 'Festival Holiday',
+      isHoliday: true,
+      isFestival: true,
+      authorName: currentUserName,
+      authorRole: currentUserRole
+    };
+    const updated = saveCustomHolidayNotice(newNotice);
+    setNotices(updated);
+    setIsHolidayModalOpen(false);
+    setHolidayForm({
+      title: '',
+      message: '',
+      holidayDate: selectedDateStr,
+      holidayEndDate: '',
+      practiceStatus: 'Office Closed (Festive Holiday)',
+      targetDept: 'All Departments'
+    });
+    if (onShowToast) onShowToast(`✓ Holiday "${newNotice.title}" declared on calendar!`, 'success');
+  };
 
   // Handle Add Income / Expense
   const handleSaveTransaction = async (e) => {
@@ -537,10 +691,225 @@ export default function CalendarPageView({ onShowToast }) {
     if (onShowToast) onShowToast(`Timesheet for ${selectedDateStr} downloaded successfully!`, 'success');
   };
 
-  // Print Timesheet
+  // Print Specific Day Timesheet & Financial Statement
   const handlePrint = () => {
-    if (onShowToast) onShowToast('Preparing Daily Timesheet & Financial Statement for print...', 'info');
-    setTimeout(() => window.print(), 300);
+    if (onShowToast) onShowToast(`Preparing Official Daily Timesheet for ${selectedDateStr}...`, 'info');
+
+    const firmName = localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates';
+    const firmTag = localStorage.getItem('taxpro_firm_tag') || 'TaxPro';
+    const firmGst = localStorage.getItem('taxpro_firm_gst') || '24AAAAA0000A1Z5';
+    const firmPan = localStorage.getItem('taxpro_firm_pan') || 'AAATF1234C';
+    const firmEmail = localStorage.getItem('taxpro_firm_email') || 'contact@taxpro.in';
+    const firmPhone = localStorage.getItem('taxpro_firm_phone') || '+91 98765 43210';
+    const firmAddress = localStorage.getItem('taxpro_firm_address') || 'Silicon Square, Block 7, Financial District, Surat, Gujarat';
+    const formattedDate = selectedDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const printDate = new Date().toLocaleString('en-IN');
+
+    const printWindow = window.open('', '_blank', 'width=950,height=850');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+
+    const holidaysHtml = selectedDayHolidays.length > 0 ? `
+      <div style="background: #fffbeb; border: 2px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+        <div style="font-size: 13px; font-weight: 800; color: #78350f; text-transform: uppercase;">🏖️ Firm Circular / Practice Holiday: ${selectedDayHolidays[0].title}</div>
+        <div style="font-size: 12px; color: #92400e; margin-top: 4px;">${selectedDayHolidays[0].message}</div>
+        <div style="font-size: 11px; color: #b45309; font-family: monospace; margin-top: 4px;">Status: ${selectedDayHolidays[0].practiceStatus || 'Office Closed'} • Target: ${selectedDayHolidays[0].targetDept || 'All Departments'}</div>
+      </div>
+    ` : '';
+
+    const transactionsRowsHtml = selectedDayTransactions.length > 0 
+      ? selectedDayTransactions.map((tx, idx) => `
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 8px 10px; font-weight: 700; color: ${tx.type === 'Income' ? '#059669' : '#dc2626'};">${tx.type}</td>
+          <td style="padding: 8px 10px; font-weight: 600; color: #1e293b;">${tx.party || '-'}</td>
+          <td style="padding: 8px 10px; color: #475569;">${tx.category || '-'}</td>
+          <td style="padding: 8px 10px; font-family: monospace; color: #334155;">${tx.mode || 'UPI'}</td>
+          <td style="padding: 8px 10px; text-align: right; font-family: monospace; font-weight: 700; color: ${tx.type === 'Income' ? '#059669' : '#dc2626'};">
+            ${tx.type === 'Income' ? '+' : '-'}₹${Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </td>
+        </tr>
+      `).join('')
+      : `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #94a3b8; font-style: italic; font-size: 12px;">No financial income or expense transactions recorded on this date.</td></tr>`;
+
+    const tasksRowsHtml = selectedDayTasks.length > 0
+      ? selectedDayTasks.map((t, idx) => `
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${t.title}</td>
+          <td style="padding: 8px 10px; color: #334155;">${t.client || 'Enterprise'}</td>
+          <td style="padding: 8px 10px; color: #475569;">${t.assignee || 'Unassigned'}</td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
+            <span style="background: ${t.priority === 'High' || t.priority === 'Urgent' ? '#fef2f2; color: #991b1b;' : '#f1f5f9; color: #475569;'}; padding: 2px 6px; border-radius: 4px;">${t.priority || 'Normal'}</span>
+          </td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
+            <span style="background: ${t.status === 'Completed' ? '#ecfdf5; color: #065f46;' : '#eff6ff; color: #1e40af;'}; padding: 2px 6px; border-radius: 4px;">${t.status || 'Pending'}</span>
+          </td>
+        </tr>
+      `).join('')
+      : `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #94a3b8; font-style: italic; font-size: 12px;">No deliverable tasks or compliance deadlines scheduled on this date.</td></tr>`;
+
+    const projectsRowsHtml = selectedDayProjects.length > 0
+      ? selectedDayProjects.map((p, idx) => `
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${p.name || p.title}</td>
+          <td style="padding: 8px 10px; color: #334155;">${p.client || 'Enterprise Account'}</td>
+          <td style="padding: 8px 10px; font-family: monospace; color: #475569;">${p.deadline || selectedDateStr}</td>
+          <td style="padding: 8px 10px; text-align: center; font-family: monospace; font-weight: 700; color: #4338ca;">${p.progress || 0}%</td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
+            <span style="background: #f0fdf4; color: #166534; padding: 2px 6px; border-radius: 4px;">Active Milestone</span>
+          </td>
+        </tr>
+      `).join('')
+      : '';
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Daily Timesheet Statement - ${selectedDateStr}</title>
+        <meta charset="utf-8" />
+        <style>
+          @page { size: A4; margin: 12mm 15mm; }
+          body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; background: #fff; line-height: 1.4; }
+          * { box-sizing: border-box; }
+          .header { border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-start; }
+          .firm-title { font-size: 20px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin: 0 0 2px 0; }
+          .doc-sub { font-size: 11px; font-weight: 700; color: #4338ca; text-transform: uppercase; letter-spacing: 0.5px; }
+          .firm-meta { font-size: 10px; color: #64748b; margin-top: 4px; }
+          .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+          .kpi-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; }
+          .kpi-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+          .kpi-val { font-size: 16px; font-weight: 900; font-family: monospace; margin-top: 2px; }
+          .section-title { font-size: 12px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1.5px solid #cbd5e1; padding-bottom: 4px; margin: 20px 0 10px 0; display: flex; justify-content: space-between; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 1px solid #cbd5e1; }
+          th { background: #f1f5f9; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #334155; padding: 8px 10px; border-bottom: 1px solid #cbd5e1; }
+          .footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-end; font-size: 10px; color: #64748b; }
+          .seal-box { border: 1px dashed #94a3b8; border-radius: 6px; padding: 8px 16px; text-align: center; width: 220px; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="firm-title">${firmName}</div>
+            <div class="doc-sub">Workforce Daily Deliverables & Financial Timesheet</div>
+            <div class="firm-meta">GSTIN: ${firmGst} | PAN: ${firmPan} | Contact: ${firmPhone} | ${firmEmail}</div>
+            <div class="firm-meta">${firmAddress}</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 12px; font-weight: 800; color: #0f172a; font-family: monospace;">STATEMENT DATE</div>
+            <div style="font-size: 13px; font-weight: 900; color: #4338ca;">${formattedDate}</div>
+            <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">Generated: ${printDate}</div>
+          </div>
+        </div>
+
+        ${holidaysHtml}
+
+        <div class="kpi-grid">
+          <div class="kpi-box">
+            <div class="kpi-label">Total Day Inflow (Income)</div>
+            <div class="kpi-val" style="color: #059669;">+₹${selectedDayIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Total Day Outflow (Expense)</div>
+            <div class="kpi-val" style="color: #dc2626;">-₹${selectedDayExpense.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Net Daily Cashflow Balance</div>
+            <div class="kpi-val" style="color: ${selectedDayNet >= 0 ? '#0f172a' : '#dc2626'};">₹${selectedDayNet.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <span>1. Daily Income & Expense Ledger (${selectedDayTransactions.length} Entries)</span>
+          <span style="font-size: 10px; font-weight: 700; color: #64748b;">Date: ${selectedDateStr}</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 30px; text-align: center;">#</th>
+              <th style="width: 80px; text-align: left;">Type</th>
+              <th style="text-align: left;">Party / Client</th>
+              <th style="text-align: left;">Category</th>
+              <th style="width: 90px; text-align: left;">Channel</th>
+              <th style="width: 110px; text-align: right;">Amount (INR)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${transactionsRowsHtml}
+          </tbody>
+        </table>
+
+        <div class="section-title">
+          <span>2. Deliverable Tasks & Compliance Milestones (${selectedDayTasks.length} Tasks)</span>
+          <span style="font-size: 10px; font-weight: 700; color: #64748b;">Target Date: ${selectedDateStr}</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 30px; text-align: center;">#</th>
+              <th style="text-align: left;">Task Description</th>
+              <th style="text-align: left;">Associated Client</th>
+              <th style="text-align: left;">Assigned Staff</th>
+              <th style="width: 80px; text-align: center;">Priority</th>
+              <th style="width: 95px; text-align: center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tasksRowsHtml}
+          </tbody>
+        </table>
+
+        ${selectedDayProjects.length > 0 ? `
+          <div class="section-title">
+            <span>3. Active Project Milestones (${selectedDayProjects.length} Projects)</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30px; text-align: center;">#</th>
+                <th style="text-align: left;">Project Title</th>
+                <th style="text-align: left;">Client Name</th>
+                <th style="width: 100px; text-align: left;">Target Deadline</th>
+                <th style="width: 80px; text-align: center;">Progress</th>
+                <th style="width: 95px; text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${projectsRowsHtml}
+            </tbody>
+          </table>
+        ` : ''}
+
+        <div class="footer">
+          <div>
+            <div style="font-weight: 700; color: #0f172a;">TaxPro Practice Management System</div>
+            <div>Confidential daily operational and financial audit statement.</div>
+          </div>
+          <div class="seal-box">
+            <div style="font-size: 9px; text-transform: uppercase; color: #64748b;">Authorized Signatory</div>
+            <div style="font-weight: 800; color: #0f172a; margin-top: 15px;">${firmTag} Practice Seal</div>
+          </div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 300);
+          };
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   return (
@@ -568,6 +937,21 @@ export default function CalendarPageView({ onShowToast }) {
             <div className="text-[10px] font-mono text-gray-500">{new Date().toLocaleTimeString()}</div>
           </div>
         </div>
+
+        {/* Print Holiday Notice Callout if active */}
+        {selectedDayHolidays.length > 0 && (
+          <div className="mb-4 p-3 border-2 border-amber-600 bg-amber-50 rounded text-xs">
+            <div className="font-black text-amber-950 uppercase tracking-wide">
+              🏖️ OFFICIAL FIRM HOLIDAY / CIRCULAR: {selectedDayHolidays[0].title}
+            </div>
+            <div className="text-[11px] text-amber-900 mt-0.5">
+              {selectedDayHolidays[0].message}
+            </div>
+            <div className="text-[10px] text-amber-800 font-mono mt-1">
+              Status: {selectedDayHolidays[0].practiceStatus || 'Office Closed'} • Target: {selectedDayHolidays[0].targetDept || 'All Departments'}
+            </div>
+          </div>
+        )}
 
         {/* Financial KPI Summary */}
         <div className="grid grid-cols-3 gap-3 mb-5 border border-gray-300 rounded p-3 bg-gray-50">
@@ -722,6 +1106,41 @@ export default function CalendarPageView({ onShowToast }) {
 
           {/* Top Actions */}
           <div className="flex items-center gap-2.5 flex-wrap">
+            {canManageHolidays && (
+              <>
+                <button
+                  onClick={() => {
+                    setHolidayForm({
+                      title: '',
+                      message: '',
+                      holidayDate: selectedDateStr,
+                      holidayEndDate: '',
+                      practiceStatus: 'Office Closed (Festive Holiday)',
+                      targetDept: 'All Departments'
+                    });
+                    setIsHolidayModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                  title="Declare Festival or Practice Holiday on Calendar"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  <span>Declare Holiday</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setHolidaySearchQuery('');
+                    setIsManageHolidaysModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                  title="Manage All Practice & Festival Holidays (Remove or Restore)"
+                >
+                  <CalendarIcon className="w-4 h-4 text-indigo-600" />
+                  <span>Manage Holidays</span>
+                </button>
+              </>
+            )}
+
             <button
               onClick={fetchData}
               disabled={isLoading}
@@ -828,6 +1247,8 @@ export default function CalendarPageView({ onShowToast }) {
                   const isCurrent = item.isCurrentMonth;
                   const dayNum = item.date.getDate();
 
+                  const dayHolidays = getHolidaysForDate(dateStr);
+                  const dayHasHoliday = dayHolidays.length > 0;
                   const dayTxs = transactions.filter(t => t.date === dateStr);
                   const dayHasIncome = dayTxs.some(t => t.type === 'Income');
                   const dayHasExpense = dayTxs.some(t => t.type === 'Expense');
@@ -838,20 +1259,31 @@ export default function CalendarPageView({ onShowToast }) {
                     <button
                       key={idx}
                       onClick={() => setSelectedDate(item.date)}
+                      title={dayHasHoliday ? `🏖️ Holiday: ${dayHolidays[0].title}` : undefined}
                       className={`h-14 rounded-2xl flex flex-col items-center justify-between p-2 transition-all text-xs font-bold cursor-pointer relative ${
                         isSelected 
                           ? 'bg-[#5b52e0] text-white shadow-lg shadow-indigo-600/30 ring-2 ring-indigo-300' 
-                          : (isToday 
-                              ? 'bg-indigo-50 border border-indigo-200 text-[#5b52e0] hover:bg-indigo-100' 
-                              : (isCurrent 
-                                  ? 'bg-gray-50 hover:bg-gray-100 text-gray-800 border border-gray-100' 
-                                  : 'bg-transparent text-gray-300 hover:text-gray-400'))
+                          : (dayHasHoliday 
+                              ? 'bg-amber-50/90 border-2 border-amber-300 text-amber-950 hover:bg-amber-100 shadow-2xs'
+                              : (isToday 
+                                  ? 'bg-indigo-50 border border-indigo-200 text-[#5b52e0] hover:bg-indigo-100' 
+                                  : (isCurrent 
+                                      ? 'bg-gray-50 hover:bg-gray-100 text-gray-800 border border-gray-100' 
+                                      : 'bg-transparent text-gray-300 hover:text-gray-400')))
                       }`}
                     >
-                      <span className="leading-none text-sm">{dayNum}</span>
+                      <div className="w-full flex items-center justify-between">
+                        <span className="leading-none text-sm font-black">{dayNum}</span>
+                        {dayHasHoliday && (
+                          <span className="text-[10px] leading-none" title={`🏖️ ${dayHolidays[0].title}`}>🏖️</span>
+                        )}
+                      </div>
 
-                      {/* Financial & Task Indicators */}
+                      {/* Financial, Task & Holiday Indicators */}
                       <div className="flex items-center gap-1 mt-auto">
+                        {dayHasHoliday && (
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-amber-300' : 'bg-amber-500 ring-1 ring-amber-300'}`} title={`🏖️ ${dayHolidays[0].title}`} />
+                        )}
                         {dayHasIncome && (
                           <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-200' : 'bg-emerald-500'}`} title="Income Recorded" />
                         )}
@@ -859,7 +1291,7 @@ export default function CalendarPageView({ onShowToast }) {
                           <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-rose-200' : 'bg-rose-500'}`} title="Expense Recorded" />
                         )}
                         {dayTaskCount > 0 && (
-                          <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-amber-300' : 'bg-amber-500'}`} title={`${dayTaskCount} tasks due`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-blue-300' : 'bg-blue-500'}`} title={`${dayTaskCount} tasks due`} />
                         )}
                         {dayProjCount > 0 && (
                           <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-purple-300' : 'bg-purple-500'}`} title={`${dayProjCount} milestones`} />
@@ -871,10 +1303,11 @@ export default function CalendarPageView({ onShowToast }) {
               </div>
 
               {/* Legend */}
-              <div className="flex items-center justify-center gap-4 mt-4 pt-3 border-t border-gray-100 text-[11px] text-gray-500 font-medium flex-wrap">
+              <div className="flex items-center justify-center gap-3.5 mt-4 pt-3 border-t border-gray-100 text-[11px] text-gray-500 font-medium flex-wrap">
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500 ring-1 ring-amber-300" /> 🏖️ Holiday</span>
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Income</span>
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500" /> Expense</span>
-                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Tasks Due</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500" /> Tasks</span>
                 <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-500" /> Milestone</span>
               </div>
             </div>
@@ -903,6 +1336,65 @@ export default function CalendarPageView({ onShowToast }) {
 
           {/* RIGHT COLUMN: INCOME & EXPENSES + TARGETED DAY TASKS (7 COLS) */}
           <div className="xl:col-span-7 flex flex-col gap-6">
+            
+            {/* HOLIDAY NOTICES BANNER FOR SELECTED DATE */}
+            {selectedDayHolidays.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {selectedDayHolidays.map((h, i) => (
+                  <div 
+                    key={h.id || i}
+                    className="bg-gradient-to-r from-amber-50 via-rose-50/40 to-amber-50 border-2 border-amber-300/80 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in relative overflow-hidden"
+                  >
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-2xl shadow-md shrink-0 ring-4 ring-amber-100">
+                        🏖️
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-2xs">
+                            Official Firm Holiday
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                            {h.practiceStatus || 'Office Closed'}
+                          </span>
+                          <span className="text-[11px] font-semibold text-gray-500">
+                            Audience: <strong className="text-gray-700">{h.targetDept || 'All Departments'}</strong>
+                          </span>
+                        </div>
+                        <h3 className="text-base font-black text-gray-900 font-outfit">
+                          {h.title}
+                        </h3>
+                        <p className="text-xs text-gray-700 mt-1 leading-relaxed max-w-2xl">
+                          {h.message}
+                        </p>
+                        <div className="text-[10px] text-gray-400 font-medium mt-2">
+                          Published by: <span className="font-bold text-gray-600">{h.authorName || 'Practice Management'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {canManageHolidays && (
+                      <div className="flex flex-col items-end gap-1 shrink-0 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to remove "${h.title}" from the calendar?\n\nThis date will become a regular working day for all practice members.`)) {
+                              handleRemoveHolidayNotice(h.id);
+                            }
+                          }}
+                          className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-red-600/20 active:scale-95"
+                          title="Remove this holiday from the calendar (e.g. keep office open on Janmashtami)"
+                        >
+                          <Trash2 className="w-4 h-4 text-white" />
+                          <span>Remove Holiday (Workday)</span>
+                        </button>
+                        <span className="text-[10px] text-gray-500 font-semibold">Convert to normal working day</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             
             {/* 1. INCOME & EXPENSES DAILY LEDGER CARD */}
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col gap-4">
@@ -1429,14 +1921,25 @@ export default function CalendarPageView({ onShowToast }) {
                 </div>
 
                 <div>
-                  <label className="text-gray-700 block mb-1">Assignee</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-gray-700 block">Assignee</label>
+                    <button
+                      type="button"
+                      onClick={() => setTaskForm({ ...taskForm, assignee: currentUserName })}
+                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                    >
+                      ⚡ Assign to Me
+                    </button>
+                  </div>
                   <select
                     value={taskForm.assignee}
                     onChange={(e) => setTaskForm({ ...taskForm, assignee: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer"
+                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer font-semibold"
                   >
-                    <option value="Unassigned">Unassigned</option>
-                    {teamMembers.map((m, i) => (
+                    <option value="Unassigned">-- Select Assignee --</option>
+                    <option value={currentUserName}>⚡ {currentUserName} (Myself / Admin)</option>
+                    <option value="Administrator">Administrator</option>
+                    {teamMembers.filter(m => m !== currentUserName && m !== 'Administrator').map((m, i) => (
                       <option key={i} value={m}>{m}</option>
                     ))}
                   </select>
@@ -1487,6 +1990,307 @@ export default function CalendarPageView({ onShowToast }) {
               </div>
 
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 4. DECLARE FESTIVAL / CUSTOM PRACTICE HOLIDAY MODAL (ADMIN / MANAGER) */}
+      {isHolidayModalOpen && canManageHolidays && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsHolidayModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden text-gray-800">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-amber-900 via-amber-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-amber-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black font-outfit text-white">
+                    Declare Festival or Practice Holiday
+                  </h3>
+                  <p className="text-xs text-amber-200/80">
+                    Publish official firm holiday on calendar & workforce schedules
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsHolidayModalOpen(false)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleSaveHoliday} className="p-6 space-y-4 text-xs font-semibold">
+              <div>
+                <label className="text-gray-700 block mb-1">
+                  Holiday Name / Festival Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 🪔 Diwali Festival Holiday or Pateti Parsi New Year"
+                  value={holidayForm.title}
+                  onChange={(e) => setHolidayForm({ ...holidayForm, title: e.target.value })}
+                  className="w-full bg-gray-50 rounded-xl px-3.5 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs font-bold text-gray-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-gray-700 block mb-1">
+                    Start Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={holidayForm.holidayDate}
+                    onChange={(e) => setHolidayForm({ ...holidayForm, holidayDate: e.target.value })}
+                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-gray-700 block mb-1">End Date (Optional Range)</label>
+                  <input
+                    type="date"
+                    value={holidayForm.holidayEndDate}
+                    onChange={(e) => setHolidayForm({ ...holidayForm, holidayEndDate: e.target.value })}
+                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-gray-700 block mb-1">Office / Workstation Status</label>
+                  <select
+                    value={holidayForm.practiceStatus}
+                    onChange={(e) => setHolidayForm({ ...holidayForm, practiceStatus: e.target.value })}
+                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs"
+                  >
+                    <option value="Office Closed (Festive Holiday)">Office Closed (Festive Holiday)</option>
+                    <option value="Half Day (Morning Shift Only)">Half Day (Morning Shift Only)</option>
+                    <option value="Optional Festive Leave">Optional Festive Leave</option>
+                    <option value="Emergency Support Only">Emergency Support Only</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-gray-700 block mb-1">Target Department</label>
+                  <select
+                    value={holidayForm.targetDept}
+                    onChange={(e) => setHolidayForm({ ...holidayForm, targetDept: e.target.value })}
+                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs"
+                  >
+                    <option value="All Departments">All Departments</option>
+                    <option value="Tax Compliance">Tax Compliance</option>
+                    <option value="GST & Audit">GST & Audit</option>
+                    <option value="Accounting">Accounting</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-gray-700 block mb-1">Official Circular Note / Description</label>
+                <textarea
+                  rows={2}
+                  placeholder="Memo to staff regarding practice schedule and client notices..."
+                  value={holidayForm.message}
+                  onChange={(e) => setHolidayForm({ ...holidayForm, message: e.target.value })}
+                  className="w-full bg-gray-50 rounded-xl px-3.5 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs resize-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 -mx-6 -mb-6">
+                <button
+                  type="button"
+                  onClick={() => setIsHolidayModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Publish Holiday</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. MANAGE ALL PRACTICE & FESTIVAL HOLIDAYS MODAL (ADMIN / MANAGER) */}
+      {isManageHolidaysModalOpen && canManageHolidays && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsManageHolidaysModalOpen(false); }}
+          className="modal-overlay-backdrop"
+        >
+          <div className="modal-content-box max-w-3xl max-h-[90vh] flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden text-gray-800">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                  <CalendarIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-white">
+                    Manage Practice & Festival Holidays
+                  </h3>
+                  <p className="text-xs text-gray-300">
+                    Remove festival holidays to keep office open (e.g. Janmashtami) or restore holidays
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsManageHolidaysModalOpen(false)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search & Year Filters */}
+            <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={holidaySearchQuery}
+                  onChange={(e) => setHolidaySearchQuery(e.target.value)}
+                  placeholder="Search holiday (e.g. Janmashtami, Diwali, Holi, Eid)..."
+                  className="w-full bg-white border border-gray-300 rounded-xl pl-10 pr-4 py-2 text-xs font-semibold text-gray-800 outline-none focus:border-indigo-500 shadow-2xs"
+                />
+              </div>
+
+              {/* Year Filter Buttons */}
+              <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                {[2025, 2026, 2027].map(yr => (
+                  <button
+                    key={yr}
+                    onClick={() => setHolidayYearFilter(yr)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      holidayYearFilter === yr ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    {yr}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setHolidayYearFilter('')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    holidayYearFilter === '' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  All
+                </button>
+              </div>
+            </div>
+
+            {/* Holiday Items List */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+              {allMasterHolidays.length === 0 ? (
+                <div className="py-12 text-center text-gray-400 text-xs">
+                  No holidays match your search query or filter.
+                </div>
+              ) : (
+                allMasterHolidays.map((item) => {
+                  const dateStr = item.holidayDate || item.date || '';
+                  const formattedD = dateStr ? new Date(dateStr).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '';
+                  const isExcluded = item.isRemoved;
+
+                  return (
+                    <div 
+                      key={item.id}
+                      className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                        isExcluded 
+                          ? 'bg-gray-50 border-gray-200 opacity-75' 
+                          : 'bg-white border-amber-200/80 shadow-xs hover:border-amber-300'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${
+                          isExcluded ? 'bg-gray-200 text-gray-500' : 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-100'
+                        }`}>
+                          {item.title?.slice(0, 2) || '🏖️'}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                            <span className="text-xs font-bold font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                              {formattedD}
+                            </span>
+                            {isExcluded ? (
+                              <span className="px-2 py-0.5 rounded-md bg-gray-200 text-gray-700 text-[10px] font-black uppercase">
+                                💼 Regular Working Day
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-black uppercase">
+                                🏖️ Practice Holiday
+                              </span>
+                            )}
+                          </div>
+                          <h4 className={`text-sm font-black font-outfit ${isExcluded ? 'text-gray-600 line-through' : 'text-gray-900'}`}>
+                            {item.title}
+                          </h4>
+                          <p className="text-xs text-gray-500 mt-0.5 max-w-xl">
+                            {item.message}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Action Button: Remove or Restore */}
+                      <div className="self-end sm:self-center shrink-0">
+                        {isExcluded ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreHolidayNotice(item.id, item.title)}
+                            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+                            title="Restore this date as an official practice holiday"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Restore as Holiday</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Remove "${item.title}" from practice calendar?\n\nDate: ${formattedD}\nThis will make it a normal working day for the office.`)) {
+                                handleRemoveHolidayNotice(item.id);
+                              }
+                            }}
+                            className="px-3.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                            title="Remove holiday (e.g. keep office open on Janmashtami)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                            <span>Remove Holiday</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+              <span className="text-xs text-gray-500 font-medium">
+                Changes apply instantly across all employee calendars and timesheets.
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsManageHolidaysModalOpen(false)}
+                className="px-5 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

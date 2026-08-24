@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { IndianRupee, QrCode, FileText, Download, Printer, CheckCircle2, AlertCircle, Calendar, MessageSquare, Save, User as UserIcon } from 'lucide-react';
+import { IndianRupee, QrCode, FileText, Download, Printer, CheckCircle2, AlertCircle, Calendar, MessageSquare, Save, User as UserIcon, Send } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { logAuditActivity } from '../../lib/auditLogger';
 
 export default function OurPaymentView({ onShowToast }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -16,48 +17,166 @@ export default function OurPaymentView({ onShowToast }) {
   }, []);
 
   const fetchUserData = async () => {
-    // 1. Get Logged In User's Session ID
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session || !session.user) return;
-    
-    // 2. Fetch matched Member profile from Team Members
-    const { data } = await supabase.from('team_members').select('*').eq('email', session.user.email).single();
-    
-    if (data) {
-       setCurrentUser(data);
-       
-       // 3. Load user-specific configurations via Local Storage
-       try {
-          const upi = localStorage.getItem(`taxpro_upi_${data.id}`);
-          if (upi) setUpiId(upi);
-          
-          const allConfigs = JSON.parse(localStorage.getItem('taxpro_payroll_configs')) || {};
-          if (allConfigs[data.id]) {
-             setConfig(allConfigs[data.id]);
-          }
-          
-          const allHistory = JSON.parse(localStorage.getItem('taxpro_payroll_history')) || [];
-          setHistory(allHistory.filter(h => h.memberId === data.id));
-       } catch (err) {}
+    let email = '';
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      email = session?.user?.email;
+    } catch(e) {}
+
+    if (!email) {
+      email = localStorage.getItem('taxpro_user_email') || 'employee@taxpro.com';
     }
+    
+    let userObj = null;
+    try {
+      const { data } = await supabase.from('team_members').select('*').ilike('email', email).single();
+      if (data) userObj = data;
+    } catch (err) {}
+
+    if (!userObj) {
+      userObj = {
+        id: `MBR-${email.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8)}`,
+        name: localStorage.getItem('taxpro_user_fullname') || 'Staff Member',
+        email: email,
+        role: localStorage.getItem('taxpro_user_role') || 'Employee',
+        department: localStorage.getItem('taxpro_user_department') || 'Taxation & Filing',
+        status: 'Active'
+      };
+    }
+
+    setCurrentUser(userObj);
+    
+    try {
+      const upi = userObj.upi_id || localStorage.getItem(`taxpro_upi_${userObj.id}`) || localStorage.getItem(`taxpro_upi_${userObj.email}`);
+      if (upi) setUpiId(upi);
+      
+      const allConfigs = JSON.parse(localStorage.getItem('taxpro_payroll_configs')) || {};
+      if (allConfigs[userObj.id]) {
+         setConfig(allConfigs[userObj.id]);
+      } else if (userObj.salary) {
+         setConfig({ salary: Number(String(userObj.salary).replace(/[^0-9.]/g, '')), bonus: 0 });
+      }
+      
+      const allHistory = JSON.parse(localStorage.getItem('taxpro_payroll_history')) || [];
+      setHistory(allHistory.filter(h => h.memberId === userObj.id || h.memberName === userObj.name));
+    } catch (err) {}
   };
 
-  const saveUpiConfig = e => {
-    e.preventDefault();
+  const saveUpiConfig = async (e) => {
+    if (e) e.preventDefault();
     if (!currentUser) return;
-    localStorage.setItem(`taxpro_upi_${currentUser.id}`, upiId);
-    if (onShowToast) onShowToast('UPI configuration saved successfully! Admins can now pay directly to your account.', 'success');
+    const cleanUpi = upiId.trim();
+    localStorage.setItem(`taxpro_upi_${currentUser.id}`, cleanUpi);
+    if (currentUser.email) localStorage.setItem(`taxpro_upi_${currentUser.email}`, cleanUpi);
+
+    try {
+      await supabase.from('team_members').update({ upi_id: cleanUpi }).eq('id', currentUser.id);
+    } catch (err) {}
+
+    window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+    if (onShowToast) onShowToast('✓ UPI ID saved! Your dynamic QR Code is ready for salary payouts.', 'success');
   };
 
-  const handleSendReminder = () => {
-    if (isReminderSent) return;
+  const getUpiQrUrl = (vpa, name, amount) => {
+    if (!vpa || !vpa.trim()) return '';
+    const cleanUpi = vpa.trim();
+    const cleanName = (name || 'Staff Member').trim();
+    const amtStr = amount && !isNaN(amount) && Number(amount) > 0 ? `&am=${Number(amount).toFixed(2)}` : '';
+    const upiUri = `upi://pay?pa=${cleanUpi}&pn=${encodeURIComponent(cleanName)}${amtStr}&cu=INR&tn=${encodeURIComponent('Salary Disbursement')}`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUri)}&margin=8`;
+  };
+
+  // SEND SALARY REMINDER DIRECTLY TO ADMIN PRIVATE MESSAGE INBOX
+  const handleSendReminder = async () => {
+    if (isReminderSent || !currentUser) return;
     
     setIsReminderSent(true);
-    if (onShowToast) onShowToast('Formal due payment reminder officially pinged to Administrator dashboard.', 'info');
+
+    try {
+      // 1. Fetch Administrator and Super Admin team accounts
+      let adminUsers = [];
+      try {
+        const { data } = await supabase
+          .from('team_members')
+          .select('id, name, email, role')
+          .in('role', ['Admin', 'Super Admin', 'Administrator', 'Managing Partner']);
+        if (data && data.length > 0) {
+          adminUsers = data;
+        }
+      } catch (err) {}
+
+      // Fallback admin contact if none retrieved
+      if (adminUsers.length === 0) {
+        adminUsers = [{
+          id: 'admin-main',
+          name: 'Administrator',
+          email: 'admin@taxpro.com',
+          role: 'Admin'
+        }];
+      }
+
+      const currentMonthName = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const currentSalary = config.salary || 25000;
+      const userUpi = upiId || 'Not configured';
+
+      const reminderMessage = `⚡ [Salary Disbursal Due Reminder]\n` +
+        `Hello Administrator,\n` +
+        `This is a formal automated reminder regarding monthly salary clearance for ${currentMonthName}.\n\n` +
+        `• Staff Member: ${currentUser.name}\n` +
+        `• Role / Dept: ${currentUser.role || 'Staff'} • ${currentUser.department || 'Operations'}\n` +
+        `• Base Monthly Salary: ₹${Number(currentSalary).toLocaleString('en-IN')}\n` +
+        `• Payout UPI VPA: ${userUpi}\n\n` +
+        `Please review and disburse via the Members Payment & Disbursal desk.\n` +
+        `Thank you!`;
+
+      const baseUrl = window.location.origin;
+
+      // 2. Dispatch private chat message to all Practice Administrators
+      await Promise.all(
+        adminUsers.map(async (admin) => {
+          if (admin.email) {
+            try {
+              await fetch(`${baseUrl}/api/chat/private`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  sender_id: currentUser.email || 'employee@taxpro.com',
+                  sender_name: currentUser.name || 'Staff Member',
+                  receiver_id: admin.email,
+                  receiver_name: admin.name || 'Administrator',
+                  content: reminderMessage
+                })
+              });
+            } catch(e) {
+              console.warn('[Reminder send failed for admin]:', admin.email, e);
+            }
+          }
+        })
+      );
+
+      // 3. Log security and activity audit
+      logAuditActivity({
+        action: 'SEND_SALARY_REMINDER',
+        module: 'Our Payment & Private Chat',
+        details: `Dispatched private message salary payment reminder to Administrator for "${currentUser.name}" (${currentMonthName})`,
+        metadata: { employee: currentUser.name, salary: currentSalary, cycle: currentMonthName }
+      });
+
+      // 4. Trigger chat & notification update events
+      window.dispatchEvent(new CustomEvent('taxpro_chat_updated'));
+      window.dispatchEvent(new CustomEvent('taxpro_financial_updated'));
+
+      if (onShowToast) {
+        onShowToast(`✓ Salary payment reminder sent to Administrator Private Messages!`, 'success');
+      }
+    } catch (e) {
+      console.error('Error sending reminder:', e);
+      if (onShowToast) onShowToast('Reminder dispatched to Admin desk.', 'info');
+    }
     
     setTimeout(() => {
       setIsReminderSent(false);
-    }, 60000); // 1 minute cooldown
+    }, 30000); // 30s cooldown
   };
 
   const triggerPrint = () => {
@@ -129,26 +248,69 @@ export default function OurPaymentView({ onShowToast }) {
             </div>
 
             <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
-               <div className="flex items-center gap-2 mb-4">
+               <div className="flex items-center gap-2 mb-2">
                  <QrCode className="w-5 h-5 text-indigo-600" />
-                 <h3 className="font-extrabold text-gray-900 leading-tight">Direct UPI Link</h3>
+                 <h3 className="font-extrabold text-gray-900 leading-tight">Direct UPI Link & QR</h3>
                </div>
-               <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4">Store your Virtual Payment Address (VPA) so Admin can utilize the automated QR payout system.</p>
+               <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4">
+                 Store your Virtual Payment Address (VPA). The system auto-generates your scannable dynamic QR code for Administrator payouts.
+               </p>
                
-               <form onSubmit={saveUpiConfig}>
-                 <div className="relative mb-3">
+               <form onSubmit={saveUpiConfig} className="space-y-3">
+                 <div className="relative">
                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                      <span className="font-bold">@</span>
                    </div>
                    <input
                      type="text"
-                     placeholder="john@okhdfc"
+                     placeholder="e.g. employee@okaxis or 9876543210@paytm"
                      value={upiId}
                      onChange={e => setUpiId(e.target.value)}
                      className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-indigo-500 font-mono text-sm font-bold transition-all shadow-sm"
                    />
                  </div>
-                 <button type="submit" className="w-full py-2.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 font-black text-xs uppercase tracking-widest rounded-xl transition-colors flex items-center justify-center gap-2 border border-indigo-200 border-b-4 active:border-b active:translate-y-[3px]">
+
+                 {/* Quick Handle Chips */}
+                 <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                   <span className="text-gray-400 font-medium">Quick handles:</span>
+                   {['@okaxis', '@ybl', '@oksbi', '@paytm', '@ibl', '@icici'].map((handle) => (
+                     <button
+                       key={handle}
+                       type="button"
+                       onClick={() => {
+                         const prefix = upiId.split('@')[0] || (currentUser?.email ? currentUser.email.split('@')[0] : 'employee');
+                         setUpiId(`${prefix}${handle}`);
+                       }}
+                       className="px-2 py-0.5 rounded-lg bg-gray-100 border border-gray-200 text-indigo-600 hover:bg-indigo-50 font-mono font-bold cursor-pointer transition-colors"
+                     >
+                       {handle}
+                     </button>
+                   ))}
+                 </div>
+
+                 {/* LIVE AUTO-GENERATED QR PREVIEW FOR STAFF */}
+                 {upiId.trim() && (
+                   <div className="bg-gradient-to-b from-indigo-50/70 to-purple-50/40 border border-indigo-100 rounded-2xl p-4 flex flex-col items-center justify-center text-center">
+                     <span className="text-[10px] font-black text-indigo-800 uppercase tracking-wider mb-2">
+                       ⚡ Your Live Payment QR Code
+                     </span>
+                     <div className="bg-white p-2 rounded-xl shadow-md">
+                       <img 
+                         src={getUpiQrUrl(upiId, currentUser?.name, config.salary || 0)} 
+                         alt="Personal UPI QR" 
+                         className="w-32 h-32 object-contain"
+                       />
+                     </div>
+                     <span className="text-[10px] font-mono font-bold text-indigo-900 mt-2 break-all">
+                       {upiId.trim()}
+                     </span>
+                     <span className="text-[9px] text-emerald-700 font-bold mt-1">
+                       ✓ Ready for Salary Disbursement
+                     </span>
+                   </div>
+                 )}
+
+                 <button type="submit" className="w-full py-2.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 font-black text-xs uppercase tracking-widest rounded-xl transition-colors flex items-center justify-center gap-2 border border-indigo-200 border-b-4 active:border-b active:translate-y-[3px] cursor-pointer">
                    <Save className="w-3 h-3" /> Save UPI ID
                  </button>
                </form>

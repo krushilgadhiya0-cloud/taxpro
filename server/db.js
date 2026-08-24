@@ -457,6 +457,20 @@ export async function initDatabase() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    -- Audit & Activity Logs Table
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      user_name TEXT NOT NULL,
+      user_email TEXT,
+      user_role TEXT DEFAULT 'Admin',
+      action TEXT NOT NULL,
+      module TEXT NOT NULL,
+      details TEXT NOT NULL,
+      ip_address TEXT DEFAULT '127.0.0.1',
+      metadata JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     -- App Integrations Config Table
     CREATE TABLE IF NOT EXISTS integrations (
       id TEXT PRIMARY KEY,
@@ -532,10 +546,18 @@ export async function initDatabase() {
         -- Clients column migrations
         ALTER TABLE clients ADD COLUMN IF NOT EXISTS trade_name TEXT;
         ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS client_address TEXT;
         ALTER TABLE clients ADD COLUMN IF NOT EXISTS city TEXT;
         ALTER TABLE clients ADD COLUMN IF NOT EXISTS state TEXT;
         ALTER TABLE clients ADD COLUMN IF NOT EXISTS pincode TEXT;
         ALTER TABLE clients ADD COLUMN IF NOT EXISTS contact_person TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS attached_doc TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS attached_docs JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS fee_amount NUMERIC DEFAULT 0;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_cycle TEXT DEFAULT 'Monthly';
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS fee_type TEXT DEFAULT 'Retainer Fee';
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_start_date TEXT;
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS service_scope TEXT;
         ALTER TABLE clients ADD COLUMN IF NOT EXISTS notes TEXT;
         ALTER TABLE clients ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Regular';
         ALTER TABLE clients ADD COLUMN IF NOT EXISTS custom_fields JSONB DEFAULT '{}'::jsonb;
@@ -556,6 +578,9 @@ export async function initDatabase() {
 
         -- Projects column migrations
         ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_id TEXT;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_name TEXT;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS manager TEXT;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS budget TEXT;
         ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date TEXT;
         ALTER TABLE projects ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'General';
         ALTER TABLE projects ADD COLUMN IF NOT EXISTS tasks JSONB DEFAULT '[]'::jsonb;
@@ -619,6 +644,11 @@ export async function initDatabase() {
         ALTER TABLE receipts_payments ADD COLUMN IF NOT EXISTS notes TEXT;
 
         -- Attendance column migrations
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS in_time TEXT;
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS out_time TEXT;
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS member_id TEXT;
+
+        -- Attendance column migrations
         ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punch_in TEXT;
         ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punch_out TEXT;
         ALTER TABLE attendance ADD COLUMN IF NOT EXISTS working_hours NUMERIC DEFAULT 8.0;
@@ -672,7 +702,7 @@ async function seedInitialData() {
           password: 'password123',
           name: 'Krushil Gadhiya',
           role: 'Managing Director & CFO',
-          company: 'Finexo PMS Enterprise'
+          company: 'TaxPro PMS Enterprise'
         },
         {
           id: 'USR-1001',
@@ -846,6 +876,27 @@ async function seedInitialData() {
           VALUES ($1, $2, $3, $4)
           ON CONFLICT (name) DO NOTHING;
         `, [d.name, d.manager, d.initials, d.description]);
+      }
+    }
+
+    // 4. Seed Core Standard Clients (if empty)
+    const clientCount = await query('SELECT COUNT(*) FROM clients');
+    if (parseInt(clientCount.rows[0].count, 10) === 0) {
+      console.log('[PostgreSQL Engine] Initializing core clients...');
+      const defaultClients = [
+        { id: 'CL-501', name: 'Reliance Retail Ventures Ltd', trade_name: 'Reliance Retail', pan: 'AABCR1234F', gst: '27AABCR1234F1Z5', file_no: 'FN-901', email: 'contact@relianceretail.com', phone: '+91 98200 11223', address: 'Maker Chambers IV, Nariman Point, Mumbai, Maharashtra 400021' },
+        { id: 'CL-502', name: 'Tata Consultancy Services Ltd', trade_name: 'TCS Enterprise', pan: 'AABCT4567G', gst: '27AABCT4567G1Z8', file_no: 'FN-902', email: 'accounts@tcs.com', phone: '+91 98211 44556', address: 'TCS House, Raveline Street, Fort, Mumbai, Maharashtra 400001' },
+        { id: 'CL-503', name: 'Infosys BPM Ltd', trade_name: 'Infosys Business Solutions', pan: 'AABCI7890H', gst: '29AABCI7890H1Z2', file_no: 'FN-903', email: 'tax@infosys.com', phone: '+91 98450 33445', address: 'Electronics City, Hosur Road, Bengaluru, Karnataka 560100' },
+        { id: 'CL-504', name: 'Zomato Media Pvt Ltd', trade_name: 'Zomato Hyperpure & Delivery', pan: 'AABCZ2468J', gst: '07AABCZ2468J1Z9', file_no: 'FN-904', email: 'compliance@zomato.com', phone: '+91 98110 55667', address: 'Ground Floor, 12A, DLF Phase 1, Gurugram, Haryana 122002' },
+        { id: 'CL-505', name: 'Adani Green Energy Ltd', trade_name: 'Adani Power & Green', pan: 'AABCA1357K', gst: '24AABCA1357K1Z4', file_no: 'FN-905', email: 'finance@adani.com', phone: '+91 98790 77889', address: 'Adani Corporate House, Shantigram, Ahmedabad, Gujarat 382421' }
+      ];
+
+      for (const c of defaultClients) {
+        await query(`
+          INSERT INTO clients (id, name, trade_name, pan, gst, file_no, email, phone, address, client_address, status)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, 'Active')
+          ON CONFLICT (id) DO NOTHING;
+        `, [c.id, c.name, c.trade_name, c.pan, c.gst, c.file_no, c.email, c.phone, c.address]);
       }
     }
 

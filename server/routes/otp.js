@@ -1,84 +1,125 @@
 import express from 'express';
-import { isEmailRegistered } from './auth.js';
+import { query } from '../db.js';
+import { isEmailRegistered, runPythonMailer, otpStore } from './auth.js';
+
 const router = express.Router();
 
-let activeOtpSession = {
-  code: '123456',
-  email: 'krushilgadhiya0@gmail.com',
-  expiresAt: Date.now() + 60000
-};
+// Send / Resend OTP via Python smtplib
+router.post('/send', async (req, res) => {
+  const { email, smtpConfig } = req.body;
+  const targetEmail = (email || '').trim().toLowerCase();
 
-// Send / Resend Gmail OTP
-router.post('/send', (req, res) => {
-  const { email } = req.body;
-  const targetEmail = (email || 'krushilgadhiya0@gmail.com').trim().toLowerCase();
-
-  // Enforce registered Gmail requirement
-  if (!isEmailRegistered(targetEmail)) {
+  if (!targetEmail) {
     return res.status(400).json({
       success: false,
-      error: 'Only registered Gmail addresses can receive OTP verification. Please register an account first.'
+      error: 'Email address is required for OTP dispatch.'
     });
   }
 
-  const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-  
-  activeOtpSession = {
-    code: newCode,
-    email: targetEmail,
-    expiresAt: Date.now() + 60000
-  };
+  // Enforce registered account requirement
+  const isRegistered = await isEmailRegistered(targetEmail);
+  if (!isRegistered) {
+    return res.status(400).json({
+      success: false,
+      error: 'This email address is not registered in the system. Please register or contact your Administrator.'
+    });
+  }
 
-  console.log(`[TaxPro Gmail OTP Engine] Verification code generated for ${activeOtpSession.email}: ${newCode}`);
+  const otpCode = String(Math.floor(1000 + Math.random() * 9000));
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  otpStore.set(targetEmail, { otp: otpCode, expiresAt });
+
+  console.log(`[TaxPro OTP Engine] 📧 Dispatched verification code to ${targetEmail}`);
+
+  // Real smtplib dispatch
+  const mailResult = await runPythonMailer({
+    action: 'otp',
+    email: targetEmail,
+    otp: otpCode,
+    smtp_config: smtpConfig || {}
+  });
 
   res.json({
     success: true,
-    message: `Secure 6-digit verification code (${newCode}) dispatched to ${activeOtpSession.email}`,
-    demoCode: newCode,
-    otpCode: newCode,
-    expiresIn: 60
+    message: `Secure verification code dispatched to ${targetEmail}`,
+    email: targetEmail,
+    expiresIn: 600,
+    mailResult
   });
 });
 
-// Verify Gmail OTP
-router.post('/verify', (req, res) => {
-  const { code, email, isTestFail } = req.body;
-  const targetEmail = (email || activeOtpSession.email).trim().toLowerCase();
+// Verify OTP against live database
+router.post('/verify', async (req, res) => {
+  const { code, email } = req.body;
+  const targetEmail = (email || '').trim().toLowerCase();
+  const cleanCode = String(code || '').trim();
 
-  if (!isEmailRegistered(targetEmail)) {
+  if (!targetEmail || !cleanCode) {
     return res.status(400).json({
       success: false,
-      error: 'This Gmail address is not registered in the system.'
+      error: 'Both email and verification code are required.'
     });
   }
 
-  setTimeout(() => {
-    if (isTestFail || (code && code === '000000')) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid verification code. Please check your Gmail inbox and try again.'
-      });
-    }
+  const record = otpStore.get(targetEmail);
 
-    if (code === activeOtpSession.code || code === '123456' || (code && code.length === 6)) {
-      return res.json({
-        success: true,
-        message: 'Gmail OTP Verification successful! Session token generated.',
-        token: 'taxpro_gmail_session_token_98410294819',
-        user: {
-          name: 'Alexander Sterling',
-          role: 'Chief Financial Officer',
-          email: targetEmail,
-          authenticatedAt: new Date().toISOString()
-        }
-      });
-    }
-
+  if (!record) {
     return res.status(400).json({
       success: false,
-      error: 'Invalid or expired Gmail verification code.'
+      error: 'No active verification code found for this email. Please request a new code.'
     });
-  }, 1200);
+  }
+
+  if (Date.now() > record.expiresAt) {
+    otpStore.delete(targetEmail);
+    return res.status(400).json({
+      success: false,
+      error: 'This verification code has expired. Please request a new code.'
+    });
+  }
+
+  if (record.otp !== cleanCode) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid verification code. Please check your inbox and try again.'
+    });
+  }
+
+  // Clear OTP on successful verification
+  otpStore.delete(targetEmail);
+
+  try {
+    // Lookup real user from PostgreSQL database
+    const userRes = await query('SELECT id, name, email, role, company FROM users WHERE LOWER(email) = $1 LIMIT 1', [targetEmail]);
+    const user = userRes.rows[0] || {
+      id: `USR-${Date.now().toString().slice(-6)}`,
+      name: targetEmail.split('@')[0],
+      email: targetEmail,
+      role: 'Employee',
+      company: 'TaxPro Enterprise'
+    };
+
+    const token = `taxpro_session_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+
+    return res.json({
+      success: true,
+      verified: true,
+      message: 'OTP Verification successful! Session token generated.',
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        company: user.company,
+        authenticatedAt: new Date().toISOString()
+      }
+    });
+  } catch (err) {
+    console.error('[OTP Verify Route DB Error]:', err.message);
+    return res.status(500).json({ success: false, error: 'Database verification error: ' + err.message });
+  }
 });
 
 export default router;

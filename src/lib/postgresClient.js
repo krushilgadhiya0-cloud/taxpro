@@ -36,8 +36,14 @@ const SYNCED_STORAGE_KEYS = [
   'taxpro_ai_training_logs',
   'taxpro_contact_persons',
   'taxpro_firm_name',
+  'taxpro_firm_tag',
   'taxpro_firm_gst',
+  'taxpro_firm_pan',
+  'taxpro_firm_email',
+  'taxpro_firm_phone',
   'taxpro_firm_address',
+  'taxpro_firm_tagline',
+  'taxpro_firm_configured',
   'taxpro_lock_pin',
   'taxpro_user_avatar',
   'taxpro_user_phone',
@@ -48,29 +54,50 @@ const SYNCED_STORAGE_KEYS = [
   'taxpro_theme'
 ];
 
+// Fast in-memory query cache for instant responses
+const queryCache = new Map();
+const CACHE_TTL_MS = 1000;
+
+export const invalidateQueryCache = (table) => {
+  if (!table) {
+    queryCache.clear();
+    return;
+  }
+  for (const key of queryCache.keys()) {
+    if (key.startsWith(`${table}:`)) {
+      queryCache.delete(key);
+    }
+  }
+};
+
 if (typeof window !== 'undefined') {
-  // 1. Initial hydration: Pull down remote state from PostgreSQL for each key if available
+  // 1. Initial hydration: Pull down remote state from PostgreSQL in ONE single fast batch call
   const hydrateFromPostgres = async () => {
-    for (const key of SYNCED_STORAGE_KEYS) {
-      try {
-        const res = await fetch(`${API_BASE}/api/db/storage/${key}`);
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.exists && json.data !== null && json.data !== undefined) {
-            const currentLocal = localStorage.getItem(key);
-            const remoteStr = typeof json.data === 'string' ? json.data : JSON.stringify(json.data);
-            if (!currentLocal || currentLocal === '[]' || currentLocal === '{}' || currentLocal === '""') {
-              localStorage.setItem(key, remoteStr);
+    try {
+      const res = await fetch(`${API_BASE}/api/db/storage-all`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          Object.entries(json.data).forEach(([key, val]) => {
+            if (val !== null && val !== undefined) {
+              const currentLocal = localStorage.getItem(key);
+              const remoteStr = typeof val === 'string' ? val : JSON.stringify(val);
+              if (!currentLocal || currentLocal === '[]' || currentLocal === '{}' || currentLocal === '""') {
+                localStorage.setItem(key, remoteStr);
+              }
             }
-          }
+          });
         }
-      } catch (e) {}
+      }
+    } catch (e) {
+      console.warn('[PostgreSQL Fast Hydration Skipped]:', e.message);
     }
   };
 
-  setTimeout(hydrateFromPostgres, 300);
+  // Immediate non-blocking hydration
+  hydrateFromPostgres();
 
-  // 2. Sync localStorage mutations directly to PostgreSQL app_storage table
+  // 2. Sync localStorage mutations directly to PostgreSQL app_storage table (debounced)
   const originalSetItem = localStorage.setItem.bind(localStorage);
   const debounceTimers = {};
 
@@ -95,12 +122,13 @@ if (typeof window !== 'undefined') {
             body: JSON.stringify(postBody)
           });
         } catch (e) {
-          console.warn(`[Sync Warning] Failed to sync ${key}:`, e.message);
+          // silently handle sync warning
         }
-      }, 300);
+      }, 250);
     }
   };
 }
+
 
 class PostgresQueryBuilder {
   constructor(table) {
@@ -209,6 +237,12 @@ class PostgresQueryBuilder {
     return this;
   }
 
+  maybeSingle() {
+    this.isSingle = true;
+    this.limitCount = 1;
+    return this;
+  }
+
   async execute() {
     try {
       const safeParse = async (res) => {
@@ -237,6 +271,12 @@ class PostgresQueryBuilder {
         });
         if (this.limitCount) {
           params.append('_limit', this.limitCount);
+        }
+
+        const cacheKey = `${this.table}:${params.toString()}:${this.isSingle}`;
+        const cached = queryCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+          return cached.result;
         }
 
         const url = `${API_BASE}/api/db/${this.table}?${params.toString()}`;
@@ -275,14 +315,17 @@ class PostgresQueryBuilder {
           });
         }
 
-        if (this.isSingle) {
-          return { data: data[0] || null, error: null };
-        }
-        return { data: Array.isArray(data) ? data : [], error: null };
+        const finalResult = this.isSingle 
+          ? { data: data[0] || null, error: null }
+          : { data: Array.isArray(data) ? data : [], error: null };
+
+        queryCache.set(cacheKey, { timestamp: Date.now(), result: finalResult });
+        return finalResult;
       }
 
-      if (this.action === 'insert') {
-        const payloadData = Array.isArray(this.payload) ? this.payload[0] : this.payload;
+      if (this.action === 'insert' || this.action === 'upsert') {
+        invalidateQueryCache(this.table);
+        const payloadData = this.payload;
         const res = await fetch(`${API_BASE}/api/db/${this.table}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -296,12 +339,18 @@ class PostgresQueryBuilder {
         // Broadcast local update event
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('taxpro_db_updated', { detail: { table: this.table, row: json?.data } }));
+          window.dispatchEvent(new CustomEvent('ai_task_added'));
         }
 
-        return { data: [json?.data || payloadData], error: null };
+        const retData = Array.isArray(json?.data) 
+          ? json.data 
+          : (json?.data ? [json.data] : (Array.isArray(payloadData) ? payloadData : [payloadData]));
+
+        return { data: retData, error: null };
       }
 
       if (this.action === 'update') {
+        invalidateQueryCache(this.table);
         const idFilter = this.filters.find(f => f.column === 'id' || f.column === 'email');
         let url = `${API_BASE}/api/db/${this.table}`;
         if (idFilter && idFilter.column === 'id') {
@@ -328,6 +377,7 @@ class PostgresQueryBuilder {
       }
 
       if (this.action === 'delete') {
+        invalidateQueryCache(this.table);
         const idFilter = this.filters.find(f => f.column === 'id');
         let url = `${API_BASE}/api/db/${this.table}`;
         if (idFilter) {
@@ -348,6 +398,7 @@ class PostgresQueryBuilder {
 
         return { data: json?.data || null, error: null };
       }
+
 
       return { data: null, error: null };
     } catch (err) {

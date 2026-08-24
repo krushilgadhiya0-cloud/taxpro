@@ -34,7 +34,8 @@ import {
   Image as ImageIcon,
   ExternalLink,
   Globe,
-  Search
+  Search,
+  ShieldCheck
 } from 'lucide-react';
 import soundFX from '../lib/audioFX';
 import VoiceVisualizerCanvas from './VoiceVisualizerCanvas';
@@ -780,9 +781,9 @@ export default function AIAssistant({
           >
             <div className="flex items-center gap-2.5">
               <div className="relative">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-indigo-500 p-[1.5px] shadow-md shadow-cyan-500/30">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-emerald-400 p-[1.5px] shadow-md shadow-cyan-500/30">
                   <div className="w-full h-full bg-black/90 rounded-xl flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-cyan-400" />
+                    <ShieldCheck className="w-4 h-4 text-cyan-400" />
                   </div>
                 </div>
                 <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#0b0c16] ${

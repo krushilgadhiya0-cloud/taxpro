@@ -30,14 +30,46 @@
 
 html {
   scroll-behavior: smooth;
+  width: 100%;
+  min-height: 100%;
+  height: 100%;
+  background-color: #181c32;
 }
 
 body {
-  background-color: var(--bg-dark);
-  color: #F8FAFC;
+  background-color: #f3f4f6;
+  color: #1e1e2d;
   overflow-x: hidden;
   position: relative;
-  min-height: 100vh;
+  width: 100%;
+  min-height: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  width: 100%;
+  min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ChatGPT Style Custom Dark Scrollbar */
+.chat-custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.chat-custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+.chat-custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 /* App-wide Smooth Transitions */
@@ -647,60 +679,48 @@ body.dark-theme ::-webkit-scrollbar-thumb:hover {
    UNIVERSAL VIEWPORT MODAL CENTERING ENGINE (Zero Clipping / Perfect Center)
    ============================================================== */
 
-/* AUTOMATICALLY CONCEAL UPPER TOPBAR HEADER WHEN ANY MODAL IS OPEN (Zero Layout Shift) */
-body:has(.modal-overlay-backdrop) header,
-body:has([role="dialog"]) header,
-div:has(.modal-overlay-backdrop) > header,
-div:has(.modal-content-box) > header {
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-  transition: opacity 0.2s ease, visibility 0.2s ease;
-}
-
-body:has(.modal-overlay-backdrop) .animate-page-fade,
-div:has(.modal-overlay-backdrop) .animate-page-fade {
-  transform: none !important;
-}
-
 .modal-overlay-backdrop {
   position: fixed !important;
   top: 0 !important;
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
+  inset: 0 !important;
   width: 100vw !important;
   height: 100vh !important;
+  min-height: 100vh !important;
   z-index: 999999 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  padding: 1.25rem !important;
-  background-color: rgba(15, 23, 42, 0.72) !important;
+  padding: 1.5rem 1rem !important;
+  background-color: rgba(15, 23, 42, 0.82) !important;
   backdrop-filter: blur(8px) !important;
   -webkit-backdrop-filter: blur(8px) !important;
   overflow-y: auto !important;
   margin: 0 !important;
   box-sizing: border-box !important;
-  animation: modalBackdropFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  transform: translateZ(0) !important;
+  animation: modalBackdropFadeIn 0.12s ease-out forwards !important;
 }
 
 .modal-content-box {
   position: relative !important;
   margin: auto !important;
   width: 100% !important;
+  height: auto !important;
   max-width: 52rem;
   max-height: 90vh !important;
   display: flex !important;
   flex-direction: column !important;
   background-color: #ffffff !important;
   border-radius: 1.25rem !important;
-  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
   overflow: hidden !important;
   box-sizing: border-box !important;
+  flex-shrink: 0 !important;
   transform: translateZ(0) !important;
-  will-change: transform, opacity !important;
-  animation: modalBoxSmoothPop 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  animation: modalBoxSmoothPop 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }
 
 .modal-content-box.max-w-sm { max-width: 24rem !important; }
@@ -723,7 +743,7 @@ div:has(.modal-overlay-backdrop) .animate-page-fade {
 @keyframes modalBoxSmoothPop {
   from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.97) translateY(6px);
   }
   to {
     opacity: 1;
@@ -892,15 +912,93 @@ html.dark-mode-global table tbody tr:hover {
     box-shadow: none !important;
   }
 
-  /* Universal High-Density Print Tables */
-  table {
-    border-collapse: collapse !important;
+  /* Specific Client Record Print Isolation */
+  body.printing-client-record * {
+    visibility: hidden;
+  }
+  body.printing-client-record .client-print-document,
+  body.printing-client-record .client-print-document * {
+    visibility: visible;
+  }
+  body.printing-client-record .client-print-document {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
     width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
   }
 
-  th, td {
-    color: #111827 !important;
-    border-color: #d1d5db !important;
+  /* Fees & Financial Ledger Print Isolation */
+  body.printing-fees-ledger * {
+    visibility: hidden;
+  }
+  body.printing-fees-ledger .fees-print-document,
+  body.printing-fees-ledger .fees-print-document * {
+    visibility: visible;
+  }
+  body.printing-fees-ledger .fees-print-document {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+  }
+
+  /* Member Salary Slip & Payroll Print Isolation */
+  body.printing-member-record * {
+    visibility: hidden;
+  }
+  body.printing-member-record .member-print-document,
+  body.printing-member-record .member-print-document * {
+    visibility: visible;
+  }
+  body.printing-member-record .member-print-document {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+  }
+
+  /* Intelligence Reports Print Isolation */
+  body.printing-reports-ledger * {
+    visibility: hidden;
+  }
+  body.printing-reports-ledger .reports-print-document,
+  body.printing-reports-ledger .reports-print-document * {
+    visibility: visible;
+  }
+  body.printing-reports-ledger .reports-print-document {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
   }
 }
+
 

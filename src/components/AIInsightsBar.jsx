@@ -9,7 +9,8 @@ import {
   Bot, 
   Volume2, 
   RefreshCw,
-  X
+  X,
+  ShieldCheck
 } from 'lucide-react';
 import soundFX from '../lib/audioFX';
 
@@ -51,9 +52,9 @@ export default function AIInsightsBar({ onTriggerBriefing, onNavigate }) {
         
         {/* Header Title & Briefing Trigger */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 p-[1.5px] shadow-lg shadow-cyan-500/20 flex-shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 via-blue-600 to-emerald-400 p-[1.5px] shadow-lg shadow-cyan-500/20 flex-shrink-0">
             <div className="w-full h-full bg-[#0a0b14] rounded-2xl flex items-center justify-center">
-              <Bot className="w-5 h-5 text-cyan-400 animate-pulse" />
+              <ShieldCheck className="w-5 h-5 text-cyan-400 animate-pulse" />
             </div>
           </div>
 

@@ -116,26 +116,90 @@ router.post('/razorpay/create-order', async (req, res) => {
   }
 });
 
-// Mail Engine Helper: Send Payment Receipt Email
-export const sendPaymentReceiptEmail = (email, paymentId, amount) => {
+// Mail Engine Helper: Send Payment / Subscription Receipt Email via Python smtplib
+export const sendPaymentReceiptEmail = async (email, paymentId, amount, planName = 'TaxPro Enterprise Professional', billingCycle = 'Annual Billing', name = 'Valued Subscriber', origin = 'http://localhost:3000', smtpConfig = {}) => {
   const targetEmail = (email || 'krushilgadhiya0@gmail.com').trim().toLowerCase();
-  const paidAmount = amount || '₹1,999.00';
+  const paidAmount = amount || '₹14,999.00';
   const payId = paymentId || `pay_${Date.now()}`;
 
-  console.log(`[TaxPro Email Engine] 📧 Official Payment Receipt Email (${paidAmount}) dispatched to ${targetEmail} [Payment ID: ${payId}]`);
-  return {
-    sent: true,
-    to: targetEmail,
-    paymentId: payId,
-    amount: paidAmount,
-    subject: `Official Payment Receipt — TaxPro PMS Fee Collection (${paidAmount})`,
-    timestamp: new Date().toISOString()
-  };
+  try {
+    const { runPythonMailer } = await import('./auth.js');
+    const result = await runPythonMailer({
+      action: 'subscription',
+      email: targetEmail,
+      name: name,
+      plan_name: planName,
+      amount: paidAmount,
+      payment_id: payId,
+      billing_cycle: billingCycle,
+      origin: origin,
+      smtp_config: smtpConfig
+    });
+    console.log(`[TaxPro Email Engine] 📧 Official Payment Receipt Email dispatched to ${targetEmail}:`, result);
+    return result;
+  } catch (err) {
+    console.warn('[Payment Receipt Email Warning]:', err.message);
+    return { success: false, error: err.message };
+  }
 };
 
-// POST /api/payments/razorpay/verify (Record in PostgreSQL)
+// POST /api/payments/send-receipt (Dispatch subscription / payment confirmation receipt via Python smtplib)
+router.post('/send-receipt', async (req, res) => {
+  const { email, name, planName, amount, paymentId, billingCycle, expiryDate, smtpConfig } = req.body;
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail) return res.status(400).json({ success: false, error: 'Recipient email is required.' });
+
+  try {
+    const { runPythonMailer } = await import('./auth.js');
+    const mailResult = await runPythonMailer({
+      action: 'subscription',
+      email: cleanEmail,
+      name: name || 'Valued Subscriber',
+      plan_name: planName || 'TaxPro Enterprise Professional',
+      amount: amount || '₹14,999.00',
+      payment_id: paymentId || `PAY-${Date.now()}`,
+      billing_cycle: billingCycle || 'Annual Billing',
+      expiry_date: expiryDate || 'August 23, 2027',
+      origin: req.headers.origin || 'http://localhost:3000',
+      smtp_config: smtpConfig || {}
+    });
+
+    res.json({ success: true, message: `Subscription confirmation & receipt dispatched to ${cleanEmail}`, mailResult });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/payments/send-due-reminder (Dispatch 5-day due reminder email via Python smtplib)
+router.post('/send-due-reminder', async (req, res) => {
+  const { email, name, itemName, dueDate, amountDue, clientName, daysLeft, smtpConfig } = req.body;
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail) return res.status(400).json({ success: false, error: 'Recipient email is required.' });
+
+  try {
+    const { runPythonMailer } = await import('./auth.js');
+    const mailResult = await runPythonMailer({
+      action: 'due_reminder',
+      email: cleanEmail,
+      name: name || 'Valued Client',
+      item_name: itemName || 'Monthly GST Compliance / Retainer Fee',
+      due_date: dueDate || 'August 28, 2026',
+      amount_due: amountDue || '₹7,500.00',
+      client_name: clientName || 'TaxPro Enterprise Client',
+      days_left: daysLeft || 5,
+      origin: req.headers.origin || 'http://localhost:3000',
+      smtp_config: smtpConfig || {}
+    });
+
+    res.json({ success: true, message: `5-day due reminder dispatched to ${cleanEmail}`, mailResult });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/payments/razorpay/verify (Record in PostgreSQL & send Python smtplib receipt)
 router.post('/razorpay/verify', async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount, description, email } = req.body;
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount, description, email, clientName } = req.body;
 
   const paymentId = razorpay_payment_id || `pay_${Date.now()}`;
   const amountPaid = amount || '₹1,999.00';
@@ -150,7 +214,7 @@ router.post('/razorpay/verify', async (req, res) => {
       RETURNING *;
     `, [txId, description || 'TaxPro Professional Plan Fee', cleanNum, paymentId, razorpay_order_id]);
 
-    const receiptMail = sendPaymentReceiptEmail(targetEmail, paymentId, amountPaid);
+    const receiptMail = await sendPaymentReceiptEmail(targetEmail, paymentId, amountPaid, description || 'TaxPro Professional Plan Fee', 'Annual License', clientName || 'Subscriber', req.headers.origin || 'http://localhost:3000');
 
     console.log(`[TaxPro Razorpay Engine] Saved to PostgreSQL: Payment Verified: ${paymentId} for ${amountPaid}`);
 
@@ -165,6 +229,42 @@ router.post('/razorpay/verify', async (req, res) => {
     });
   } catch (err) {
     console.error('[payments verify PG Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/payments/trigger-due-reminders (Automated batch dispatch for items due in 5 days)
+router.post('/trigger-due-reminders', async (req, res) => {
+  try {
+    const { runPythonMailer } = await import('./auth.js');
+    
+    // 1. Fetch pending fees invoices or global tasks
+    const invoices = await query(`SELECT * FROM fees_invoices WHERE status != 'Paid' LIMIT 10`);
+    const dispatched = [];
+
+    for (const inv of (invoices.rows || [])) {
+      if (inv.client_email) {
+        const mailRes = await runPythonMailer({
+          action: 'due_reminder',
+          email: inv.client_email,
+          name: inv.client_name || 'Valued Client',
+          item_name: `Invoice #${inv.invoice_no || inv.id} (${inv.service_type || 'Professional Retainer'})`,
+          due_date: inv.due_date || 'August 28, 2026',
+          amount_due: inv.total_amount ? `₹${inv.total_amount}` : '₹5,000.00',
+          client_name: inv.client_name || 'Client Account',
+          days_left: 5,
+          origin: req.headers.origin || 'http://localhost:3000'
+        });
+        dispatched.push({ invoiceId: inv.id, email: inv.client_email, result: mailRes });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Checked due items. Dispatched 5-day reminders to ${dispatched.length} clients via Python smtplib.`,
+      dispatched
+    });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });

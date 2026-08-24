@@ -35,7 +35,8 @@ const ALLOWED_TABLES = new Set([
   'notifications',
   'daily_revenue',
   'leaves',
-  'companies'
+  'companies',
+  'audit_logs'
 ]);
 
 const validateTable = (req, res, next) => {
@@ -47,7 +48,55 @@ const validateTable = (req, res, next) => {
 };
 
 // ==========================================
-// 1. GENERIC GET /api/db/:table
+// 1. APP STORAGE KEY-VALUE SYNC (/api/db/storage-all & /api/db/storage/:key)
+// (Must precede /:table to prevent route collision)
+// ==========================================
+router.get('/storage-all', async (req, res) => {
+  try {
+    const result = await query('SELECT key, data FROM app_storage');
+    const map = {};
+    for (const row of result.rows) {
+      map[row.key] = row.data;
+    }
+    res.json({ success: true, data: map });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/storage/:key', async (req, res) => {
+  const { key } = req.params;
+  try {
+    const result = await query('SELECT data FROM app_storage WHERE key = $1', [key]);
+    if (result.rowCount === 0) {
+      return res.json({ success: true, exists: false, data: null });
+    }
+    res.json({ success: true, exists: true, data: result.rows[0].data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/storage/:key', async (req, res) => {
+  const { key } = req.params;
+  const payload = req.body;
+  try {
+    const result = await query(`
+      INSERT INTO app_storage (key, data, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (key) DO UPDATE
+      SET data = EXCLUDED.data, updated_at = NOW()
+      RETURNING *;
+    `, [key, JSON.stringify(payload)]);
+
+    res.json({ success: true, data: result.rows[0].data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 2. GENERIC GET /api/db/:table
 // ==========================================
 router.get('/:table', validateTable, async (req, res) => {
   const { table } = req.params;
@@ -168,7 +217,13 @@ router.post('/:table', validateTable, async (req, res) => {
       const cols = keys.map(k => `"${k}"`).join(', ');
       const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
 
-      const sql = `INSERT INTO "${table}" (${cols}) VALUES (${placeholders}) RETURNING *;`;
+      const updateCols = keys.filter(k => k !== 'id').map(k => `"${k}" = EXCLUDED."${k}"`).join(', ');
+      let sql = `INSERT INTO "${table}" (${cols}) VALUES (${placeholders})`;
+      if (cleanItem.id && updateCols.length > 0) {
+        sql += ` ON CONFLICT (id) DO UPDATE SET ${updateCols}`;
+      }
+      sql += ` RETURNING *;`;
+      
       const result = await query(sql, values);
       insertedRows.push(result.rows[0]);
     }
@@ -310,38 +365,5 @@ const handleDelete = async (req, res) => {
 router.delete('/:table/:id', validateTable, handleDelete);
 router.delete('/:table', validateTable, handleDelete);
 
-// ==========================================
-// 5. APP STORAGE KEY-VALUE SYNC (/api/db/storage/:key)
-// ==========================================
-router.get('/storage/:key', async (req, res) => {
-  const { key } = req.params;
-  try {
-    const result = await query('SELECT data FROM app_storage WHERE key = $1', [key]);
-    if (result.rowCount === 0) {
-      return res.json({ success: true, exists: false, data: null });
-    }
-    res.json({ success: true, exists: true, data: result.rows[0].data });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-router.post('/storage/:key', async (req, res) => {
-  const { key } = req.params;
-  const payload = req.body;
-  try {
-    const result = await query(`
-      INSERT INTO app_storage (key, data, updated_at)
-      VALUES ($1, $2, NOW())
-      ON CONFLICT (key) DO UPDATE
-      SET data = EXCLUDED.data, updated_at = NOW()
-      RETURNING *;
-    `, [key, JSON.stringify(payload)]);
-
-    res.json({ success: true, data: result.rows[0].data });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
 export default router;
+

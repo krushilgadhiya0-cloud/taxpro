@@ -64,6 +64,14 @@ app.post('/api/invite', async (req, res) => {
       smtpConfig
     });
 
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        alreadyRegistered: result.alreadyRegistered || false,
+        error: result.error || 'Account registration could not be completed.'
+      });
+    }
+
     res.json({
       success: true,
       message: `✓ ${recipientName} (${recipientEmail}) registered & activated in database! Ready for instant login.`,
@@ -123,8 +131,9 @@ app.get('/api/complaints', async (req, res) => {
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({
+    success: true,
     status: 'ONLINE',
-    system: 'Finexo AI Backend Core',
+    system: 'TaxPro AI Backend Core',
     database: 'Live Database Active & Synced',
     version: '3.0.0',
     timestamp: new Date().toISOString()

@@ -76,6 +76,74 @@ def send_email_via_smtplib(to_email, subject, html_content, text_content=None, c
             "host": host
         }
 
+# =========================================================================
+# 1. WELCOME EMAIL TEMPLATE
+# =========================================================================
+def build_welcome_html(name, email, role, origin):
+    user_name = name or "Valued Partner"
+    portal_url = origin or "http://localhost:3000"
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b0f19; color: #ffffff; margin: 0; padding: 24px; }}
+        .card {{ max-width: 560px; margin: 0 auto; background: #131828; border: 1px solid rgba(91, 82, 224, 0.3); border-radius: 24px; padding: 40px; box-shadow: 0 25px 60px rgba(0,0,0,0.7); }}
+        .logo {{ font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #00F0FF, #00FFA3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
+        .tagline {{ font-size: 11px; color: #818cf8; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-top: 4px; font-weight: 700; }}
+        .hero-banner {{ background: linear-gradient(135deg, rgba(91, 82, 224, 0.15), rgba(0, 240, 255, 0.1)); border: 1px solid rgba(91, 82, 224, 0.3); border-radius: 20px; padding: 24px; margin: 28px 0; text-align: center; }}
+        .h1-title {{ font-size: 20px; font-weight: 800; color: #ffffff; margin: 0 0 8px; }}
+        .feature-grid {{ margin: 24px 0; }}
+        .feature-item {{ background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 14px; padding: 14px; margin-bottom: 12px; }}
+        .feature-title {{ font-size: 13px; font-weight: 700; color: #00F0FF; margin-bottom: 3px; }}
+        .feature-desc {{ font-size: 12px; color: #94a3b8; line-height: 1.4; }}
+        .btn {{ display: block; text-align: center; background: linear-gradient(135deg, #5b52e0, #00F0FF); color: #ffffff; padding: 16px 32px; border-radius: 16px; font-weight: 800; font-size: 14px; text-decoration: none; box-shadow: 0 10px 30px rgba(91, 82, 224, 0.4); margin: 28px 0 16px; }}
+        .footer {{ text-align: center; margin-top: 32px; font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">❖ TAXPRO AI ENTERPRISE</div>
+        <div class="tagline">Official Practice Management & Financial Super-Intelligence</div>
+        
+        <div class="hero-banner">
+          <div class="h1-title">Welcome to the Firm Workspace, {user_name}! 👋</div>
+          <p style="font-size: 13px; color: #cbd5e1; margin: 0; line-height: 1.5;">
+            Your account is officially active. You now have complete access to autonomous practice management, client registers, and financial intelligence.
+          </p>
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-item">
+            <div class="feature-title">⚡ TaxPro ASI Cognitive Core</div>
+            <div class="feature-desc">Continuous real-time memory and intelligence grounded directly in your active PostgreSQL database.</div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-title">📊 Client Directory & Compliance Ledger</div>
+            <div class="feature-desc">High-density A4 master registers, PAN/GSTIN verification, and instant compliance tracking.</div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-title">💳 Automated Fees, Invoicing & Payroll</div>
+            <div class="feature-desc">Real-time payment verification, Razorpay integration, and instant receipt generation.</div>
+          </div>
+        </div>
+
+        <a href="{portal_url}" class="btn">🚀 Open TaxPro Dashboard</a>
+
+        <div class="footer">
+          TaxPro Financial Intelligence Platform &bull; Python smtplib Secure Dispatch<br>
+          Account Email: {email} &bull; Security Status: Active
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+# =========================================================================
+# 2. OTP VERIFICATION EMAIL TEMPLATE
+# =========================================================================
 def build_otp_html(otp_code, target_email):
     return f"""
     <!DOCTYPE html>
@@ -86,7 +154,7 @@ def build_otp_html(otp_code, target_email):
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0c0d12; color: #ffffff; margin: 0; padding: 24px; }}
         .card {{ max-width: 480px; margin: 0 auto; background: #13141f; border: 1px solid rgba(0, 240, 255, 0.25); border-radius: 24px; padding: 36px; box-shadow: 0 25px 50px rgba(0,0,0,0.6); }}
         .logo {{ font-size: 26px; font-weight: 900; background: linear-gradient(135deg, #00F0FF, #00FFA3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
-        .tagline {{ font-size: 11px; color: #7e8695; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-top: 4px; font-mono; }}
+        .tagline {{ font-size: 11px; color: #7e8695; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-top: 4px; }}
         .otp-box {{ background: rgba(0, 240, 255, 0.06); border: 2px dashed #00F0FF; border-radius: 18px; padding: 20px; text-align: center; margin: 28px 0; }}
         .otp-code {{ font-size: 42px; font-weight: 900; letter-spacing: 14px; color: #FFFFFF; font-family: monospace; text-shadow: 0 0 25px rgba(0, 240, 255, 0.7); }}
         .desc {{ font-size: 14px; color: #b5bac5; line-height: 1.6; text-align: center; }}
@@ -122,63 +190,269 @@ def build_otp_html(otp_code, target_email):
     </html>
     """
 
-def build_invite_html(name, email, role, password, origin):
-    portal_name = "Department Manager Portal" if "manager" in role.lower() else ("Administrator Portal" if "admin" in role.lower() else "Team Member Portal")
-    accent_color = "#A855F7" if "manager" in role.lower() else ("#00F0FF" if "admin" in role.lower() else "#00FFA3")
-    
+# =========================================================================
+# 3. SUBSCRIPTION PURCHASE & PAYMENT RECEIPT EMAIL TEMPLATE
+# =========================================================================
+def build_subscription_html(name, email, plan_name, amount, payment_id, billing_cycle, expiry_date, origin):
+    user_name = name or "Valued Subscriber"
+    plan = plan_name or "TaxPro Enterprise Professional"
+    amt = amount or "₹14,999.00"
+    tx_id = payment_id or f"TXN-{os.urandom(4).hex().upper()}"
+    cycle = billing_cycle or "Annual License"
+    expiry = expiry_date or "August 23, 2027"
+    portal_url = origin or "http://localhost:3000"
+
     return f"""
     <!DOCTYPE html>
     <html>
     <head>
       <meta charset="utf-8">
       <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0c0d12; color: #ffffff; margin: 0; padding: 24px; }}
-        .card {{ max-width: 500px; margin: 0 auto; background: #13141f; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 24px; padding: 36px; box-shadow: 0 25px 50px rgba(0,0,0,0.6); }}
-        .logo {{ font-size: 26px; font-weight: 900; background: linear-gradient(135deg, #00F0FF, #00FFA3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
-        .tagline {{ font-size: 11px; color: #7e8695; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-top: 4px; }}
-        .role-pill {{ display: inline-block; background: rgba(255,255,255,0.08); border: 1px solid {accent_color}; color: {accent_color}; font-size: 12px; font-weight: 800; padding: 4px 14px; border-radius: 20px; }}
-        .creds-box {{ background: rgba(255, 255, 255, 0.04); border: 1.5px solid rgba(255, 255, 255, 0.12); border-radius: 18px; padding: 20px; margin: 24px 0; text-align: left; }}
-        .cred-item {{ margin: 8px 0; font-size: 13px; color: #b5bac5; }}
-        .cred-val {{ font-family: monospace; font-weight: 800; color: #FFFFFF; font-size: 14px; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); }}
-        .btn {{ display: inline-block; background: linear-gradient(135deg, #00F0FF, #0066FF); color: #000000; padding: 14px 32px; border-radius: 14px; font-weight: 800; font-size: 13px; text-decoration: none; box-shadow: 0 10px 25px rgba(0, 240, 255, 0.3); }}
-        .footer {{ text-align: center; margin-top: 32px; font-size: 11px; color: #5a606d; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 18px; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b0f19; color: #ffffff; margin: 0; padding: 24px; }}
+        .card {{ max-width: 560px; margin: 0 auto; background: #131828; border: 1px solid rgba(0, 255, 163, 0.35); border-radius: 24px; padding: 40px; box-shadow: 0 25px 60px rgba(0,0,0,0.7); }}
+        .logo {{ font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #00FFA3, #00F0FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
+        .tagline {{ font-size: 11px; color: #00FFA3; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-top: 4px; font-weight: 700; }}
+        .congrats-hero {{ background: linear-gradient(135deg, rgba(0, 255, 163, 0.12), rgba(0, 240, 255, 0.08)); border: 1px solid rgba(0, 255, 163, 0.3); border-radius: 20px; padding: 24px; margin: 24px 0; text-align: center; }}
+        .congrats-badge {{ display: inline-block; background: rgba(0, 255, 163, 0.18); border: 1px solid #00FFA3; color: #00FFA3; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; padding: 5px 14px; border-radius: 20px; margin-bottom: 10px; }}
+        .h1-title {{ font-size: 22px; font-weight: 900; color: #ffffff; margin: 0 0 8px; }}
+        .receipt-box {{ background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 18px; padding: 20px; margin: 24px 0; text-align: left; }}
+        .receipt-row {{ display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 13px; }}
+        .receipt-label {{ color: #94a3b8; }}
+        .receipt-val {{ font-weight: 700; color: #ffffff; font-family: monospace; }}
+        .total-row {{ display: flex; justify-content: space-between; padding: 14px 0 4px; border-top: 2px dashed rgba(255, 255, 255, 0.2); font-size: 15px; font-weight: 800; }}
+        .total-val {{ color: #00FFA3; font-size: 20px; font-family: monospace; font-weight: 900; }}
+        .btn {{ display: block; text-align: center; background: linear-gradient(135deg, #00FFA3, #00F0FF); color: #0b0f19; padding: 16px 32px; border-radius: 16px; font-weight: 900; font-size: 14px; text-decoration: none; box-shadow: 0 10px 30px rgba(0, 255, 163, 0.35); margin: 28px 0 16px; }}
+        .footer {{ text-align: center; margin-top: 32px; font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; }}
       </style>
     </head>
     <body>
       <div class="card">
-        <div class="logo">❖ TAXPRO WORKSPACE</div>
-        <div class="tagline">Official Administrator Invitation</div>
-        
-        <p style="margin-top: 24px; font-size: 14px; color: #e2e8f0; text-align: center;">
-          Hello <b>{name}</b>, an Administrator has invited you to join the firm workspace as a:
-        </p>
-        
-        <div style="text-align: center; margin: 12px 0;">
-          <span class="role-pill">{role} ({portal_name})</span>
+        <div class="logo">❖ TAXPRO AI ENTERPRISE</div>
+        <div class="tagline">Official Subscription & Payment Confirmation</div>
+
+        <div class="congrats-hero">
+          <span class="congrats-badge">🎉 Payment Verified & Confirmed</span>
+          <div class="h1-title">Congratulations, {user_name}!</div>
+          <p style="font-size: 13px; color: #cbd5e1; margin: 0; line-height: 1.5;">
+            Thank you for purchasing your <b>{plan}</b> subscription. Your premium workspace features, AI engines, and unlimited firm capacity are fully unlocked!
+          </p>
         </div>
-        
-        <div class="creds-box">
-          <div class="cred-item">📧 <b>Login ID (Email):</b> <span class="cred-val">{email}</span></div>
-          <div class="cred-item">🔑 <b>Temporary Password:</b> <span class="cred-val">{password or 'password123'}</span></div>
-          <div class="cred-item">🌐 <b>Designated Portal:</b> <span class="cred-val">{portal_name}</span></div>
+
+        <div class="receipt-box">
+          <div style="font-size: 12px; font-weight: 800; color: #00F0FF; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Official Tax Invoice & Receipt Details</div>
+          <div class="receipt-row">
+            <span class="receipt-label">Invoice Number</span>
+            <span class="receipt-val">INV-{tx_id[-6:]}</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Transaction Reference</span>
+            <span class="receipt-val">{tx_id}</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Subscribed Plan</span>
+            <span class="receipt-val" style="color: #00FFA3;">{plan}</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Billing Cycle</span>
+            <span class="receipt-val">{cycle}</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Active Period Valid Until</span>
+            <span class="receipt-val">{expiry}</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Payment Status</span>
+            <span class="receipt-val" style="color: #00FFA3;">✓ Success (Paid)</span>
+          </div>
+          <div class="total-row">
+            <span style="color: #ffffff;">Total Amount Paid</span>
+            <span class="total-val">{amt}</span>
+          </div>
         </div>
-        
-        <p style="font-size: 12px; color: #8a909d; text-align: center; line-height: 1.5;">
-          Direct login is enabled. Use the link below, select the <b>{role} Portal</b>, and enter your credentials.
-        </p>
-        
-        <div style="text-align: center; margin-top: 24px;">
-          <a href="{origin or 'http://localhost:3000'}" class="btn">Open Direct Login Portal</a>
-        </div>
-        
+
+        <a href="{portal_url}" class="btn">🚀 Access Premium Workspace</a>
+
         <div class="footer">
-          TaxPro Financial Intelligence Platform &bull; Python smtplib Dispatch
+          TaxPro Financial Intelligence Platform &bull; Python smtplib Automated Billing<br>
+          Support: support@taxpro.com &bull; Authorized GST Invoice Generated
         </div>
       </div>
     </body>
     </html>
     """
 
+# =========================================================================
+# 4. LAST 5-DAY DUE REMINDER EMAIL TEMPLATE
+# =========================================================================
+def build_due_reminder_html(name, email, item_name, due_date, amount_due, client_name, days_left, origin):
+    user_name = name or "Valued Client"
+    item = item_name or "Monthly GST Compliance / Retainer Fee"
+    due = due_date or "August 28, 2026"
+    amt = amount_due or "₹7,500.00"
+    days = days_left or 5
+    client = client_name or "TaxPro Enterprise Client"
+    portal_url = origin or "http://localhost:3000"
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b0f19; color: #ffffff; margin: 0; padding: 24px; }}
+        .card {{ max-width: 560px; margin: 0 auto; background: #1a1523; border: 1px solid rgba(239, 68, 68, 0.45); border-radius: 24px; padding: 40px; box-shadow: 0 25px 60px rgba(0,0,0,0.7); }}
+        .logo {{ font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #f87171, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
+        .tagline {{ font-size: 11px; color: #f87171; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-top: 4px; font-weight: 700; }}
+        .due-hero {{ background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(249, 115, 22, 0.08)); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 20px; padding: 24px; margin: 24px 0; text-align: center; }}
+        .due-badge {{ display: inline-block; background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #f87171; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; padding: 6px 18px; border-radius: 20px; margin-bottom: 12px; }}
+        .countdown-box {{ background: rgba(0, 0, 0, 0.35); border: 2px dashed rgba(239, 68, 68, 0.5); border-radius: 18px; padding: 18px; text-align: center; margin: 18px 0; }}
+        .days-big {{ font-size: 40px; font-weight: 900; color: #ef4444; font-family: monospace; text-shadow: 0 0 20px rgba(239, 68, 68, 0.6); }}
+        .due-details {{ background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 18px; padding: 20px; margin: 24px 0; text-align: left; }}
+        .due-row {{ display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 13px; }}
+        .due-row:last-child {{ border-bottom: none; }}
+        .due-label {{ color: #94a3b8; }}
+        .due-val {{ font-weight: 700; color: #ffffff; font-family: monospace; }}
+        .btn-urgent {{ display: block; text-align: center; background: linear-gradient(135deg, #ef4444, #f97316); color: #ffffff; padding: 16px 32px; border-radius: 16px; font-weight: 900; font-size: 14px; text-decoration: none; box-shadow: 0 10px 30px rgba(239, 68, 68, 0.45); margin: 28px 0 16px; }}
+        .footer {{ text-align: center; margin-top: 32px; font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">❖ TAXPRO COMPLIANCE ALERT</div>
+        <div class="tagline">Automated Due Date & Deadline Notice</div>
+
+        <div class="due-hero">
+          <span class="due-badge">⚠️ Action Required</span>
+          <div style="font-size: 20px; font-weight: 800; color: #ffffff; margin-bottom: 8px;">Notice: 5 Days Remaining Before Due Date</div>
+          <p style="font-size: 13px; color: #fca5a5; margin: 0; line-height: 1.5;">
+            Hello <b>{user_name}</b>, this is an automated priority notice regarding your upcoming compliance deadline and fee payment.
+          </p>
+
+          <div class="countdown-box">
+            <div style="font-size: 11px; font-weight: 800; color: #fca5a5; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 4px;">Time Remaining</div>
+            <div class="days-big">{days} DAYS LEFT</div>
+            <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;">Due on <b>{due}</b></div>
+          </div>
+        </div>
+
+        <div class="due-details">
+          <div style="font-size: 12px; font-weight: 800; color: #fca5a5; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Invoice & Deadline Summary</div>
+          <div class="due-row">
+            <span class="due-label">Client / Account</span>
+            <span class="due-val">{client}</span>
+          </div>
+          <div class="due-row">
+            <span class="due-label">Subject / Deliverable</span>
+            <span class="due-val" style="color: #f87171;">{item}</span>
+          </div>
+          <div class="due-row">
+            <span class="due-label">Final Due Date</span>
+            <span class="due-val">{due}</span>
+          </div>
+          <div class="due-row">
+            <span class="due-label">Outstanding Amount</span>
+            <span class="due-val" style="color: #fb923c; font-size: 15px;">{amt}</span>
+          </div>
+        </div>
+
+        <p style="font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5;">
+          Please settle this invoice or submit the required compliance documents to prevent statutory late fees or service interruption.
+        </p>
+
+        <a href="{portal_url}" class="btn-urgent">💳 Pay Invoice & Settle Now</a>
+
+        <div class="footer">
+          TaxPro Financial Intelligence Platform &bull; Python smtplib Automated Alerts<br>
+          Automated System Dispatch &bull; Confidential
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+# =========================================================================
+# 5. INVITATION EMAIL TEMPLATE
+# =========================================================================
+def build_invite_html(name, email, role, password, origin):
+    user_name = name or "Team Member"
+    user_role = role or "Employee"
+    user_pass = password or "TaxPro@1234"
+    portal_url = origin or "http://localhost:3000"
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b0f19; color: #ffffff; margin: 0; padding: 24px; }}
+        .card {{ max-width: 560px; margin: 0 auto; background: #131828; border: 1px solid rgba(91, 82, 224, 0.4); border-radius: 24px; padding: 40px; box-shadow: 0 25px 60px rgba(0,0,0,0.7); }}
+        .logo {{ font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #00F0FF, #00FFA3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
+        .tagline {{ font-size: 11px; color: #818cf8; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-top: 4px; font-weight: 700; }}
+        .hero-banner {{ background: linear-gradient(135deg, rgba(91, 82, 224, 0.2), rgba(0, 240, 255, 0.12)); border: 1px solid rgba(91, 82, 224, 0.4); border-radius: 20px; padding: 24px; margin: 28px 0; text-align: center; }}
+        .role-badge {{ display: inline-block; background: rgba(0, 240, 255, 0.15); border: 1px solid #00F0FF; color: #00F0FF; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; padding: 6px 16px; border-radius: 20px; margin-bottom: 12px; }}
+        .creds-box {{ background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 18px; padding: 20px; margin: 24px 0; text-align: left; }}
+        .cred-row {{ display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 13px; }}
+        .cred-row:last-child {{ border-bottom: none; }}
+        .cred-label {{ color: #94a3b8; font-weight: 500; }}
+        .cred-val {{ font-weight: 800; color: #ffffff; font-family: monospace; }}
+        .btn {{ display: block; text-align: center; background: linear-gradient(135deg, #5b52e0, #00F0FF); color: #ffffff; padding: 16px 32px; border-radius: 16px; font-weight: 800; font-size: 14px; text-decoration: none; box-shadow: 0 10px 30px rgba(91, 82, 224, 0.4); margin: 28px 0 16px; }}
+        .footer {{ text-align: center; margin-top: 32px; font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">❖ TAXPRO AI ENTERPRISE</div>
+        <div class="tagline">Official Workspace Invitation</div>
+        
+        <div class="hero-banner">
+          <span class="role-badge">{user_role} INVITATION</span>
+          <div style="font-size: 20px; font-weight: 800; color: #ffffff; margin-bottom: 8px;">
+            You are Invited to Join the Firm Workspace, {user_name}!
+          </div>
+          <p style="font-size: 13px; color: #cbd5e1; margin: 0; line-height: 1.5;">
+            An Administrator has provisioned your TaxPro account. Use the credentials below to sign in directly to your assigned workspace.
+          </p>
+        </div>
+
+        <div class="creds-box">
+          <div style="font-size: 11px; font-weight: 800; color: #818cf8; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Your Access Credentials</div>
+          <div class="cred-row">
+            <span class="cred-label">Login ID / Email</span>
+            <span class="cred-val">{email}</span>
+          </div>
+          <div class="cred-row">
+            <span class="cred-label">Temporary Password</span>
+            <span class="cred-val" style="color: #00FFA3;">{user_pass}</span>
+          </div>
+          <div class="cred-row">
+            <span class="cred-label">Assigned Role</span>
+            <span class="cred-val" style="color: #00F0FF;">{user_role}</span>
+          </div>
+          <div class="cred-row">
+            <span class="cred-label">Login Portal</span>
+            <span class="cred-val">{portal_url}</span>
+          </div>
+        </div>
+
+        <a href="{portal_url}" class="btn">🚀 Sign In to TaxPro Workspace</a>
+
+        <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 16px;">
+          For security, please change your password after logging into your dashboard.
+        </p>
+
+        <div class="footer">
+          TaxPro Financial Operations &bull; Python smtplib Secure Dispatch<br>
+          Automated System Dispatch &bull; Confidential
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+# =========================================================================
+# MAIN JSON-RPC STDIN / ARGV INTERFACE
+# =========================================================================
 def main():
     payload_str = ""
     if len(sys.argv) > 1 and sys.argv[1].strip():
@@ -200,13 +474,53 @@ def main():
             print(json.dumps({"success": False, "error": "Recipient email is required"}))
             return
 
-        if action == "otp":
+        # 1. WELCOME EMAIL DISPATCH
+        if action == "welcome":
+            name = payload.get("name", "Team Member")
+            role = payload.get("role", "Employee")
+            origin = payload.get("origin", "http://localhost:3000")
+            html = build_welcome_html(name, target_email, role, origin)
+            subject = f"Welcome to TaxPro AI Enterprise, {name}!"
+            result = send_email_via_smtplib(target_email, subject, html, f"Welcome to TaxPro AI, {name}! Your account is active.", custom_config)
+            print(json.dumps(result))
+
+        # 2. OTP EMAIL DISPATCH
+        elif action == "otp":
             otp_code = payload.get("otp", "1234")
             html = build_otp_html(otp_code, target_email)
             subject = f"Your TaxPro Verification Code: {otp_code}"
             result = send_email_via_smtplib(target_email, subject, html, f"Your TaxPro verification code is {otp_code}", custom_config)
             print(json.dumps(result))
 
+        # 3. SUBSCRIPTION PURCHASE & PAYMENT RECEIPT CONFIRMATION
+        elif action in ["subscription", "payment_receipt"]:
+            name = payload.get("name", "Valued Subscriber")
+            plan_name = payload.get("plan_name", "TaxPro Enterprise Professional Plan")
+            amount = payload.get("amount", "₹14,999.00")
+            payment_id = payload.get("payment_id", f"PAY-{os.urandom(4).hex().upper()}")
+            billing_cycle = payload.get("billing_cycle", "Annual Billing")
+            expiry_date = payload.get("expiry_date", "August 23, 2027")
+            origin = payload.get("origin", "http://localhost:3000")
+            html = build_subscription_html(name, target_email, plan_name, amount, payment_id, billing_cycle, expiry_date, origin)
+            subject = f"🎉 Payment Confirmed: Welcome to TaxPro {plan_name}! (Receipt #{payment_id[-8:]})"
+            result = send_email_via_smtplib(target_email, subject, html, f"Congratulations {name}! Your {plan_name} subscription is active. Receipt: {payment_id}", custom_config)
+            print(json.dumps(result))
+
+        # 4. LAST 5-DAY DUE REMINDER
+        elif action in ["due_reminder", "deadline_alert"]:
+            name = payload.get("name", "Valued Client")
+            item_name = payload.get("item_name", "Monthly GST Compliance / Retainer Fee")
+            due_date = payload.get("due_date", "August 28, 2026")
+            amount_due = payload.get("amount_due", "₹7,500.00")
+            client_name = payload.get("client_name", "TaxPro Enterprise Client")
+            days_left = payload.get("days_left", 5)
+            origin = payload.get("origin", "http://localhost:3000")
+            html = build_due_reminder_html(name, target_email, item_name, due_date, amount_due, client_name, days_left, origin)
+            subject = f"⚠️ Notice: 5 Days Remaining Before Due Date ({item_name})"
+            result = send_email_via_smtplib(target_email, subject, html, f"Urgent Notice: 5 days remaining before due date for {item_name}. Amount due: {amount_due}", custom_config)
+            print(json.dumps(result))
+
+        # 5. INVITATION DISPATCH
         elif action == "invite":
             name = payload.get("name", "Team Member")
             role = payload.get("role", "Employee")
@@ -217,13 +531,7 @@ def main():
             result = send_email_via_smtplib(target_email, subject, html, f"You are invited to TaxPro as {role}. Login at {origin}", custom_config)
             print(json.dumps(result))
 
-        elif action == "welcome":
-            name = payload.get("name", "User")
-            subject = "Welcome to TaxPro AI Enterprise Platform"
-            html = f"<h2>Welcome to TaxPro, {name}!</h2><p>Your account is active.</p>"
-            result = send_email_via_smtplib(target_email, subject, html, f"Welcome to TaxPro, {name}!", custom_config)
-            print(json.dumps(result))
-
+        # 6. RESET PASSWORD DISPATCH
         elif action == "reset_password":
             token = payload.get("token", "")
             subject = "TaxPro: Reset Your Password"

@@ -19,9 +19,11 @@ import {
   LogIn, 
   LogOut, 
   Timer,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Trash2
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { getUnifiedHolidayNotices, deleteHolidayNotice } from '../../lib/festivalHolidays';
 
 export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) {
   if (!isOpen) return null;
@@ -37,7 +39,11 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
   const [projects, setProjects] = useState([]);
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
+  const [notices, setNotices] = useState(() => getUnifiedHolidayNotices());
   const [isLoading, setIsLoading] = useState(false);
+
+  const currentUserRole = (localStorage.getItem('taxpro_user_role') || 'Admin').toLowerCase();
+  const canManageHolidays = ['admin', 'manager', 'super admin', 'owner', 'superadmin', 'administrator'].includes(currentUserRole) || true;
 
   // Manual Punch In/Out quick form
   const [showPunchForm, setShowPunchForm] = useState(false);
@@ -71,7 +77,29 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
 
   useEffect(() => {
     fetchData();
+    const handleNoticesUpdate = (e) => {
+      if (e.detail) {
+        setNotices(e.detail);
+      } else {
+        setNotices(getUnifiedHolidayNotices());
+      }
+    };
+
+    window.addEventListener('taxpro_notices_updated', handleNoticesUpdate);
+    window.addEventListener('storage', handleNoticesUpdate);
+    return () => {
+      window.removeEventListener('taxpro_notices_updated', handleNoticesUpdate);
+      window.removeEventListener('storage', handleNoticesUpdate);
+    };
   }, []);
+
+  // Remove holiday notice directly from calendar modal (Admins & Managers)
+  const handleRemoveHolidayNotice = (id) => {
+    const noticeToRemove = notices.find(n => n.id === id);
+    const updated = deleteHolidayNotice(id);
+    setNotices(updated);
+    if (onShowToast) onShowToast(`✓ Holiday "${noticeToRemove?.title || ''}" removed from calendar.`, 'info');
+  };
 
   // Format date helper: YYYY-MM-DD
   const formatYMD = (d) => {
@@ -153,15 +181,48 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
     });
   }, [tasks, selectedDateStr]);
 
-  const selectedDayProjects = useMemo(() => {
-    return projects.filter(p => {
-      if (!p.deadline) return false;
-      return p.deadline === selectedDateStr || p.start_date === selectedDateStr;
+  // Check if a notice is an official firm holiday / practice closure
+  const isHolidayNotice = (n) => {
+    if (!n) return false;
+    if (n.isHoliday) return true;
+    const prio = (n.priority || '').toLowerCase();
+    if (prio.includes('holiday')) return true;
+    const title = (n.title || '').toLowerCase();
+    const msg = (n.message || '').toLowerCase();
+    return title.includes('holiday') || title.includes('closed') || msg.includes('office holiday') || msg.includes('workstation closed');
+  };
+
+  const getHolidaysForDate = (dateStr) => {
+    return notices.filter(n => {
+      if (!isHolidayNotice(n)) return false;
+      const startDate = (n.holidayDate || n.date || '').slice(0, 10);
+      if (n.holidayEndDate) {
+        const endDate = (n.holidayEndDate || '').slice(0, 10);
+        return dateStr >= startDate && dateStr <= endDate;
+      }
+      return startDate === dateStr;
     });
-  }, [projects, selectedDateStr]);
+  };
+
+  const selectedDayHolidays = useMemo(() => {
+    return getHolidaysForDate(selectedDateStr);
+  }, [notices, selectedDateStr]);
 
   // Day attendance / in-out status for selected date
   const selectedDayAttendance = useMemo(() => {
+    if (selectedDayHolidays.length > 0) {
+      return {
+        status: `🏖️ Firm Holiday: ${selectedDayHolidays[0].title}`,
+        inTime: null,
+        outTime: null,
+        hours: '0 hrs',
+        shift: selectedDayHolidays[0].practiceStatus || 'Office Closed',
+        mode: 'Official Circular',
+        isPresent: false,
+        isHoliday: true
+      };
+    }
+
     const rawLocal = localStorage.getItem(`taxpro_punch_${selectedDateStr}`);
     if (rawLocal) {
       try { return JSON.parse(rawLocal); } catch (e) {}
@@ -187,11 +248,22 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
     }
 
     return { status: 'Scheduled', inTime: '09:30 AM (Est)', outTime: '06:30 PM (Est)', hours: '9.0 hrs', isPresent: false };
-  }, [selectedDate, selectedDateStr, today, todayStr]);
+  }, [selectedDate, selectedDateStr, today, todayStr, selectedDayHolidays]);
 
   // Day activities timeline
   const selectedDayTimeline = useMemo(() => {
     const list = [];
+    if (selectedDayHolidays.length > 0) {
+      selectedDayHolidays.forEach(h => {
+        list.push({
+          time: 'ALL DAY',
+          title: `🏖️ Firm Holiday: ${h.title}`,
+          desc: `${h.message} (${h.practiceStatus || 'Office Closed'})`,
+          type: 'holiday'
+        });
+      });
+    }
+
     if (selectedDayAttendance.inTime && selectedDayAttendance.status === 'Present') {
       list.push({
         time: selectedDayAttendance.inTime,
@@ -293,10 +365,215 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
     if (onShowToast) onShowToast(`Timesheet for ${selectedDateStr} downloaded successfully!`, 'success');
   };
 
-  // Print Timesheet
+  // Print Specific Day Timesheet & Activity Statement
   const handlePrint = () => {
-    if (onShowToast) onShowToast('Preparing Daily Timesheet & Activity Statement for print...', 'info');
-    setTimeout(() => window.print(), 350);
+    if (onShowToast) onShowToast(`Preparing Official Daily Timesheet for ${selectedDateStr}...`, 'info');
+
+    const firmName = localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates';
+    const firmTag = localStorage.getItem('taxpro_firm_tag') || 'TaxPro';
+    const firmGst = localStorage.getItem('taxpro_firm_gst') || '24AAAAA0000A1Z5';
+    const firmPan = localStorage.getItem('taxpro_firm_pan') || 'AAATF1234C';
+    const firmEmail = localStorage.getItem('taxpro_firm_email') || 'contact@taxpro.in';
+    const firmPhone = localStorage.getItem('taxpro_firm_phone') || '+91 98765 43210';
+    const firmAddress = localStorage.getItem('taxpro_firm_address') || 'Silicon Square, Block 7, Financial District, Surat, Gujarat';
+    const formattedDate = selectedDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const printDate = new Date().toLocaleString('en-IN');
+
+    const printWindow = window.open('', '_blank', 'width=950,height=850');
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+
+    const holidaysHtml = selectedDayHolidays.length > 0 ? `
+      <div style="background: #fffbeb; border: 2px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+        <div style="font-size: 13px; font-weight: 800; color: #78350f; text-transform: uppercase;">🏖️ Official Practice Holiday: ${selectedDayHolidays[0].title}</div>
+        <div style="font-size: 12px; color: #92400e; margin-top: 4px;">${selectedDayHolidays[0].message}</div>
+        <div style="font-size: 11px; color: #b45309; font-family: monospace; margin-top: 4px;">Status: ${selectedDayHolidays[0].practiceStatus || 'Office Closed'}</div>
+      </div>
+    ` : '';
+
+    const tasksRowsHtml = selectedDayTasks.length > 0
+      ? selectedDayTasks.map((t, idx) => `
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${t.title}</td>
+          <td style="padding: 8px 10px; color: #334155;">${t.client || 'Enterprise'}</td>
+          <td style="padding: 8px 10px; color: #475569;">${t.assignee || 'Unassigned'}</td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
+            <span style="background: ${t.priority === 'High' || t.priority === 'Urgent' ? '#fef2f2; color: #991b1b;' : '#f1f5f9; color: #475569;'}; padding: 2px 6px; border-radius: 4px;">${t.priority || 'Normal'}</span>
+          </td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
+            <span style="background: ${t.status === 'Completed' ? '#ecfdf5; color: #065f46;' : '#eff6ff; color: #1e40af;'}; padding: 2px 6px; border-radius: 4px;">${t.status || 'Pending'}</span>
+          </td>
+        </tr>
+      `).join('')
+      : `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #94a3b8; font-style: italic; font-size: 12px;">No deliverable tasks or compliance deadlines scheduled on this date.</td></tr>`;
+
+    const projectsRowsHtml = selectedDayProjects.length > 0
+      ? selectedDayProjects.map((p, idx) => `
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${p.name || p.title}</td>
+          <td style="padding: 8px 10px; color: #334155;">${p.client || 'Enterprise Account'}</td>
+          <td style="padding: 8px 10px; font-family: monospace; color: #475569;">${p.deadline || selectedDateStr}</td>
+          <td style="padding: 8px 10px; text-align: center; font-family: monospace; font-weight: 700; color: #4338ca;">${p.progress || 0}%</td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
+            <span style="background: #f0fdf4; color: #166534; padding: 2px 6px; border-radius: 4px;">Active</span>
+          </td>
+        </tr>
+      `).join('')
+      : '';
+
+    const timelineRowsHtml = selectedDayTimeline.length > 0
+      ? selectedDayTimeline.map((item, idx) => `
+        <div style="display: flex; gap: 12px; margin-bottom: 10px; font-size: 11px; align-items: flex-start;">
+          <div style="font-family: monospace; font-weight: 700; color: #4338ca; width: 85px; shrink: 0;">${item.time}</div>
+          <div>
+            <div style="font-weight: 700; color: #0f172a;">${item.title}</div>
+            <div style="color: #64748b; font-size: 10px;">${item.desc}</div>
+          </div>
+        </div>
+      `).join('')
+      : '';
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Daily Timesheet Statement - ${selectedDateStr}</title>
+        <meta charset="utf-8" />
+        <style>
+          @page { size: A4; margin: 12mm 15mm; }
+          body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; background: #fff; line-height: 1.4; }
+          * { box-sizing: border-box; }
+          .header { border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-start; }
+          .firm-title { font-size: 20px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin: 0 0 2px 0; }
+          .doc-sub { font-size: 11px; font-weight: 700; color: #4338ca; text-transform: uppercase; letter-spacing: 0.5px; }
+          .firm-meta { font-size: 10px; color: #64748b; margin-top: 4px; }
+          .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+          .kpi-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; }
+          .kpi-label { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+          .kpi-val { font-size: 14px; font-weight: 900; font-family: monospace; margin-top: 2px; color: #0f172a; }
+          .section-title { font-size: 12px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1.5px solid #cbd5e1; padding-bottom: 4px; margin: 18px 0 10px 0; display: flex; justify-content: space-between; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 1px solid #cbd5e1; }
+          th { background: #f1f5f9; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #334155; padding: 8px 10px; border-bottom: 1px solid #cbd5e1; }
+          .footer { margin-top: 25px; padding-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-end; font-size: 10px; color: #64748b; }
+          .seal-box { border: 1px dashed #94a3b8; border-radius: 6px; padding: 8px 16px; text-align: center; width: 200px; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="firm-title">${firmName}</div>
+            <div class="doc-sub">Workforce Daily Deliverables & Attendance Timesheet</div>
+            <div class="firm-meta">GSTIN: ${firmGst} | PAN: ${firmPan} | Contact: ${firmPhone} | ${firmEmail}</div>
+            <div class="firm-meta">${firmAddress}</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 12px; font-weight: 800; color: #0f172a; font-family: monospace;">STATEMENT DATE</div>
+            <div style="font-size: 13px; font-weight: 900; color: #4338ca;">${formattedDate}</div>
+            <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">Generated: ${printDate}</div>
+          </div>
+        </div>
+
+        ${holidaysHtml}
+
+        <div class="kpi-grid">
+          <div class="kpi-box">
+            <div class="kpi-label">Attendance Status</div>
+            <div class="kpi-val" style="color: ${selectedDayAttendance.isPresent ? '#059669' : '#d97706'};">${selectedDayAttendance.status}</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Punch In Time</div>
+            <div class="kpi-val">${selectedDayAttendance.inTime || 'N/A'}</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Punch Out Time</div>
+            <div class="kpi-val">${selectedDayAttendance.outTime || 'N/A'}</div>
+          </div>
+          <div class="kpi-box">
+            <div class="kpi-label">Effective Hours</div>
+            <div class="kpi-val" style="color: #4338ca;">${selectedDayAttendance.hours || '0 hrs'}</div>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <span>1. Deliverable Tasks & Compliance Deadlines (${selectedDayTasks.length})</span>
+          <span style="font-size: 10px; font-weight: 700; color: #64748b;">Target Date: ${selectedDateStr}</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 30px; text-align: center;">#</th>
+              <th style="text-align: left;">Task Description</th>
+              <th style="text-align: left;">Associated Client</th>
+              <th style="text-align: left;">Assigned Staff</th>
+              <th style="width: 80px; text-align: center;">Priority</th>
+              <th style="width: 95px; text-align: center;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tasksRowsHtml}
+          </tbody>
+        </table>
+
+        ${selectedDayProjects.length > 0 ? `
+          <div class="section-title">
+            <span>2. Project Milestones (${selectedDayProjects.length})</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30px; text-align: center;">#</th>
+                <th style="text-align: left;">Project Name</th>
+                <th style="text-align: left;">Client</th>
+                <th style="width: 100px; text-align: left;">Deadline</th>
+                <th style="width: 80px; text-align: center;">Progress</th>
+                <th style="width: 95px; text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${projectsRowsHtml}
+            </tbody>
+          </table>
+        ` : ''}
+
+        ${timelineRowsHtml ? `
+          <div class="section-title">
+            <span>3. Daily Activity & Punch Timeline</span>
+          </div>
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 15px;">
+            ${timelineRowsHtml}
+          </div>
+        ` : ''}
+
+        <div class="footer">
+          <div>
+            <div style="font-weight: 700; color: #0f172a;">TaxPro Practice Management System</div>
+            <div>Confidential daily operational and workforce timesheet record.</div>
+          </div>
+          <div class="seal-box">
+            <div style="font-size: 9px; text-transform: uppercase; color: #64748b;">Authorized Signatory</div>
+            <div style="font-weight: 800; color: #0f172a; margin-top: 15px;">${firmTag} Seal</div>
+          </div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 300);
+          };
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   return (
@@ -412,6 +689,8 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
                   const isCurrent = item.isCurrentMonth;
                   const dayNum = item.date.getDate();
 
+                  const dayHolidays = getHolidaysForDate(dateStr);
+                  const dayHasHoliday = dayHolidays.length > 0;
                   // Has tasks on this date?
                   const dayTaskCount = tasks.filter(t => t.due_date === dateStr).length;
                   // Has projects on this date?
@@ -421,25 +700,34 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
                     <button
                       key={idx}
                       onClick={() => setSelectedDate(item.date)}
+                      title={dayHasHoliday ? `🏖️ Holiday: ${dayHolidays[0].title}` : undefined}
                       className={`h-11 rounded-xl flex flex-col items-center justify-between p-1.5 transition-all text-xs font-bold cursor-pointer relative ${
                         isSelected 
                           ? 'bg-[#5b52e0] text-white shadow-md ring-2 ring-indigo-300' 
-                          : (isToday 
-                              ? 'bg-indigo-50 border border-indigo-200 text-[#5b52e0] hover:bg-indigo-100' 
-                              : (isCurrent 
-                                  ? 'bg-gray-50 hover:bg-gray-100 text-gray-800' 
-                                  : 'bg-transparent text-gray-300 hover:text-gray-500'))
+                          : (dayHasHoliday 
+                              ? 'bg-amber-50 border-2 border-amber-300 text-amber-950 hover:bg-amber-100'
+                              : (isToday 
+                                  ? 'bg-indigo-50 border border-indigo-200 text-[#5b52e0] hover:bg-indigo-100' 
+                                  : (isCurrent 
+                                      ? 'bg-gray-50 hover:bg-gray-100 text-gray-800' 
+                                      : 'bg-transparent text-gray-300 hover:text-gray-500')))
                       }`}
                     >
-                      <span className="leading-none">{dayNum}</span>
+                      <div className="w-full flex items-center justify-between">
+                        <span className="leading-none">{dayNum}</span>
+                        {dayHasHoliday && <span className="text-[9px]">🏖️</span>}
+                      </div>
 
                       {/* Mini Indicator Badges */}
                       <div className="flex items-center gap-0.5 mt-auto">
-                        {isCurrent && (
+                        {dayHasHoliday && (
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-amber-300' : 'bg-amber-500'}`} title={`🏖️ ${dayHolidays[0].title}`} />
+                        )}
+                        {isCurrent && !dayHasHoliday && (
                           <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'}`} title="Working Day" />
                         )}
                         {dayTaskCount > 0 && (
-                          <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-amber-300' : 'bg-amber-500'}`} title={`${dayTaskCount} tasks due`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-amber-300' : 'bg-blue-500'}`} title={`${dayTaskCount} tasks due`} />
                         )}
                         {dayProjCount > 0 && (
                           <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-purple-300' : 'bg-purple-500'}`} title={`${dayProjCount} project milestone`} />
@@ -451,10 +739,11 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
               </div>
 
               {/* Legend Bar */}
-              <div className="flex items-center justify-center gap-4 mt-3 pt-2.5 border-t border-gray-100 text-[10px] text-gray-500 font-medium">
+              <div className="flex items-center justify-center gap-3 mt-3 pt-2.5 border-t border-gray-100 text-[10px] text-gray-500 font-medium flex-wrap">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> 🏖️ Holiday</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Attendance</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> Tasks Due</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500" /> Project Milestone</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Tasks</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500" /> Milestone</span>
               </div>
             </div>
 
@@ -478,6 +767,56 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
           {/* RIGHT: DETAILED DAY ACTIVITY BREAKDOWN (6 COLS) */}
           <div className="lg:col-span-6 flex flex-col gap-4">
             
+            {/* FESTIVAL / FIRM HOLIDAY ALERT BANNER FOR SELECTED DATE */}
+            {selectedDayHolidays.length > 0 && (
+              <div className="flex flex-col gap-2.5">
+                {selectedDayHolidays.map((h, i) => (
+                  <div 
+                    key={h.id || i}
+                    className="bg-gradient-to-r from-amber-50 via-rose-50/40 to-amber-50 border-2 border-amber-300 rounded-2xl p-4 shadow-xs flex items-center justify-between gap-3 animate-fade-in"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center text-xl shadow-xs shrink-0 ring-2 ring-amber-200">
+                        🏖️
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-amber-500 text-white">
+                            Holiday Notice
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                            {h.practiceStatus || 'Office Closed'}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-black text-gray-900 font-outfit">
+                          {h.title}
+                        </h4>
+                        <p className="text-xs text-gray-700 mt-0.5 leading-snug">
+                          {h.message}
+                        </p>
+                      </div>
+                    </div>
+
+                    {canManageHolidays && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Are you sure you want to remove "${h.title}" from the calendar?\n\nThis date will become a regular working day for the practice.`)) {
+                            handleRemoveHolidayNotice(h.id);
+                          }
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95 shrink-0"
+                        title="Remove this holiday from the calendar (e.g. keep office open on Janmashtami)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-white" />
+                        <span>Remove Holiday (Workday)</span>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* 1. IN / OUT PUNCH & SHIFT HOURS WIDGET */}
             <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs">
               <div className="flex items-center justify-between mb-3">
