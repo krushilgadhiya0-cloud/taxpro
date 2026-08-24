@@ -94,6 +94,7 @@ const EXPENSE_CATEGORIES = [
 export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }) {
   const [activeTab, setActiveTab] = useState('Overview');
   const [members, setMembers] = useState([]);
+  const [registeredUsers, setRegisteredUsers] = useState([]);
   const [clients, setClients] = useState([]);
   const [rawPayments, setRawPayments] = useState([]);
   const [rawFees, setRawFees] = useState([]);
@@ -222,14 +223,15 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
   const fetchGlobalStats = async () => {
     setIsLoadingData(true);
     try {
-      const [memberRes, clientRes, payRes, logRes, feeRes, recRes, attRes] = await Promise.all([
+      const [memberRes, clientRes, payRes, logRes, feeRes, recRes, attRes, userRes] = await Promise.all([
         supabase.from('team_members').select('*').order('created_at', { ascending: false }),
         supabase.from('clients').select('*').order('created_at', { ascending: false }),
         supabase.from('payments').select('*').order('created_at', { ascending: false }),
         supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('fees').select('*').order('created_at', { ascending: false }),
         supabase.from('receipts_payments').select('*').order('created_at', { ascending: false }),
-        supabase.from('attendance').select('*').order('created_at', { ascending: false })
+        supabase.from('attendance').select('*').order('created_at', { ascending: false }),
+        supabase.from('users').select('*').order('created_at', { ascending: false })
       ]);
 
       if (memberRes.data) setMembers(memberRes.data);
@@ -238,6 +240,7 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
       if (feeRes.data) setRawFees(feeRes.data);
       if (recRes.data) setRawReceipts(recRes.data);
       if (attRes.data) setAttendanceRecords(attRes.data);
+      if (userRes.data) setRegisteredUsers(userRes.data);
 
       const rawLogs = logRes.data || [];
       if (rawLogs.length > 0) {
@@ -1302,7 +1305,68 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
 
   // New Users List (Sorted by newest first)
   const newUsersList = useMemo(() => {
-    let list = [...members];
+    let localUsersArr = [];
+    try {
+      localUsersArr = JSON.parse(localStorage.getItem('taxpro_local_users') || '[]');
+    } catch (e) {}
+
+    const userMap = new Map();
+
+    // 1. Add members
+    members.forEach(m => {
+      if (m.email) {
+        userMap.set(m.email.toLowerCase(), {
+          id: m.id,
+          name: m.name,
+          email: m.email,
+          role: m.role || 'Employee',
+          department: m.department || 'General',
+          firm_name: m.firm_name || m.company || 'TaxPro Advisory & Tax Associates',
+          status: m.status || 'Active',
+          created_at: m.created_at || new Date().toISOString()
+        });
+      }
+    });
+
+    // 2. Merge registered users from users table
+    registeredUsers.forEach(u => {
+      if (u.email) {
+        const cleanE = u.email.toLowerCase();
+        const existing = userMap.get(cleanE) || {};
+        userMap.set(cleanE, {
+          id: u.id || existing.id,
+          name: u.name || existing.name || u.email.split('@')[0],
+          email: u.email,
+          role: u.role || existing.role || 'Administrator',
+          department: u.department || existing.department || 'Executive Management',
+          firm_name: u.company || existing.firm_name || 'TaxPro Enterprise Client',
+          status: existing.status || 'Active',
+          created_at: u.created_at || existing.created_at || new Date().toISOString()
+        });
+      }
+    });
+
+    // 3. Merge local registered users
+    localUsersArr.forEach(lu => {
+      if (lu.email) {
+        const cleanE = lu.email.toLowerCase();
+        const existing = userMap.get(cleanE) || {};
+        userMap.set(cleanE, {
+          id: lu.id || existing.id,
+          name: lu.name || existing.name || lu.email.split('@')[0],
+          email: lu.email,
+          role: lu.role || existing.role || 'Administrator',
+          department: lu.department || existing.department || 'Executive Management',
+          firm_name: lu.company || existing.firm_name || 'TaxPro Enterprise Client',
+          status: existing.status || 'Active',
+          created_at: lu.created_at || existing.created_at || new Date().toISOString()
+        });
+      }
+    });
+
+    let list = Array.from(userMap.values());
+    list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
     if (newUsersRoleFilter !== 'all') {
       list = list.filter(m => {
         const r = (m.role || 'Employee').toLowerCase();
@@ -1318,11 +1382,12 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
         (m.name || '').toLowerCase().includes(q) ||
         (m.email || '').toLowerCase().includes(q) ||
         (m.firm_name || '').toLowerCase().includes(q) ||
-        (m.department || '').toLowerCase().includes(q)
+        (m.department || '').toLowerCase().includes(q) ||
+        (m.role || '').toLowerCase().includes(q)
       );
     }
     return list;
-  }, [members, newUsersRoleFilter, newUsersSearchQuery]);
+  }, [members, registeredUsers, newUsersRoleFilter, newUsersSearchQuery]);
 
   // Export Specific Firm Roster to CSV
   const handleExportFirmCSV = (firm) => {
