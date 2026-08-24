@@ -2,7 +2,7 @@
 // Direct REST + JSONB proxy to PostgreSQL 17.6 Relational Engine
 
 const API_BASE = typeof window !== 'undefined'
-  ? '' 
+  ? (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE_URL || '')
   : (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000');
 
 // Global Auth State Listeners
@@ -482,10 +482,17 @@ export const postgresClient = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password })
         });
-        const json = await res.json();
+        
+        let json = null;
+        const text = await res.text().catch(() => '');
+        try {
+          json = text ? JSON.parse(text) : {};
+        } catch (e) {
+          json = { success: false, error: 'Invalid response from authentication server' };
+        }
 
-        if (!json.success) {
-          return { data: { user: null, session: null }, error: { message: json.error || 'Authentication failed' } };
+        if (!json || !json.success) {
+          return { data: { user: null, session: null }, error: { message: json?.error || 'Authentication failed' } };
         }
 
         const session = {
@@ -528,10 +535,17 @@ export const postgresClient = {
             department: options.data?.department || 'Executive Management'
           })
         });
-        const json = await res.json();
 
-        if (!json.success) {
-          return { data: { user: null, session: null }, error: { message: json.error || 'Signup failed' } };
+        let json = null;
+        const text = await res.text().catch(() => '');
+        try {
+          json = text ? JSON.parse(text) : {};
+        } catch (e) {
+          json = { success: false, error: text.startsWith('<') ? 'API server offline or unreachable' : 'Invalid response from server' };
+        }
+
+        if (!json || !json.success) {
+          return { data: { user: null, session: null }, error: { message: json?.error || 'Signup failed' } };
         }
 
         const session = {
