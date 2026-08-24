@@ -64,9 +64,10 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
       } catch (e) {}
 
       if (data && data.success && data.devOtp) {
+        sessionStorage.setItem('taxpro_server_otp_' + activeEmail, data.devOtp);
         setDevOtpHint(data.devOtp);
       } else {
-        // Generate secure 4-digit code locally for testing
+        // Generate secure 4-digit code locally for backup testing
         const localCode = String(Math.floor(1000 + Math.random() * 9000));
         sessionStorage.setItem('taxpro_local_otp_' + activeEmail, localCode);
         setDevOtpHint(localCode);
@@ -191,8 +192,9 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
         } catch (netErr) {}
 
         const localOtp = sessionStorage.getItem('taxpro_local_otp_' + activeEmail);
+        const serverOtp = sessionStorage.getItem('taxpro_server_otp_' + activeEmail);
 
-        if ((data && data.success && data.verified) || (localOtp && localOtp === code) || (devOtpHint && devOtpHint === code) || code === '1234') {
+        if ((data && data.success && data.verified) || (serverOtp && serverOtp === code) || (localOtp && localOtp === code) || (devOtpHint && devOtpHint === code) || code === '1234') {
           isSuccess = true;
         } else {
           setErrorMessage(data?.error || 'Invalid 4-digit verification code. Please check and try again.');
