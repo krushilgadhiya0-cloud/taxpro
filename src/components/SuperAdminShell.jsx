@@ -1983,6 +1983,15 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
                     <div className="flex items-center gap-2.5 flex-wrap">
                       <button
                         type="button"
+                        onClick={() => onSwitchToPMS && onSwitchToPMS('Team Members')}
+                        className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 border border-emerald-400/40"
+                        title="Open Practice Workspace and Add New Member"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        <span>+ Add New Member</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleOpenSubModal(selectedFirmForRoster)}
                         className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-600/30 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 border border-purple-400/40"
                       >
