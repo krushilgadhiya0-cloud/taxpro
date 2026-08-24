@@ -497,11 +497,12 @@ export default function App() {
 
   // When Authenticated: Render Full 1:1 Main PMS Application Suite
   if (isAuthenticated) {
+    const cleanEmail = (userEmail || localStorage.getItem('taxpro_user_email') || '').toLowerCase().trim();
     const isMasterAdmin = 
       userRole === 'Super Admin' || 
-      userEmail?.toLowerCase().trim() === 'workforcepro09@gmail.com' || 
-      userEmail?.toLowerCase().trim() === 'superadmin@taxpro.com' ||
-      Boolean(localStorage.getItem('taxpro_secret_superadmin')) ||
+      cleanEmail === 'workforcepro09@gmail.com' || 
+      cleanEmail === 'superadmin@taxpro.com' ||
+      cleanEmail === 'krushilgadhiya0@gmail.com' ||
       sessionStorage.getItem('taxpro_superadmin_authenticated') === 'true';
 
     if (isMasterAdmin && workspaceMode !== 'pms_workspace') {
@@ -717,17 +718,24 @@ export default function App() {
             localStorage.setItem('taxpro_secret_superadmin', 'superadmin@taxpro.com');
             localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
             setWorkspaceMode('superadmin_core');
-          } else if (finalEmail) {
-            try {
-              const { data: memberCheck } = await supabase.from('team_members').select('id, role, status').ilike('email', finalEmail).single();
-              if (memberCheck) {
-                if (memberCheck.role === 'Administrator') targetRole = 'Admin';
-                else if (memberCheck.role === 'Manager') targetRole = 'Manager';
-                else if (!roleOverride) targetRole = 'Employee';
-                
-                await supabase.from('team_members').update({ status: 'Active' }).ilike('email', finalEmail);
-              }
-            } catch (err) {}
+          } else {
+            sessionStorage.removeItem('taxpro_superadmin_authenticated');
+            localStorage.removeItem('taxpro_secret_superadmin');
+            localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+            setWorkspaceMode('pms_workspace');
+
+            if (finalEmail) {
+              try {
+                const { data: memberCheck } = await supabase.from('team_members').select('id, role, status').ilike('email', finalEmail).single();
+                if (memberCheck) {
+                  if (memberCheck.role === 'Administrator') targetRole = 'Admin';
+                  else if (memberCheck.role === 'Manager') targetRole = 'Manager';
+                  else if (!roleOverride) targetRole = 'Employee';
+                  
+                  await supabase.from('team_members').update({ status: 'Active' }).ilike('email', finalEmail);
+                }
+              } catch (err) {}
+            }
           }
 
           localStorage.setItem('taxpro_user_role', targetRole);

@@ -243,6 +243,11 @@ export default function AuthModal({
             // Activate member status in PostgreSQL
             await supabase.from('team_members').update({ status: 'Active' }).eq('id', member.id);
 
+            sessionStorage.removeItem('taxpro_superadmin_authenticated');
+            localStorage.removeItem('taxpro_secret_superadmin');
+            localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+            localStorage.setItem('taxpro_user_role', resolvedRole);
+
             onShowToast(`✓ Welcome ${member.name}! Direct Login authorized as ${resolvedRole}.`, 'success');
             setTimeout(() => {
               onClose();
@@ -285,6 +290,10 @@ export default function AuthModal({
       }
     } catch (e) {}
 
+    // Ensure normal logins always open Practice PMS and remove superadmin override
+    sessionStorage.removeItem('taxpro_superadmin_authenticated');
+    localStorage.removeItem('taxpro_secret_superadmin');
+    localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
     localStorage.setItem('taxpro_user_role', finalRole);
     localStorage.setItem('taxpro_profile_completed', 'true');
 
