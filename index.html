@@ -65,9 +65,28 @@
   <!-- Google Web Fonts with DNS Prefetch -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <!-- Defer Non-Critical External SDKs to eliminate render-blocking -->
+  <!-- Tailwind CSS Engine & External SDKs -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            dark: '#090909',
+            graphite: '#121212',
+            brand: '#5b52e0'
+          },
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'Inter', 'sans-serif'],
+            outfit: ['Outfit', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script defer src="https://checkout.razorpay.com/v1/checkout.js"></script>
   
@@ -78,14 +97,16 @@
     #google_translate_element { display: none !important; }
   </style>
 </head>
-<body class="bg-[#f3f4f6] text-gray-900 font-sans antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-black">
+<body class="bg-[#090909] text-white font-sans antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-black">
   <div id="google_translate_element"></div>
   <script type="text/javascript">
-    function googleTranslateElementInit() {
-      if (window.google && window.google.translate) {
-        new window.google.translate.TranslateElement({pageLanguage: 'en', autoDisplay: false}, 'google_translate_element');
-      }
-    }
+    window.googleTranslateElementInit = function() {
+      try {
+        if (window.google && window.google.translate && window.google.translate.TranslateElement) {
+          new window.google.translate.TranslateElement({pageLanguage: 'en', autoDisplay: false}, 'google_translate_element');
+        }
+      } catch (e) {}
+    };
   </script>
   <script defer type="text/javascript" src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 
