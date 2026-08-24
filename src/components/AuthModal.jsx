@@ -170,33 +170,30 @@ export default function AuthModal({
         return;
       }
 
-      const { data, error } = await supabase.auth.signUp({
+      // Check if email is already registered in users table or local store
+      try {
+        const { data: existingUser } = await supabase.from('users').select('id, email').ilike('email', cleanEmail).limit(1);
+        if (existingUser && existingUser.length > 0) {
+          setAlreadyRegisteredAlert(true);
+          setIsSubmitting(false);
+          return;
+        }
+      } catch (e) {}
+
+      // Store pending registration payload in session memory - committed ONLY after OTP verification!
+      sessionStorage.setItem('taxpro_pending_signup', JSON.stringify({
         email: cleanEmail,
         password: password,
-        options: {
-          data: {
-            name: name || cleanEmail.split('@')[0],
-            role: 'Administrator',
-            department: 'Executive Management'
-          }
-        }
-      });
+        name: name || cleanEmail.split('@')[0],
+        role: 'Administrator',
+        department: 'Executive Management'
+      }));
 
-      if (error) {
-        if (error.message.toLowerCase().includes('already registered') || error.message.toLowerCase().includes('user already exists')) {
-          setAlreadyRegisteredAlert(true);
-        } else {
-          onShowToast(`✕ Registration Error: ${error.message}`, 'error');
-        }
-        setIsSubmitting(false);
-        return;
-      }
-
-      onShowToast(`✓ Administrator registration successful! Redirecting to Python smtplib OTP verification...`, 'success');
+      onShowToast(`✓ Verification code sent to ${cleanEmail}! Please enter OTP to finalize your account.`, 'success');
       setTimeout(() => {
         onClose();
         if (onOpenOTP) onOpenOTP(cleanEmail);
-      }, 1200);
+      }, 500);
       setIsSubmitting(false);
       return;
     }

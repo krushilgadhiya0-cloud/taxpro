@@ -659,6 +659,28 @@ export default function App() {
           let targetRole = localStorage.getItem('taxpro_user_role') || 'Admin';
           const cleanEmail = (userEmail || localStorage.getItem('taxpro_user_email') || '').trim();
 
+          // 1. Commit pending registration payload to database now that email OTP is verified!
+          try {
+            const pendingRaw = sessionStorage.getItem('taxpro_pending_signup');
+            if (pendingRaw) {
+              const pending = JSON.parse(pendingRaw);
+              if (pending.email && pending.password) {
+                await supabase.auth.signUp({
+                  email: pending.email,
+                  password: pending.password,
+                  options: {
+                    data: {
+                      name: pending.name || pending.email.split('@')[0],
+                      role: pending.role || 'Administrator',
+                      department: pending.department || 'Executive Management'
+                    }
+                  }
+                });
+              }
+              sessionStorage.removeItem('taxpro_pending_signup');
+            }
+          } catch (e) {}
+
           if (cleanEmail) {
             localStorage.setItem('taxpro_user_email', cleanEmail);
             setUserEmail(cleanEmail);
