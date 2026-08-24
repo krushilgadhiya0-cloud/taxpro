@@ -3,49 +3,91 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
-  <title>TaxPro AI — Next-Gen Financial & Tax Management Platform</title>
-  <meta name="description" content="Manage workers, payroll, reports, expenses, attendance, analytics and payments in one intelligent futuristic AI platform." />
   
+  <!-- Primary Meta Tags & SEO -->
+  <title>TaxPro Enterprise 3.0 — Intelligent Practice & Financial Management Platform</title>
+  <meta name="title" content="TaxPro Enterprise 3.0 — Intelligent Practice & Financial Management Platform" />
+  <meta name="description" content="TaxPro Enterprise 3.0 is a complete cloud practice management suite for Chartered Accountants, Tax Professionals, and Finance Teams. Manage client dossiers, compliance tasks, team payroll, invoices, and automated audit logs." />
+  <meta name="keywords" content="TaxPro, CA Practice Management, Tax Management Software, GST Filing, Accounting Suite, Chartered Accountant Software, Payroll, Invoicing" />
+  <meta name="author" content="TaxPro Enterprise Intelligence" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://taxpro-suite.vercel.app/" />
+
+  <!-- Open Graph / Facebook / LinkedIn -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://taxpro-suite.vercel.app/" />
+  <meta property="og:title" content="TaxPro Enterprise 3.0 — Intelligent Financial Management Platform" />
+  <meta property="og:description" content="Manage clients, projects, tasks, attendance, payroll, receipts, and private communications in one unified high-performance platform." />
+  <meta property="og:image" content="/icon.svg" />
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image" />
+  <meta property="twitter:url" content="https://taxpro-suite.vercel.app/" />
+  <meta property="twitter:title" content="TaxPro Enterprise 3.0" />
+  <meta property="twitter:description" content="Intelligent practice management and financial intelligence suite." />
+  <meta property="twitter:image" content="/icon.svg" />
+
   <!-- Mobile 375px & PWA Meta Tags & Manifest -->
   <meta name="HandheldFriendly" content="True" />
   <meta name="MobileOptimized" content="375" />
   <meta name="format-detection" content="telephone=no" />
   <meta name="mobile-web-app-capable" content="yes" />
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#090909" />
+  <meta name="theme-color" content="#0e101a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="TaxPro AI" />
   <link rel="icon" type="image/svg+xml" href="/icon.svg" />
   <link rel="apple-touch-icon" href="/icon.svg" />
 
-  <!-- Fonts -->
+  <!-- Schema.org JSON-LD Structured Data for AI & Search Crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "TaxPro Enterprise",
+    "operatingSystem": "All (Web, Android, iOS, Windows, macOS)",
+    "applicationCategory": "BusinessApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "Enterprise Practice Management Platform for Chartered Accountants, Tax Advisors, and Corporate Workforce Management.",
+    "url": "https://taxpro-suite.vercel.app/",
+    "author": {
+      "@type": "Organization",
+      "name": "TaxPro Enterprise Suite"
+    }
+  }
+  </script>
+
+  <!-- Google Web Fonts with DNS Prefetch -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  
-  <!-- Tailwind CSS & Lucide & Chart.js & Canvas Confetti Libraries -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Razorpay Checkout SDK -->
-  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+
+  <!-- Defer Non-Critical External SDKs to eliminate render-blocking -->
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="https://checkout.razorpay.com/v1/checkout.js"></script>
   
   <style>
     /* Hide Google Translate top banner & toolbar */
     .goog-te-banner-frame.skiptranslate, .goog-te-gadget-icon { display: none !important; }
     body { top: 0px !important; }
-    /* Hide the google translate widget entirely since we control it programmatically */
     #google_translate_element { display: none !important; }
   </style>
 </head>
-<body class="bg-dark text-white font-sans antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-black">
+<body class="bg-[#f3f4f6] text-gray-900 font-sans antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-black">
   <div id="google_translate_element"></div>
   <script type="text/javascript">
     function googleTranslateElementInit() {
-      new google.translate.TranslateElement({pageLanguage: 'en', autoDisplay: false}, 'google_translate_element');
+      if (window.google && window.google.translate) {
+        new window.google.translate.TranslateElement({pageLanguage: 'en', autoDisplay: false}, 'google_translate_element');
+      }
     }
   </script>
-  <script type="text/javascript" src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+  <script defer type="text/javascript" src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 
   <div id="root"></div>
   <script type="module" src="/src/entry.jsx"></script>

@@ -1,0 +1,40 @@
+# TaxPro Enterprise 3.0 — AI & Machine Agent Specification
+
+> TaxPro Enterprise is a high-performance, next-generation practice and financial intelligence platform designed for accounting firms, tax professionals, and enterprise workforce management.
+
+## Application Metadata
+- **Name**: TaxPro Enterprise
+- **Version**: 3.0.0
+- **Type**: Financial & Practice Management Suite (PMS) / SaaS
+- **Target Audience**: Chartered Accountants, CPAs, Tax Consultants, Corporate Finance Teams, Payroll Administrators
+- **Supported Standards**: GST (Goods and Services Tax), Income Tax, ROC Compliance, Statutory Audits, Dual-Entry Ledgers
+
+## Core Platform Architecture & Navigation Map
+- `/`: Public Gateway & Landing Showcase
+  - **Overview**: Hero overview, interactive fee estimator, feature highlights, and secure portal gateways.
+  - **Portals**: Administrator Portal, Manager Portal, Employee Portal.
+- `/dashboard`: Practice Management Cockpit
+  - **Real-Time KPIs**: Active client files, pending compliance deadlines, revenue run-rate, employee task velocity.
+- `/clients`: Comprehensive Client Dossiers
+  - **Capabilities**: Client KYC, GSTIN verification, PAN records, linked audit dossiers, and compliance folders.
+- `/projects`: Corporate Project Tracker
+  - **Capabilities**: Milestone tracking, project budget ledgers, and team assignments.
+- `/tasks`: Granular Task & Assignment Roster
+  - **Capabilities**: Kanban boards, priority filters, deadline alerts, and workload distribution.
+- `/team`: Workforce & Role-Based Access Control (RBAC)
+  - **Capabilities**: Staff invitations, preset password provisioning, granular module permissions, payroll, attendance, and leave management.
+- `/financials`: Practice Accounting & Financial Ledgers
+  - **Capabilities**: Fee billing, tax invoicing, receipt vouchers, online UPI/Razorpay payments, and profit & loss analytics.
+- `/communication`: Unified Practice Communication Gateway
+  - **Capabilities**: End-to-end encrypted private messaging, recorded call logs, and client notices.
+- `/security`: Enterprise Governance & Audit Logs
+  - **Capabilities**: Immutable system audit logs, active device sessions, and master override security controls.
+
+## Authentication & API Protocols
+- **Primary Auth**: PostgreSQL / Supabase Auth with Google SMTP TLS OTP verification.
+- **Role Hierarchy**: Super Admin (SaaS Governance) > Administrator (Practice Owner) > Manager (Department Head) > Employee (Staff Associate).
+- **Communication Protocol**: HTTPS / RESTful API with JSON payloads and real-time reactive event listeners.
+
+## Developer & Agent Inquiries
+- **Support Endpoint**: `/api/complain`
+- **Mail Gateway**: Google Cloud SMTP TLS Transmission (`smtp.gmail.com:587`)
