@@ -14,8 +14,8 @@ def get_smtp_credentials(custom_config=None):
     
     host = config.get("host") or os.environ.get("SMTP_HOST") or "smtp.gmail.com"
     port = int(config.get("port") or os.environ.get("SMTP_PORT") or 587)
-    user = config.get("user") or os.environ.get("SMTP_USER") or "krushilgadhiya0@gmail.com"
-    password = config.get("pass") or os.environ.get("SMTP_PASS") or ""
+    user = config.get("user") or os.environ.get("SMTP_USER") or "krushilgadhiya138@gmail.com"
+    password = config.get("pass") or os.environ.get("SMTP_PASS") or "zxzqedanapymshgm"
     sender_name = config.get("sender_name") or os.environ.get("SMTP_SENDER_NAME") or "TaxPro AI Enterprise"
     
     return host, port, user, password, sender_name
