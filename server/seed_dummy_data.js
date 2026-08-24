@@ -267,7 +267,7 @@ async function seedRichDummyData() {
   }
   console.log(`✓ Inserted ${projects.length} Practice Projects.`);
 
-  // 4. SEED GLOBAL TASKS
+  // 4. SEED GLOBAL TASKS (Total: 5, Completed: 3, In Progress: 2, Pending: 0, Overdue: 0, My Tasks: 1)
   console.log('\n[4/7] Seeding Workflow Tasks...');
   const tasks = [
     {
@@ -277,46 +277,58 @@ async function seedRichDummyData() {
       assignee: 'Priya Patel',
       client: 'Infosys BPM Solutions Pvt Ltd',
       client_id: 'CLI-1002',
-      due_date: '2026-08-28',
+      due_date: '2026-09-10',
       priority: 'High',
-      status: 'In Progress',
+      status: 'Completed',
       category: 'GST'
     },
     {
       id: 'TSK-502',
-      title: 'Draft Form 3CD Clauses 21(a) & 40 Disallowances',
-      project_id: 'PRJ-201',
-      assignee: 'Aarav Mehta',
-      client: 'Reliance Retail Ventures Ltd',
-      client_id: 'CLI-1001',
-      due_date: '2026-09-05',
-      priority: 'High',
-      status: 'In Progress',
-      category: 'Direct Tax'
-    },
-    {
-      id: 'TSK-503',
-      title: 'Compute Advance Tax Q2 Installment Liability',
-      project_id: 'PRJ-203',
-      assignee: 'Krushil Gadhiya',
-      client: 'Tata Advanced Systems Ltd',
-      client_id: 'CLI-1003',
-      due_date: '2026-09-15',
-      priority: 'High',
-      status: 'Pending',
-      category: 'Advisory'
-    },
-    {
-      id: 'TSK-504',
       title: 'Upload Director KYC Form DIR-3 KYC on MCA Portal',
       project_id: 'PRJ-204',
       assignee: 'Ananya Deshmukh',
       client: 'Sharma Healthcare & Pharmaceuticals',
       client_id: 'CLI-1004',
-      due_date: '2026-09-30',
+      due_date: '2026-09-15',
       priority: 'Medium',
       status: 'Completed',
       category: 'ROC'
+    },
+    {
+      id: 'TSK-503',
+      title: 'Annual GSTR-9 & 9C Audit Certification Filing',
+      project_id: 'PRJ-201',
+      assignee: 'Aarav Mehta',
+      client: 'Apex Global Logistics & Shipping',
+      client_id: 'CLI-1005',
+      due_date: '2026-09-20',
+      priority: 'High',
+      status: 'Completed',
+      category: 'GST'
+    },
+    {
+      id: 'TSK-504',
+      title: 'Compute Advance Tax Q2 Installment Liability',
+      project_id: 'PRJ-203',
+      assignee: 'Krushil Gadhiya',
+      client: 'Tata Advanced Systems Ltd',
+      client_id: 'CLI-1003',
+      due_date: '2026-09-25',
+      priority: 'High',
+      status: 'In Progress',
+      category: 'Advisory'
+    },
+    {
+      id: 'TSK-505',
+      title: 'Draft Form 3CD Clauses 21(a) & 40 Disallowances',
+      project_id: 'PRJ-201',
+      assignee: 'Vikram Singhania',
+      client: 'Reliance Retail Ventures Ltd',
+      client_id: 'CLI-1001',
+      due_date: '2026-09-30',
+      priority: 'High',
+      status: 'In Progress',
+      category: 'Direct Tax'
     }
   ];
 

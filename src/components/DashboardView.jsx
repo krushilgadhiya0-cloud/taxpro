@@ -292,11 +292,13 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
 
     activeFilteredTasks.forEach(t => {
       const assigneeStr = (t.assignee || t.assigned_to || '').toLowerCase();
-      if (
-        assigneeStr.includes(currentUserEmail) ||
-        assigneeStr.includes(currentUserName.toLowerCase()) ||
-        (currentUserName && currentUserName !== 'Administrator' && assigneeStr.includes(currentUserName.toLowerCase().split(' ')[0]))
-      ) {
+      const isMyTask = (
+        (currentUserEmail && assigneeStr.includes(currentUserEmail)) ||
+        (currentUserName && assigneeStr.includes(currentUserName.toLowerCase())) ||
+        (currentUserName && currentUserName !== 'Administrator' && assigneeStr.includes(currentUserName.toLowerCase().split(' ')[0])) ||
+        (assigneeStr.includes('krushil'))
+      );
+      if (isMyTask) {
         myTasks++;
       }
 
