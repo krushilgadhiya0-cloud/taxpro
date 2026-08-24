@@ -86,17 +86,24 @@ export default function TasksView({ onShowToast }) {
         setIsImportModalOpen(false);
       }
     };
+    const handleFilterChange = (e) => {
+      if (e.detail?.filter) {
+        setActiveFilter(e.detail.filter);
+      }
+    };
 
     window.addEventListener('ai_task_added', handleAIUpdate);
     window.addEventListener('taxpro_db_updated', handleAIUpdate);
     window.addEventListener('ai_open_add_task', handleOpenAddTask);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('taxpro_task_filter_changed', handleFilterChange);
     
     return () => {
       window.removeEventListener('ai_task_added', handleAIUpdate);
       window.removeEventListener('taxpro_db_updated', handleAIUpdate);
       window.removeEventListener('ai_open_add_task', handleOpenAddTask);
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('taxpro_task_filter_changed', handleFilterChange);
     };
   }, []);
 

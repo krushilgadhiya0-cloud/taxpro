@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
-export default function DashboardView({ onOpenOTP, onTriggerAI }) {
+export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }) {
   const [activeSidebarItem, setActiveSidebarItem] = useState('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState('Tasks');
   const [activeCategory, setActiveCategory] = useState('All');
@@ -402,6 +402,51 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
       subTextColor: 'text-rose-700'
     }
   ];
+
+  const handleCardClick = (cardKey) => {
+    if (cardKey === 'myTasks') {
+      if (onNavigateItem) {
+        onNavigateItem('My Work');
+      } else {
+        window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'My Work' } }));
+      }
+    } else if (cardKey === 'totalTasks') {
+      if (onNavigateItem) {
+        onNavigateItem('Tasks');
+      } else {
+        window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Tasks', filter: 'All' } }));
+      }
+      window.dispatchEvent(new CustomEvent('taxpro_task_filter_changed', { detail: { filter: 'All' } }));
+    } else if (cardKey === 'pending') {
+      if (onNavigateItem) {
+        onNavigateItem('Tasks');
+      } else {
+        window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Tasks', filter: 'Pending' } }));
+      }
+      window.dispatchEvent(new CustomEvent('taxpro_task_filter_changed', { detail: { filter: 'Pending' } }));
+    } else if (cardKey === 'completed') {
+      if (onNavigateItem) {
+        onNavigateItem('Tasks');
+      } else {
+        window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Tasks', filter: 'Completed' } }));
+      }
+      window.dispatchEvent(new CustomEvent('taxpro_task_filter_changed', { detail: { filter: 'Completed' } }));
+    } else if (cardKey === 'inProgress') {
+      if (onNavigateItem) {
+        onNavigateItem('Tasks');
+      } else {
+        window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Tasks', filter: 'In Progress' } }));
+      }
+      window.dispatchEvent(new CustomEvent('taxpro_task_filter_changed', { detail: { filter: 'In Progress' } }));
+    } else if (cardKey === 'overdue') {
+      if (onNavigateItem) {
+        onNavigateItem('Tasks');
+      } else {
+        window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Tasks', filter: 'Overdue' } }));
+      }
+      window.dispatchEvent(new CustomEvent('taxpro_task_filter_changed', { detail: { filter: 'Overdue' } }));
+    }
+  };
 
   const openFilterDrawer = () => {
     setTempDateRange(dateRangeFilter);
@@ -917,12 +962,14 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
             {taskDashboardCards.map((card) => (
               <div 
                 key={card.key}
-                className={`bg-white p-4 sm:p-5 rounded-2xl border-2 ${card.borderColor} ${card.bgColor} flex flex-col justify-between text-center shadow-xs hover:shadow-md hover:scale-105 transition-all duration-200 cursor-default`}
+                onClick={() => handleCardClick(card.key)}
+                className={`bg-white p-4 sm:p-5 rounded-2xl border-2 ${card.borderColor} ${card.bgColor} flex flex-col justify-between text-center shadow-xs hover:shadow-lg hover:-translate-y-1 active:scale-95 transition-all duration-200 cursor-pointer group`}
+                title={`Click to open ${card.title}`}
               >
-                <span className="text-xs font-bold text-gray-700 leading-tight uppercase tracking-wider">
+                <span className="text-xs font-bold text-gray-700 leading-tight uppercase tracking-wider group-hover:text-indigo-600 transition-colors">
                   {card.title}
                 </span>
-                <div className={`text-3xl font-black font-outfit my-2 ${card.textColor}`}>
+                <div className={`text-3xl font-black font-outfit my-2 ${card.textColor} group-hover:scale-110 transition-transform`}>
                   {card.count}
                 </div>
                 <span className={`text-[11px] font-bold ${card.subTextColor}`}>
@@ -998,16 +1045,22 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
             </div>
           </div>
 
-          {/* TWO COLUMN LOWER DASHBOARD SECTION */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Left Card: Recent Projects */}
+          {/* LOWER DASHBOARD: RECENT PROJECTS FULL WIDTH */}
+          <div className="w-full">
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <FolderKanban className="w-5 h-5 text-indigo-600" />
                   <h3 className="text-base font-extrabold text-[#1e1e2d] font-outfit">Recent Projects</h3>
                 </div>
+                {onNavigateItem && (
+                  <button
+                    onClick={() => onNavigateItem('Projects')}
+                    className="text-xs font-bold text-[#5b52e0] hover:underline cursor-pointer"
+                  >
+                    View All Projects &rarr;
+                  </button>
+                )}
               </div>
 
               {/* Table */}
@@ -1048,27 +1101,6 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
                 )}
               </div>
             </div>
-
-            {/* Right Card: Recent Activities */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-xs flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-extrabold text-[#1e1e2d] font-outfit">
-                  Recent Activities
-                </h3>
-              </div>
-
-              {/* Table */}
-              <div className="w-full border border-gray-200 rounded-xl overflow-hidden mt-2">
-                <div className="grid grid-cols-2 bg-gray-50 p-3 text-xs font-extrabold text-gray-500 border-b border-gray-200">
-                  <span>ACTIVITY</span>
-                  <span className="text-right">DATE LOGGED</span>
-                </div>
-                <div className="p-8 text-center text-xs text-gray-700 font-bold bg-white">
-                  No Recent Activities
-                </div>
-              </div>
-            </div>
-
           </div>
 
         </main>

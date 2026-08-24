@@ -223,15 +223,22 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
     }, 600);
   };
 
-  const navigateTo = (screenName, replace = false) => {
+  const navigateTo = (screenName, replaceOrSub = false) => {
     if (!screenName) return;
     setActiveItemState(screenName);
     localStorage.setItem('taxpro_active_nav', screenName);
     const slug = screenNameToSlug(screenName);
     const targetHash = slug ? `#/${slug}` : '#/';
 
+    const isReplace = typeof replaceOrSub === 'boolean' ? replaceOrSub : false;
+    if (typeof replaceOrSub === 'string') {
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('taxpro_task_filter_changed', { detail: { filter: replaceOrSub } }));
+      }, 50);
+    }
+
     if (window.location.hash !== targetHash) {
-      if (replace) {
+      if (isReplace) {
         window.history.replaceState(null, '', targetHash);
       } else {
         window.history.pushState(null, '', targetHash);
@@ -274,12 +281,20 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
       }
     };
 
+    const handleGlobalNavigate = (e) => {
+      if (e.detail?.tab) {
+        navigateTo(e.detail.tab, e.detail.sub || null);
+      }
+    };
+
     window.addEventListener('popstate', handlePopState);
     window.addEventListener('ai_navigate', handleAINavigate);
+    window.addEventListener('taxpro_navigate_tab', handleGlobalNavigate);
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('ai_navigate', handleAINavigate);
+      window.removeEventListener('taxpro_navigate_tab', handleGlobalNavigate);
     };
   }, []);
 
@@ -1336,7 +1351,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
             </div>
           ) : (
             <>
-              <div className={activeItem === 'Dashboard' ? 'block animate-page-fade' : 'hidden'}><DashboardView onShowToast={onShowToast} onTriggerAI={onTriggerAI} /></div>
+              <div className={activeItem === 'Dashboard' ? 'block animate-page-fade' : 'hidden'}><DashboardView onShowToast={onShowToast} onTriggerAI={onTriggerAI} onNavigateItem={(item, sub) => navigateTo(item, sub)} /></div>
               <div className={activeItem === 'Calendar' ? 'block animate-page-fade' : 'hidden'}><CalendarPageView onShowToast={onShowToast} /></div>
               <div className={activeItem === 'AI Studio' ? 'block h-full min-h-full flex flex-col bg-[#131314] animate-page-fade' : 'hidden'}><AIStudioPresenter onShowToast={onShowToast} /></div>
               <div className={activeItem === 'My Work' ? 'block animate-page-fade' : 'hidden'}>
