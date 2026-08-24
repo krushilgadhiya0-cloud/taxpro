@@ -340,16 +340,27 @@ export default function PrivateChatView({ onShowToast, preSelectedUser }) {
     }
   }, [activeContact, fetchMessages]);
 
-  // 3. Multi-Device Real-Time Polling Engine (Every 2.5s)
+  // 3. Multi-Device Real-Time Polling Engine & Instant Event Sync
   useEffect(() => {
     const interval = setInterval(() => {
       fetchContacts(true);
       if (activeContactRef.current) {
         fetchMessages(activeContactRef.current, true);
       }
-    }, 2500);
+    }, 5000);
 
-    return () => clearInterval(interval);
+    const handleInstantChat = () => {
+      fetchContacts(true);
+      if (activeContactRef.current) {
+        fetchMessages(activeContactRef.current, true);
+      }
+    };
+    window.addEventListener('taxpro_private_chat_sent', handleInstantChat);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('taxpro_private_chat_sent', handleInstantChat);
+    };
   }, [fetchContacts, fetchMessages]);
 
   // Auto scroll to bottom

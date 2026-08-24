@@ -144,7 +144,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI }) {
     };
     window.addEventListener('taxpro_db_updated', handleLocalSync);
 
-    const intervalId = window.setInterval(loadData, 3000);
+    const intervalId = window.setInterval(loadData, 30000);
     
     return () => {
       if (realtimeChannel && supabase && typeof supabase.removeChannel === 'function') {

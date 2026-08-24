@@ -598,7 +598,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
   // Initial fetch and auto-refresh intervals
   useEffect(() => {
     fetchAllNotifications();
-    const interval = setInterval(fetchAllNotifications, 3500);
+    const interval = setInterval(fetchAllNotifications, 25000);
 
     const handleNotifRefresh = () => fetchAllNotifications();
     window.addEventListener('taxpro_private_chat_sent', handleNotifRefresh);
