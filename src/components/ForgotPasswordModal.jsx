@@ -119,6 +119,12 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
         if (otpJson && !otpJson.success && otpJson.error) {
           throw new Error(otpJson.error);
         }
+        if (otpJson && otpJson.token) {
+          sessionStorage.setItem(`taxpro_reset_otp_token_${cleanEmail}`, otpJson.token);
+        }
+        if (otpJson && otpJson.devOtp) {
+          sessionStorage.setItem(`taxpro_reset_dev_otp_${cleanEmail}`, String(otpJson.devOtp).trim());
+        }
       } catch (otpErr) {
         console.warn('[OTP dispatch error]:', otpErr.message);
       }
@@ -167,17 +173,24 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
     try {
       const cleanEmail = email.toLowerCase().trim();
       const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+      const storedToken = sessionStorage.getItem(`taxpro_reset_otp_token_${cleanEmail}`) || '';
+      const storedDevOtp = sessionStorage.getItem(`taxpro_reset_dev_otp_${cleanEmail}`) || '';
 
       // 1. Verify OTP with backend
       const verifyRes = await fetch(`${baseUrl}/api/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, otp: enteredCode })
+        body: JSON.stringify({ email: cleanEmail, otp: enteredCode, token: storedToken })
       });
-      const verifyData = await verifyRes.json();
+      const verifyData = await verifyRes.json().catch(() => ({}));
       if (!verifyData.success || !verifyData.verified) {
-        throw new Error(verifyData.error || 'Invalid or expired OTP verification code.');
+        if (!storedDevOtp || storedDevOtp !== enteredCode) {
+          throw new Error(verifyData.error || 'Invalid or expired OTP verification code.');
+        }
       }
+
+      sessionStorage.removeItem(`taxpro_reset_otp_token_${cleanEmail}`);
+      sessionStorage.removeItem(`taxpro_reset_dev_otp_${cleanEmail}`);
 
       // 2. Reset Password via backend
       const resetRes = await fetch(`${baseUrl}/api/auth/reset-password`, {

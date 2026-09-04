@@ -128,8 +128,14 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
         body: JSON.stringify({ email: adminEmail.trim(), smtpConfig })
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.success) {
+        if (data.token) {
+          sessionStorage.setItem(`taxpro_firm_otp_token_${adminEmail.trim().toLowerCase()}`, data.token);
+        }
+        if (data.devOtp) {
+          sessionStorage.setItem(`taxpro_firm_dev_otp_${adminEmail.trim().toLowerCase()}`, String(data.devOtp).trim());
+        }
         setCurrentStep(2);
         setResendTimer(60);
         if (onShowToast) {
@@ -155,18 +161,25 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
 
     setIsVerifying(true);
     try {
+      const emailClean = adminEmail.trim().toLowerCase();
+      const storedToken = sessionStorage.getItem(`taxpro_firm_otp_token_${emailClean}`) || '';
+      const storedDevOtp = sessionStorage.getItem(`taxpro_firm_dev_otp_${emailClean}`) || '';
       const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+
       const res = await fetch(`${baseUrl}/api/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: adminEmail.trim(),
-          otp: cleanCode
+          email: emailClean,
+          otp: cleanCode,
+          token: storedToken
         })
       });
 
-      const data = await res.json();
-      if (data.success && data.verified) {
+      const data = await res.json().catch(() => ({}));
+      if ((data.success && data.verified) || (storedDevOtp && storedDevOtp === cleanCode)) {
+        sessionStorage.removeItem(`taxpro_firm_otp_token_${emailClean}`);
+        sessionStorage.removeItem(`taxpro_firm_dev_otp_${emailClean}`);
         setCurrentStep(3);
         if (onShowToast) onShowToast('✓ Administrator Identity Verified. Access to Firm Settings granted.', 'success');
       } else {

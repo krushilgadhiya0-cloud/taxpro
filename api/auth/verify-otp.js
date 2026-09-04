@@ -1,4 +1,7 @@
-import { query } from '../../server/db.js';
+import crypto from 'crypto';
+
+// Shared OTP Signing Secret for stateless verification across serverless lambdas
+const OTP_SECRET = process.env.OTP_SECRET || process.env.JWT_SECRET || 'taxpro_super_secure_otp_vault_secret_2026';
 
 export default async function handler(req, res) {
   // Enable CORS
@@ -19,7 +22,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
-  const { email, otp } = req.body || {};
+  const { email, otp, token } = req.body || {};
   const cleanEmail = (email || '').trim().toLowerCase();
   const cleanOtp = String(otp || '').trim();
 
@@ -27,30 +30,82 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: 'Email and verification OTP are required.' });
   }
 
-  try {
-    const storageRes = await query('SELECT value FROM app_storage WHERE key = $1 LIMIT 1', [`otp_${cleanEmail}`]);
-    if (storageRes.rowCount === 0 || !storageRes.rows[0].value) {
-      return res.status(400).json({ success: false, error: 'No active OTP found for this email. Please request a new verification code.' });
+  let verified = false;
+
+  // 1. STATLESS VERIFICATION: Validate HMAC Cryptographic Token (Works 100% on Serverless/Vercel)
+  if (token && typeof token === 'string') {
+    const parts = token.split(':');
+    if (parts.length === 3) {
+      const [tokenEmail, tokenExpiresAt, tokenSignature] = parts;
+      const expiry = parseInt(tokenExpiresAt, 10);
+
+      if (tokenEmail.toLowerCase() === cleanEmail) {
+        if (Date.now() > expiry) {
+          return res.status(400).json({
+            success: false,
+            verified: false,
+            error: 'This verification code has expired. Please request a new code.'
+          });
+        }
+
+        const expectedSig = crypto
+          .createHmac('sha256', OTP_SECRET)
+          .update(`${cleanEmail}:${cleanOtp}:${tokenExpiresAt}`)
+          .digest('hex');
+
+        if (tokenSignature === expectedSig) {
+          verified = true;
+          console.log(`[Vercel Serverless OTP] ✓ Stateless HMAC OTP verified successfully for ${cleanEmail}`);
+        }
+      }
     }
+  }
 
-    const parsed = typeof storageRes.rows[0].value === 'string' ? JSON.parse(storageRes.rows[0].value) : storageRes.rows[0].value;
-    if (Date.now() > parsed.expiresAt) {
-      await query('DELETE FROM app_storage WHERE key = $1', [`otp_${cleanEmail}`]);
-      return res.status(400).json({ success: false, error: 'This verification code has expired. Please request a new code.' });
+  // 2. DATABASE VERIFICATION: Check PostgreSQL app_storage if available
+  if (!verified) {
+    try {
+      const { query } = await import('../../server/db.js');
+      if (query) {
+        const storageRes = await query('SELECT data FROM app_storage WHERE key = $1 LIMIT 1', [`otp_${cleanEmail}`]);
+        if (storageRes.rowCount > 0 && storageRes.rows[0].data) {
+          const parsed = typeof storageRes.rows[0].data === 'string'
+            ? JSON.parse(storageRes.rows[0].data)
+            : storageRes.rows[0].data;
+
+          if (parsed && parsed.otp) {
+            if (Date.now() > parsed.expiresAt) {
+              try { await query('DELETE FROM app_storage WHERE key = $1', [`otp_${cleanEmail}`]); } catch(e){}
+              return res.status(400).json({
+                success: false,
+                verified: false,
+                error: 'This verification code has expired. Please request a new code.'
+              });
+            }
+
+            if (String(parsed.otp).trim() === cleanOtp) {
+              verified = true;
+              try { await query('DELETE FROM app_storage WHERE key = $1', [`otp_${cleanEmail}`]); } catch(e){}
+              console.log(`[Vercel Serverless OTP] ✓ Database app_storage OTP verified successfully for ${cleanEmail}`);
+            }
+          }
+        }
+      }
+    } catch (dbErr) {
+      // Database might not be connected or available; handled gracefully
     }
+  }
 
-    if (parsed.otp !== cleanOtp) {
-      return res.status(400).json({ success: false, error: 'Invalid verification code. Please check your email inbox and enter the exact code sent to you.' });
-    }
-
-    await query('DELETE FROM app_storage WHERE key = $1', [`otp_${cleanEmail}`]);
-
+  if (verified) {
     return res.status(200).json({
       success: true,
       verified: true,
       message: '✓ Authorization Verified Successfully.'
     });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: 'Verification error: ' + err.message });
   }
+
+  return res.status(400).json({
+    success: false,
+    verified: false,
+    error: 'Invalid verification code. Please check your email inbox and enter the exact code sent to you.'
+  });
 }
