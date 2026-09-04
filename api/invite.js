@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   const rawPass = (generatedPassword || password || '').trim() || `TaxPro@${Math.floor(1000 + Math.random() * 9000)}`;
   const userRole = role || 'Employee';
   const userDept = department || 'General Practice';
-  const loginUrl = origin || req.headers.origin || 'https://taxpro-suite.vercel.app';
+  const loginUrl = origin || req.headers.origin || 'https://taxpro-nine.vercel.app';
 
   if (!recipientEmail || !recipientEmail.includes('@')) {
     return res.status(400).json({ success: false, error: 'Valid recipient email is required.' });

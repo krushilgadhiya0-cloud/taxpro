@@ -16,7 +16,7 @@ async function testInviteEmail() {
   const userRole = 'Manager';
   const userDept = 'Tax & Compliance';
   const rawPass = 'TaxPro@7821';
-  const loginUrl = 'https://taxpro-suite.vercel.app';
+  const loginUrl = 'https://taxpro-nine.vercel.app';
   const portalName = 'Manager Portal';
 
   const htmlContent = `

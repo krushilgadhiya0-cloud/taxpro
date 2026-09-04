@@ -74,7 +74,7 @@ export const buildCleanInviteTemplate = ({ name, email, id, employeeId, role, de
   const userDept = department || 'General Practice';
   const rawPass = password || 'TaxPro@1234';
   const memberId = id || employeeId || `EMP-${Date.now().toString().slice(-6)}`;
-  const portalUrl = origin && !origin.includes('localhost') ? origin : 'https://taxpro-suite.vercel.app';
+  const portalUrl = origin && !origin.includes('localhost') ? origin : 'https://taxpro-nine.vercel.app';
   const portalName = userRole === 'Manager' ? 'Manager Portal' : (userRole === 'Administrator' ? 'Admin Portal' : 'Employee Portal');
 
   const text = `Hello ${recipientName},
@@ -575,7 +575,7 @@ export const registerInvitedUser = async (param1, param2, param3, param4) => {
       role: cleanRole,
       department: cleanDept,
       password: cleanPass,
-      origin: origin || 'https://taxpro-suite.vercel.app'
+      origin: origin || 'https://taxpro-nine.vercel.app'
     });
 
     let emailResult = null;

@@ -64,7 +64,7 @@ router.post('/invite', async (req, res) => {
       name: memberName,
       id: id || employeeId,
       role: role || 'Employee',
-      origin: origin || 'https://taxpro-suite.vercel.app',
+      origin: origin || 'https://taxpro-nine.vercel.app',
       smtpConfig
     });
 

@@ -533,7 +533,7 @@ def main():
             role = payload.get("role", "Employee")
             password = payload.get("password", "")
             emp_id = payload.get("id") or payload.get("member_id") or payload.get("employeeId") or "EMP-100000"
-            origin = payload.get("origin", "https://taxpro-suite.vercel.app")
+            origin = payload.get("origin", "https://taxpro-nine.vercel.app")
             html = build_invite_html(name, target_email, role, password, origin, emp_id)
             subject = f"TaxPro Workspace Invitation for {name} ({emp_id})"
             plain_text = f"""Hello {name},
