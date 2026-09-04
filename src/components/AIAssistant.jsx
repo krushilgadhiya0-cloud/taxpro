@@ -35,7 +35,8 @@ import {
   ExternalLink,
   Globe,
   Search,
-  ShieldCheck
+  ShieldCheck,
+  ArrowDown
 } from 'lucide-react';
 import soundFX from '../lib/audioFX';
 import VoiceVisualizerCanvas from './VoiceVisualizerCanvas';
@@ -83,6 +84,8 @@ export default function AIAssistant({
   const recognitionRef = useRef(null);
   const shouldListenRef = useRef(false);
   const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
+  const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
 
   const [messages, setMessages] = useState([
     {
@@ -127,13 +130,29 @@ export default function AIAssistant({
     try { e.target.releasePointerCapture(e.pointerId); } catch (err) {}
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior
+      });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior });
+    }
+  };
+
+  const handleScroll = () => {
+    if (!chatContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+    const scrolledUp = scrollHeight - scrollTop - clientHeight > 80;
+    setIsUserScrolledUp(scrolledUp);
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, interimTranscript, aiState]);
+    if (!isUserScrolledUp) {
+      scrollToBottom('smooth');
+    }
+  }, [messages, interimTranscript, aiState, isUserScrolledUp]);
 
   // Check Web Speech API Support
   useEffect(() => {
@@ -324,6 +343,8 @@ export default function AIAssistant({
 
     try {
       const userEmail = localStorage.getItem('taxpro_user_email') || 'admin@taxpro.com';
+      const firmName = localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates';
+      const firmTag = localStorage.getItem('taxpro_firm_tag') || 'TaxPro';
       const resolvedScreen = activeScreen || screenContext.activeItem || localStorage.getItem('taxpro_active_nav') || 'Dashboard';
 
       const response = await fetch('/api/ai/chat', {
@@ -332,7 +353,9 @@ export default function AIAssistant({
         body: JSON.stringify({
           message: text,
           conversationHistory: messages.slice(-6),
-          screenContext: { ...screenContext, activeItem: resolvedScreen },
+          screenContext: { ...screenContext, activeItem: resolvedScreen, firmName, firmTag },
+          firmName,
+          firmTag,
           userEmail
         })
       });
@@ -956,7 +979,29 @@ export default function AIAssistant({
         </div>
 
         {/* CONVERSATION MESSAGES FEED */}
-        <div className="flex-1 p-4 overflow-y-auto space-y-3.5 scrollbar-thin scrollbar-thumb-white/10">
+        <div 
+          ref={chatContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 p-4 overflow-y-auto space-y-3.5 scrollbar-thin scrollbar-thumb-white/10 overscroll-contain relative"
+        >
+          {/* Floating Jump to Latest Button (when user scrolls up) */}
+          {isUserScrolledUp && (
+            <div className="sticky top-1 z-20 flex justify-center w-full pointer-events-none mb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUserScrolledUp(false);
+                  scrollToBottom('smooth');
+                }}
+                className="pointer-events-auto px-3 py-1 rounded-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-[10px] font-bold shadow-xl backdrop-blur-md flex items-center gap-1.5 transition-all animate-bounce cursor-pointer border border-cyan-400/40"
+                title="Scroll down to newest question and response"
+              >
+                <ArrowDown className="w-3 h-3 text-cyan-200" />
+                <span>Jump to latest</span>
+              </button>
+            </div>
+          )}
+
           {messages.map((msg) => (
             <div
               key={msg.id}

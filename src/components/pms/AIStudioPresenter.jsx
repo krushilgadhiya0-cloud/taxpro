@@ -22,7 +22,8 @@ import {
   Pin,
   PinOff,
   Printer,
-  ShieldCheck
+  ShieldCheck,
+  ArrowDown
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
@@ -51,126 +52,239 @@ function generateSmartChatTitle(prompt) {
   return cap || 'New Conversation';
 }
 
-// Clean & robust Markdown parser component that renders formatted links & bold without raw ** asterisks
+function CodeBlock({ code, lang }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    try {
+      navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch(e) {}
+  };
+  return (
+    <div className="my-3 rounded-xl overflow-hidden border border-white/10 bg-[#0d1117] shadow-lg">
+      <div className="flex items-center justify-between px-3.5 py-1.5 bg-white/5 border-b border-white/10 text-[11px] font-mono text-gray-400">
+        <span className="uppercase tracking-wider font-bold text-[10px] text-cyan-400">{lang || 'CODE'}</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer text-[11px]"
+        >
+          {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+          <span>{copied ? 'Copied' : 'Copy code'}</span>
+        </button>
+      </div>
+      <pre className="p-3.5 text-xs text-emerald-300 font-mono overflow-x-auto selection:bg-cyan-500/30 leading-relaxed">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function MarkdownTable({ lines }) {
+  if (!lines || lines.length < 2) return null;
+  const cleanCells = (line) => line.split('|').map(c => c.trim()).filter((c, idx, arr) => !(idx === 0 && c === '') && !(idx === arr.length - 1 && c === ''));
+  const header = cleanCells(lines[0]);
+  const bodyRows = lines.slice(1).filter(l => !l.includes('---')).map(cleanCells);
+
+  return (
+    <div className="my-3 overflow-x-auto rounded-xl border border-white/10 shadow-md">
+      <table className="min-w-full text-xs text-left">
+        <thead className="bg-white/10 text-white font-semibold uppercase tracking-wider">
+          <tr>
+            {header.map((h, idx) => (
+              <th key={idx} className="px-3.5 py-2 border-b border-white/10">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5 bg-black/20">
+          {bodyRows.map((r, rIdx) => (
+            <tr key={rIdx} className="hover:bg-white/5 transition-colors">
+              {r.map((cell, cIdx) => (
+                <td key={cIdx} className="px-3.5 py-2 text-gray-300">{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Clean & robust Markdown parser component that renders formatted links, tables, code blocks & bold
 function MarkdownContent({ content }) {
   if (!content) return null;
 
-  // Filter consecutive multiple empty lines to at most 1
+  // Split into structural blocks (code blocks vs text/tables)
+  const blocks = [];
   const rawLines = content.split('\n');
-  const lines = [];
-  let prevEmpty = false;
+  let currentCode = null;
+  let currentTable = null;
 
-  for (const line of rawLines) {
-    const isEmp = !line.trim();
-    if (isEmp && prevEmpty) continue; // collapse multi empty lines
-    lines.push(line);
-    prevEmpty = isEmp;
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const trimmed = line.trim();
+
+    // Check for code fence ```
+    if (trimmed.startsWith('```')) {
+      if (currentCode) {
+        blocks.push({ type: 'code', code: currentCode.lines.join('\n'), lang: currentCode.lang });
+        currentCode = null;
+      } else {
+        if (currentTable) {
+          blocks.push({ type: 'table', lines: currentTable });
+          currentTable = null;
+        }
+        const lang = trimmed.replace(/^```/, '').trim();
+        currentCode = { lang, lines: [] };
+      }
+      continue;
+    }
+
+    if (currentCode) {
+      currentCode.lines.push(line);
+      continue;
+    }
+
+    // Check for table lines
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2) {
+      if (!currentTable) currentTable = [];
+      currentTable.push(trimmed);
+      continue;
+    } else if (currentTable) {
+      blocks.push({ type: 'table', lines: currentTable });
+      currentTable = null;
+    }
+
+    blocks.push({ type: 'line', text: line });
   }
 
+  if (currentCode) {
+    blocks.push({ type: 'code', code: currentCode.lines.join('\n'), lang: currentCode.lang });
+  }
+  if (currentTable) {
+    blocks.push({ type: 'table', lines: currentTable });
+  }
+
+  // Format inline bold, links, codes
+  const formatInline = (text) => {
+    const tokenRegex = /(\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\)|`[^`]+`)/g;
+    const tokens = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = tokenRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        tokens.push({ type: 'text', value: text.substring(lastIndex, match.index) });
+      }
+
+      const raw = match[0];
+      if (raw.startsWith('[') && raw.includes('](')) {
+        const linkMatch = raw.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        if (linkMatch) {
+          tokens.push({ 
+            type: 'link', 
+            label: linkMatch[1].replace(/\*\*/g, ''), 
+            url: linkMatch[2] 
+          });
+        }
+      } else if (raw.startsWith('**') && raw.endsWith('**')) {
+        tokens.push({ 
+          type: 'bold', 
+          value: raw.slice(2, -2) 
+        });
+      } else if (raw.startsWith('`') && raw.endsWith('`')) {
+        tokens.push({
+          type: 'code',
+          value: raw.slice(1, -1)
+        });
+      }
+
+      lastIndex = match.index + raw.length;
+    }
+
+    if (lastIndex < text.length) {
+      tokens.push({ type: 'text', value: text.substring(lastIndex) });
+    }
+
+    return tokens.map((token, tIdx) => {
+      if (token.type === 'link') {
+        return (
+          <a
+            key={`link-${tIdx}`}
+            href={token.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[#58a6ff] hover:text-[#79b8ff] hover:underline font-semibold inline-flex items-center gap-0.5 cursor-pointer bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20"
+          >
+            <span>{token.label}</span>
+          </a>
+        );
+      }
+      if (token.type === 'bold') {
+        return (
+          <strong key={`bold-${tIdx}`} className="font-bold text-white">
+            {token.value}
+          </strong>
+        );
+      }
+      if (token.type === 'code') {
+        return (
+          <span key={`code-${tIdx}`} className="font-mono text-xs px-1.5 py-0.5 rounded bg-white/10 text-cyan-300">
+            {token.value}
+          </span>
+        );
+      }
+      const cleanedText = token.value.replace(/\*\*/g, '');
+      return <span key={`text-${tIdx}`}>{cleanedText}</span>;
+    });
+  };
+
   return (
-    <div className="space-y-1.5 leading-relaxed text-[13.5px] sm:text-sm text-gray-200">
-      {lines.map((line, lIdx) => {
-        const trimmed = line.trim();
+    <div className="space-y-2 leading-relaxed text-[13.5px] sm:text-sm text-gray-200">
+      {blocks.map((block, bIdx) => {
+        if (block.type === 'code') {
+          return <CodeBlock key={`code-${bIdx}`} code={block.code} lang={block.lang} />;
+        }
+
+        if (block.type === 'table') {
+          return <MarkdownTable key={`table-${bIdx}`} lines={block.lines} />;
+        }
+
+        const trimmed = (block.text || '').trim();
         if (!trimmed) {
-          return <div key={lIdx} className="h-1" />;
+          return <div key={`space-${bIdx}`} className="h-1" />;
         }
 
-        // Horizontal line separator
+        // Horizontal line
         if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
-          return <div key={lIdx} className="h-px bg-white/10 my-2" />;
+          return <div key={`hr-${bIdx}`} className="h-px bg-white/10 my-3" />;
         }
 
-        // Render Headings ###
+        // Blockquotes
+        if (trimmed.startsWith('> ')) {
+          return (
+            <div key={`quote-${bIdx}`} className="border-l-2 border-cyan-400 pl-3 py-1 my-1.5 bg-cyan-500/5 text-gray-300 italic rounded-r-lg">
+              {formatInline(trimmed.replace(/^>\s*/, ''))}
+            </div>
+          );
+        }
+
+        // Headings
         if (trimmed.startsWith('### ') || trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
           const cleanHeading = trimmed.replace(/^#+\s*/, '').replace(/\*\*/g, '');
           return (
-            <h4 key={lIdx} className="text-sm font-bold text-white mt-2.5 mb-0.5 tracking-tight flex items-center gap-1.5">
+            <h4 key={`h-${bIdx}`} className="text-sm sm:text-base font-bold text-white mt-3 mb-1 tracking-tight flex items-center gap-1.5">
               <span>{cleanHeading}</span>
             </h4>
           );
         }
 
-        // Helper: Convert string with markdown [Text](url) and **bold** into JSX elements without leaving raw asterisks
-        const formatInline = (text) => {
-          const tokenRegex = /(\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\)|`[^`]+`)/g;
-          const tokens = [];
-          let lastIndex = 0;
-          let match;
-
-          while ((match = tokenRegex.exec(text)) !== null) {
-            if (match.index > lastIndex) {
-              tokens.push({ type: 'text', value: text.substring(lastIndex, match.index) });
-            }
-
-            const raw = match[0];
-            if (raw.startsWith('[') && raw.includes('](')) {
-              const linkMatch = raw.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-              if (linkMatch) {
-                tokens.push({ 
-                  type: 'link', 
-                  label: linkMatch[1].replace(/\*\*/g, ''), 
-                  url: linkMatch[2] 
-                });
-              }
-            } else if (raw.startsWith('**') && raw.endsWith('**')) {
-              tokens.push({ 
-                type: 'bold', 
-                value: raw.slice(2, -2) 
-              });
-            } else if (raw.startsWith('`') && raw.endsWith('`')) {
-              tokens.push({
-                type: 'code',
-                value: raw.slice(1, -1)
-              });
-            }
-
-            lastIndex = match.index + raw.length;
-          }
-
-          if (lastIndex < text.length) {
-            tokens.push({ type: 'text', value: text.substring(lastIndex) });
-          }
-
-          return tokens.map((token, tIdx) => {
-            if (token.type === 'link') {
-              return (
-                <a
-                  key={`link-${tIdx}`}
-                  href={token.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[#58a6ff] hover:text-[#79b8ff] hover:underline font-semibold inline-flex items-center gap-0.5 cursor-pointer"
-                >
-                  <span>{token.label}</span>
-                </a>
-              );
-            }
-            if (token.type === 'bold') {
-              return (
-                <strong key={`bold-${tIdx}`} className="font-bold text-white">
-                  {token.value}
-                </strong>
-              );
-            }
-            if (token.type === 'code') {
-              return (
-                <span key={`code-${tIdx}`} className="font-mono text-xs px-1.5 py-0.5 rounded bg-white/10 text-cyan-300">
-                  {token.value}
-                </span>
-              );
-            }
-            // Remove any leftover stray double asterisks
-            const cleanedText = token.value.replace(/\*\*/g, '');
-            return <span key={`text-${tIdx}`}>{cleanedText}</span>;
-          });
-        };
-
-        // Numbered list item "1. ..."
+        // Numbered list
         const numberedMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
         if (numberedMatch) {
           return (
-            <div key={lIdx} className="flex items-start gap-2 pl-1 py-0.5">
-              <span className="font-semibold text-gray-400 text-xs shrink-0 select-none mt-0.5">
+            <div key={`num-${bIdx}`} className="flex items-start gap-2 pl-1 py-0.5">
+              <span className="font-semibold text-cyan-400 text-xs shrink-0 select-none mt-0.5">
                 {numberedMatch[1]}.
               </span>
               <div className="flex-1">
@@ -180,12 +294,12 @@ function MarkdownContent({ content }) {
           );
         }
 
-        // Bullet point "• ..." or "- ..."
+        // Bullet point
         if (trimmed.startsWith('• ') || trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
           const bulletText = trimmed.replace(/^[•\-*]\s+/, '');
           return (
-            <div key={lIdx} className="flex items-start gap-2 pl-2 py-0.5">
-              <span className="text-gray-400 text-xs shrink-0 select-none mt-0.5">•</span>
+            <div key={`bullet-${bIdx}`} className="flex items-start gap-2 pl-2 py-0.5">
+              <span className="text-cyan-400 text-xs shrink-0 select-none mt-0.5">•</span>
               <div className="flex-1">
                 {formatInline(bulletText)}
               </div>
@@ -194,8 +308,8 @@ function MarkdownContent({ content }) {
         }
 
         return (
-          <p key={lIdx} className="m-0 leading-relaxed">
-            {formatInline(line)}
+          <p key={`p-${bIdx}`} className="m-0 leading-relaxed">
+            {formatInline(block.text)}
           </p>
         );
       })}
@@ -238,10 +352,37 @@ export default function AIStudioPresenter({ onShowToast }) {
     { id: 't5', title: 'Financials & Cash Flow', timestamp: 'Previous 7 Days', isPinned: false, messages: [] }
   ]);
   const [messages, setMessages] = useState([]);
+  const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
 
   const recognitionRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
+
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior
+      });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior });
+    }
+  };
+
+  const handleScroll = () => {
+    if (!chatContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+    const scrolledUp = scrollHeight - scrollTop - clientHeight > 90;
+    setIsUserScrolledUp(scrolledUp);
+  };
+
+  // Auto-scroll when new question or assistant response arrives IF user is not reading earlier messages
+  useEffect(() => {
+    if (!isUserScrolledUp) {
+      scrollToBottom('smooth');
+    }
+  }, [messages, isGenerating, isUserScrolledUp]);
 
   // Load Real Data from PostgreSQL on Mount
   useEffect(() => {
@@ -463,6 +604,8 @@ export default function AIStudioPresenter({ onShowToast }) {
     setMessages(updatedMessages);
     setPromptInput('');
     setIsGenerating(true);
+    setIsUserScrolledUp(false);
+    setTimeout(() => scrollToBottom('smooth'), 50);
 
     let currentThreadId = activeChatId;
     let nextThreads = [...chatThreads];
@@ -488,13 +631,21 @@ export default function AIStudioPresenter({ onShowToast }) {
     }
 
     try {
+      const firmName = localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates';
+      const firmTag = localStorage.getItem('taxpro_firm_tag') || 'TaxPro';
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: query,
           conversationHistory: messages.slice(-4),
-          screenContext: { activeItem: 'AI Studio' },
+          screenContext: { 
+            activeItem: 'AI Studio',
+            firmName,
+            firmTag
+          },
+          firmName,
+          firmTag,
           userEmail: localStorage.getItem('taxpro_user_email') || 'admin@taxpro.com'
         })
       });
@@ -771,8 +922,29 @@ export default function AIStudioPresenter({ onShowToast }) {
         </div>
 
         {/* Dynamic Center Area */}
-        <div className="relative z-10 flex-1 flex flex-col justify-start items-center px-4 sm:px-8 max-w-3xl w-full mx-auto overflow-y-auto chat-custom-scrollbar py-6">
-          
+        <div 
+          ref={chatContainerRef}
+          onScroll={handleScroll}
+          className="relative z-10 flex-1 flex flex-col justify-start items-center px-4 sm:px-8 max-w-3xl w-full mx-auto overflow-y-auto chat-custom-scrollbar overscroll-contain py-6"
+        >
+          {/* Floating Jump to Latest Button (when user scrolls up) */}
+          {isUserScrolledUp && (
+            <div className="sticky top-2 z-20 flex justify-center w-full pointer-events-none mb-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUserScrolledUp(false);
+                  scrollToBottom('smooth');
+                }}
+                className="pointer-events-auto px-3.5 py-1.5 rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-xs font-bold shadow-2xl backdrop-blur-md flex items-center gap-1.5 transition-all animate-bounce cursor-pointer border border-cyan-400/40"
+                title="Scroll down to newest message"
+              >
+                <ArrowDown className="w-3.5 h-3.5 text-cyan-200" />
+                <span>Jump to latest</span>
+              </button>
+            </div>
+          )}
+
           {/* A. IDLE STATE: "Hi Krushil, TaxPro ASI is ready" */}
           {messages.length === 0 ? (
             <div className="w-full flex flex-col items-center justify-center text-center my-auto animate-in fade-in zoom-in-95 duration-300">
@@ -833,6 +1005,27 @@ export default function AIStudioPresenter({ onShowToast }) {
                     <ArrowUp className="w-4 h-4" />
                   </button>
                 )}
+              </div>
+
+              {/* Quick Suggestion Chips */}
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-6 max-w-2xl">
+                {[
+                  { label: '🤖 Top 5 AI Links', prompt: 'give 5 link of ai' },
+                  { label: '🐍 Python Prime Code', prompt: 'write a python function to check if a number is prime' },
+                  { label: '🏛️ GST DRC-01 Reply', prompt: 'explain GST DRC-01 section 73 vs 74 and reply strategy' },
+                  { label: '🎲 Probability Solution', prompt: 'probability of getting 2 heads in 3 coin tosses with formula' },
+                  { label: '✉️ Resignation Letter', prompt: 'write a formal resignation letter template' },
+                  { label: '📊 Section 44AB Limits', prompt: 'what are section 44AB tax audit limits' }
+                ].map((item, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSubmit(null, item.prompt)}
+                    className="px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white text-xs font-medium border border-white/10 hover:border-cyan-400/40 transition-all cursor-pointer shadow-xs"
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
             </div>
           ) : (

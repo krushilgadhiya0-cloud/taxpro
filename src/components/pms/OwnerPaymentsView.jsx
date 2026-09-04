@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DollarSign, CheckCircle2, CloudLightning, ArrowRight, Wallet, History, CreditCard, ShieldCheck, Lock, Printer, Download, Plus, X, User, ArrowDownRight } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
+import { formatDate } from '../../lib/dateUtils';
 
 export default function OwnerPaymentsView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Overview'); // 'Overview', 'Drawings', 'History'
@@ -31,7 +32,7 @@ export default function OwnerPaymentsView({ onShowToast }) {
       if (payRes.data && payRes.data.length > 0) {
         setHistory(payRes.data.map((p, idx) => ({
           id: p.id || `INV-0${idx + 100}`,
-          date: new Date(p.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
+          date: formatDate(p.created_at || Date.now()),
           amount: `₹${parseFloat(p.amount || 0).toLocaleString('en-IN')}`,
           plan: p.category || 'Platform Subscription',
           status: p.status || 'Paid'
@@ -465,7 +466,7 @@ Billed To      : TaxPro Managing Partner / Owner
                 ) : (
                   ownerDrawings.map((d, i) => (
                     <tr key={d.id || i} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="p-3.5 font-mono text-gray-500">{d.date}</td>
+                      <td className="p-3.5 font-mono text-gray-500">{formatDate(d.date)}</td>
                       <td className="p-3.5 font-bold text-gray-900">{d.party || 'Managing Partner'}</td>
                       <td className="p-3.5 text-gray-600">{d.title}</td>
                       <td className="p-3.5 font-mono text-gray-700">{d.method || 'Bank Transfer'}</td>
@@ -510,7 +511,7 @@ Billed To      : TaxPro Managing Partner / Owner
                 {history.map((h) => (
                   <tr key={h.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="p-4 font-mono font-semibold text-gray-600">{h.id}</td>
-                    <td className="p-4 text-gray-800">{h.date}</td>
+                    <td className="p-4 text-gray-800">{formatDate(h.date)}</td>
                     <td className="p-4 text-gray-600">{h.plan}</td>
                     <td className="p-4 font-black text-gray-900">{h.amount}</td>
                     <td className="p-4">
@@ -538,32 +539,31 @@ Billed To      : TaxPro Managing Partner / Owner
       {isDrawingModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsDrawingModalOpen(false); }}
-          className="modal-overlay-backdrop"
-          style={{ zIndex: 999 }}
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-lg">
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
-                  <DollarSign className="w-4 h-4" />
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+                  <DollarSign className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black font-outfit text-white">Record Owner Drawing / Payout</h3>
-                  <p className="text-xs text-gray-300">Will automatically write to Receipts & Payments</p>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900">Record Owner Drawing / Payout</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Will automatically write to Receipts & Payments</p>
                 </div>
               </div>
-              <button onClick={() => setIsDrawingModalOpen(false)} className="text-gray-400 hover:text-white cursor-pointer">
+              <button onClick={() => setIsDrawingModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateOwnerDrawing} className="p-5 flex flex-col gap-3.5 text-xs font-semibold">
+            <form onSubmit={handleCreateOwnerDrawing} className="p-6 flex flex-col gap-4 text-xs font-semibold overflow-y-auto overscroll-contain chat-custom-scrollbar flex-1">
               <div>
-                <label className="text-gray-700 block mb-1">Drawing / Payment Title</label>
+                <label className="text-slate-700 block mb-1">Drawing / Payment Title</label>
                 <select
                   value={newDrawing.title}
                   onChange={e => setNewDrawing({...newDrawing, title: e.target.value})}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs cursor-pointer"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs"
                 >
                   <option value="Partner Profit Share / Drawing">Partner Profit Share / Drawing</option>
                   <option value="Managing Partner Monthly Salary">Managing Partner Monthly Salary</option>
@@ -574,48 +574,48 @@ Billed To      : TaxPro Managing Partner / Owner
               </div>
 
               <div>
-                <label className="text-gray-700 block mb-1">Partner / Payee Name <span className="text-red-500">*</span></label>
+                <label className="text-slate-700 block mb-1">Partner / Payee Name <span className="text-rose-500">*</span></label>
                 <input 
                   type="text"
                   required
                   value={newDrawing.partnerName}
                   onChange={e => setNewDrawing({...newDrawing, partnerName: e.target.value})}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-bold text-gray-900"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-bold text-slate-900 shadow-2xs"
                   placeholder="e.g. CA Rohit Verma (Managing Partner)"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3.5">
                 <div>
-                  <label className="text-gray-700 block mb-1">Amount (₹) <span className="text-red-500">*</span></label>
+                  <label className="text-slate-700 block mb-1">Amount (₹) <span className="text-rose-500">*</span></label>
                   <input 
                     type="number"
                     required
                     min="1"
                     value={newDrawing.amount}
                     onChange={e => setNewDrawing({...newDrawing, amount: e.target.value})}
-                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-bold font-mono text-gray-900"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-bold font-mono text-slate-900 shadow-2xs"
                     placeholder="e.g. 75000"
                   />
                 </div>
 
                 <div>
-                  <label className="text-gray-700 block mb-1">Payment Date</label>
+                  <label className="text-slate-700 block mb-1">Payment Date</label>
                   <input 
                     type="date"
                     value={newDrawing.date}
                     onChange={e => setNewDrawing({...newDrawing, date: e.target.value})}
-                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-bold"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-bold shadow-2xs"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-gray-700 block mb-1">Payment Method / Channel</label>
+                <label className="text-slate-700 block mb-1">Payment Method / Channel</label>
                 <select
                   value={newDrawing.method}
                   onChange={e => setNewDrawing({...newDrawing, method: e.target.value})}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs cursor-pointer"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs"
                 >
                   <option value="Bank Transfer">Bank Transfer (NEFT / RTGS)</option>
                   <option value="UPI">UPI Instant</option>
@@ -624,21 +624,21 @@ Billed To      : TaxPro Managing Partner / Owner
                 </select>
               </div>
 
-              <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 text-[11px] text-gray-600">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-[11px] text-slate-600 shadow-2xs">
                 ⚡ <b>Auto-Sync:</b> Saving this owner payment will directly record a formal <b>Payment / Outflow</b> entry in <b>Receipts & Payments</b> and reflect across the financial ledger.
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button
                   type="button"
                   onClick={() => setIsDrawingModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#5b52e0] hover:bg-[#4c44cf] text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 cursor-pointer transition-all active:scale-95"
                 >
                   Save & Push to Receipts
                 </button>

@@ -29,7 +29,8 @@ import {
   Palette,
   Check,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  ArrowDown
 } from 'lucide-react';
 import CallModal from './CallModal';
 
@@ -259,14 +260,17 @@ export default function PrivateChatView({ onShowToast, preSelectedUser }) {
 
   // Lightbox Image Preview Modal
   const [previewImage, setPreviewImage] = useState(null);
+  const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
 
   const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
   const activeContactRef = useRef(activeContact);
   const fileInputRef = useRef(null);
 
   // Keep ref synchronized for interval callback
   useEffect(() => {
     activeContactRef.current = activeContact;
+    setIsUserScrolledUp(false);
   }, [activeContact]);
 
   // Current logged in user info
@@ -371,13 +375,29 @@ export default function PrivateChatView({ onShowToast, preSelectedUser }) {
   }, [fetchContacts, fetchMessages]);
 
   // Auto scroll to bottom
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior
+      });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior });
+    }
+  };
+
+  const handleScroll = () => {
+    if (!chatContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+    const scrolledUp = scrollHeight - scrollTop - clientHeight > 90;
+    setIsUserScrolledUp(scrolledUp);
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, selectedAttachment]);
+    if (!isUserScrolledUp) {
+      scrollToBottom('smooth');
+    }
+  }, [messages, selectedAttachment, isUserScrolledUp]);
 
   // Handle File Selection
   const handleFileSelect = (e) => {
@@ -413,6 +433,8 @@ export default function PrivateChatView({ onShowToast, preSelectedUser }) {
     setInputMsg('');
     const currentAttachment = selectedAttachment;
     setSelectedAttachment(null);
+    setIsUserScrolledUp(false);
+    setTimeout(() => scrollToBottom('smooth'), 50);
 
     // Package payload with attachment metadata if present
     const payloadContent = currentAttachment
@@ -810,7 +832,29 @@ export default function PrivateChatView({ onShowToast, preSelectedUser }) {
           })()}
 
           {/* Message Thread - Side Alignment: Our Chat = Right, Other Chat = Left */}
-          <div className="flex-1 overflow-y-auto p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-gray-50/20 flex flex-col gap-4">
+          <div 
+            ref={chatContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto p-6 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-gray-50/20 flex flex-col gap-4 chat-custom-scrollbar overscroll-contain relative"
+          >
+            {/* Floating Jump to Latest Button (when user scrolls up) */}
+            {isUserScrolledUp && (
+              <div className="sticky top-2 z-20 flex justify-center w-full pointer-events-none mb-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUserScrolledUp(false);
+                    scrollToBottom('smooth');
+                  }}
+                  className="pointer-events-auto px-3.5 py-1.5 rounded-full bg-[#5b52e0] hover:bg-[#4c44cf] text-white text-xs font-bold shadow-xl backdrop-blur-md flex items-center gap-1.5 transition-all animate-bounce cursor-pointer border border-indigo-300/40"
+                  title="Scroll down to newest message"
+                >
+                  <ArrowDown className="w-3.5 h-3.5 text-indigo-200" />
+                  <span>Jump to latest</span>
+                </button>
+              </div>
+            )}
+
             {isLoadingMessages && messages.length === 0 ? (
               <div className="text-center w-full my-auto text-gray-400 text-xs font-semibold flex flex-col items-center gap-2">
                 <RefreshCw className="w-5 h-5 animate-spin text-indigo-500" />

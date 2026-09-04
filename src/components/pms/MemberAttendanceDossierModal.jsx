@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
+import { formatDate } from '../../lib/dateUtils';
 
 export default function MemberAttendanceDossierModal({ 
   member, 
@@ -757,7 +758,7 @@ export default function MemberAttendanceDossierModal({
 
               <div className="text-right">
                 <div className="text-xs font-mono font-black text-slate-900">
-                  {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  {formatDate(new Date())}
                 </div>
                 <div className="text-[10px] font-mono text-slate-600 mt-0.5">
                   Employee ID: {member.id}

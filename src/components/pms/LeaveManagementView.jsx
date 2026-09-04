@@ -34,6 +34,7 @@ import {
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
 import soundFX from '../../lib/audioFX';
+import { formatDate, formatDateTime } from '../../lib/dateUtils';
 
 // Default annual leave policy quotas set by Admin
 const DEFAULT_LEAVE_POLICY = {
@@ -873,7 +874,7 @@ export default function LeaveManagementView({ userRole, onShowToast }) {
                         {item.leaveType}
                       </span>
                       <span className="font-mono font-black text-gray-900 text-xs">
-                        {item.totalDays} Day{item.totalDays > 1 ? 's' : ''} ({item.startDate === item.endDate ? item.startDate : `${item.startDate} to ${item.endDate}`})
+                        {item.totalDays} Day{item.totalDays > 1 ? 's' : ''} ({item.startDate === item.endDate ? formatDate(item.startDate) : `${formatDate(item.startDate)} to ${formatDate(item.endDate)}`})
                       </span>
                     </div>
 
@@ -930,7 +931,7 @@ export default function LeaveManagementView({ userRole, onShowToast }) {
                 {/* Card Action Buttons */}
                 <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between gap-2 flex-wrap">
                   <span className="text-[10px] text-gray-400 font-mono">
-                    Applied: {new Date(item.appliedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    Applied: {formatDateTime(item.appliedAt)}
                   </span>
 
                   <div className="flex items-center gap-2 flex-wrap">

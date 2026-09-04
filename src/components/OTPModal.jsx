@@ -22,7 +22,6 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
   const [countdown, setCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [devOtpHint, setDevOtpHint] = useState('');
 
   const activeEmail = (email || 'krushilgadhiya0@gmail.com').trim().toLowerCase();
   const inputRefs = useRef([]);
@@ -61,19 +60,15 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
         if (text && !text.trim().startsWith('<')) {
           data = JSON.parse(text);
         }
-      } catch (e) {}
+      } catch (fetchErr) {}
 
-      if (data && data.success && data.devOtp) {
-        sessionStorage.setItem('taxpro_server_otp_' + activeEmail, data.devOtp);
-        setDevOtpHint(data.devOtp);
-      } else {
-        // Generate secure 4-digit code locally for backup testing
-        const localCode = String(Math.floor(1000 + Math.random() * 9000));
-        sessionStorage.setItem('taxpro_local_otp_' + activeEmail, localCode);
-        setDevOtpHint(localCode);
+      if (data && data.success) {
+        console.log(`[OTP Security] ✓ Sended real OTP to ${activeEmail}`);
+      } else if (data && data.error) {
+        setErrorMessage(data.error);
       }
     } catch (err) {
-      console.warn('smtplib dispatch warning:', err.message);
+      console.warn('OTP dispatch note:', err.message);
     } finally {
       setIsSendingOtp(false);
     }
@@ -162,38 +157,31 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
 
     setStage('curling');
 
-    // 1. Immediate Backend & Local Verification
+    // 1. Strict Server Verification against Real Sended OTP
     let isSuccess = false;
 
     try {
       const baseUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE_URL || '';
-      let data = null;
-      try {
-        const res = await fetch(`${baseUrl}/api/auth/verify-otp`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: activeEmail,
-            otp: code
-          })
-        });
-        const text = await res.text().catch(() => '');
-        if (text && !text.trim().startsWith('<')) {
-          data = JSON.parse(text);
-        }
-      } catch (netErr) {}
+      const res = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: activeEmail,
+          otp: code
+        })
+      });
 
-      const localOtp = sessionStorage.getItem('taxpro_local_otp_' + activeEmail);
-      const serverOtp = sessionStorage.getItem('taxpro_server_otp_' + activeEmail);
+      const data = await res.json().catch(() => null);
 
-      // Verify matching code or successful response
-      if ((data && data.success && data.verified) || (serverOtp && serverOtp === code) || (localOtp && localOtp === code) || (devOtpHint && devOtpHint === code) || code.length === 4) {
+      if (data && data.success && data.verified) {
         isSuccess = true;
       } else {
-        setErrorMessage(data?.error || 'Invalid 4-digit verification code. Please check and try again.');
+        setErrorMessage(data?.error || 'Invalid 4-digit verification code. Please check your email and try again.');
+        isSuccess = false;
       }
     } catch (e) {
-      isSuccess = true; // Fallback allow valid 4-digit code
+      setErrorMessage('Verification failed. Please ensure the server is online and try again.');
+      isSuccess = false;
     }
 
     if (isSuccess) {

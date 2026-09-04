@@ -1,5 +1,6 @@
 import { postgresClient as db } from './postgresClient';
 import AutonomousVoiceAgent from './autonomousVoiceAgent';
+import { formatDate } from './dateUtils';
 
 // Helper to log unhandled voice commands for SuperAdmin AI Training
 export const logUnhandledIntent = (transcript) => {
@@ -15,7 +16,7 @@ export const logUnhandledIntent = (transcript) => {
       id: Date.now(),
       transcript: transcript,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      date: new Date().toLocaleDateString(),
+      date: formatDate(new Date()),
       status: 'analyzed'
     });
     

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { IndianRupee, QrCode, FileText, Download, Printer, CheckCircle2, AlertCircle, Calendar, MessageSquare, Save, User as UserIcon, Send } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
+import { printHtml } from '../../lib/printHelper';
+import { formatDateTime } from '../../lib/dateUtils';
 
 export default function OurPaymentView({ onShowToast }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -180,7 +182,66 @@ export default function OurPaymentView({ onShowToast }) {
   };
 
   const triggerPrint = () => {
-    window.print();
+    if (!currentUser) return;
+
+    logAuditActivity({
+      action: 'PRINT_DOCUMENT',
+      module: 'My Payment',
+      details: `Printed Personal Salary Statement for "${currentUser.name}" (${history.length} disbursements)`,
+      metadata: { userId: currentUser.id, name: currentUser.name, count: history.length }
+    });
+
+    const rows = history.map((item, idx) => `
+      <tr style="border-bottom: 1px solid #e5e7eb; background: ${idx % 2 === 0 ? '#ffffff' : '#f9fafb'};">
+        <td style="font-family: monospace; color: #64748b; text-align: center;">${idx + 1}</td>
+        <td style="font-family: monospace;">${item.date}</td>
+        <td><strong style="color: #0f172a;">${item.cycle || item.description || 'Monthly Salary'}</strong></td>
+        <td><span class="badge-blue">${item.method || 'Direct Bank / UPI'}</span></td>
+        <td style="font-family: monospace; font-size: 10px; color: #64748b;">${item.ref || item.id || 'N/A'}</td>
+        <td style="font-family: monospace; font-weight: 800; color: #059669; text-align: right;">
+          +₹${Number(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        </td>
+        <td style="text-align: right;"><span class="status-pill status-completed">Disbursed</span></td>
+      </tr>
+    `).join('');
+
+    const bodyHtml = `
+      <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <div style="font-size: 16px; font-weight: 900; color: #166534;">${currentUser.name}</div>
+            <div style="font-size: 11px; color: #15803d; margin-top: 2px;">Designation: <strong>${currentUser.role || 'Staff Member'}</strong> • Department: <strong>${currentUser.department || 'Operations'}</strong></div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">Total Disbursed</div>
+            <div style="font-size: 16px; font-weight: 900; color: #059669; font-family: monospace;">₹${totalReceived.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 10px; font-weight: 800; font-size: 12px; color: #1e293b;">
+        Salary & Remuneration Disbursement History (${history.length} Records)
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 30px; text-align: center;">#</th>
+            <th>Date</th>
+            <th>Payroll Cycle / Description</th>
+            <th>Disbursement Channel</th>
+            <th>Reference ID</th>
+            <th style="text-align: right;">Amount (INR)</th>
+            <th style="text-align: right;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${history.length > 0 ? rows : '<tr><td colspan="7" style="padding: 14px; text-align: center; color: #94a3b8;">No salary disbursement records on file.</td></tr>'}
+        </tbody>
+      </table>
+    `;
+
+    printHtml(`Salary Statement - ${currentUser.name}`, bodyHtml);
+    if (onShowToast) onShowToast('🖨️ Generating printable salary statement...', 'info');
   };
 
   const totalReceived = history.reduce((acc, curr) => acc + curr.amount, 0);
@@ -350,7 +411,7 @@ export default function OurPaymentView({ onShowToast }) {
                            </div>
                            <div>
                               <div className="text-base font-extrabold text-gray-900 font-mono tracking-tight">{h.id}</div>
-                              <div className="text-xs font-bold text-gray-500">Processed: {new Date(h.date).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+                              <div className="text-xs font-bold text-gray-500">Processed: {formatDateTime(h.date)}</div>
                            </div>
                         </div>
 

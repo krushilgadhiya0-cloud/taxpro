@@ -52,11 +52,13 @@ import {
   CheckCheck,
   ArrowRight,
   ExternalLink,
-  Briefcase
+  Briefcase,
+  History
 } from 'lucide-react';
 
 import DashboardView from './DashboardView';
 import TasksView from './pms/TasksView';
+import TaskHistoryView from './pms/TaskHistoryView';
 import MyWorkView from './pms/MyWorkView';
 import LeaveManagementView from './pms/LeaveManagementView';
 import ClientsView from './pms/ClientsView';
@@ -85,6 +87,7 @@ import CalendarPageView from './pms/CalendarPageView';
 import FirmProfileModal from './pms/FirmProfileModal';
 import soundFX from '../lib/audioFX';
 import { supabase } from '../lib/supabaseClient';
+import { formatDate, formatDateWithWeekday } from '../lib/dateUtils';
 
 const SCREEN_SLUG_MAP = {
   'dashboard': 'Dashboard',
@@ -107,6 +110,9 @@ const SCREEN_SLUG_MAP = {
   'contact-person': 'Contact Person',
   'projects': 'Projects',
   'tasks': 'Tasks',
+  'task-history': 'Task History',
+  'history': 'Task History',
+  'taskhistory': 'Task History',
   'team-members': 'Team Members',
   'departments': 'Departments',
   'fees-tracking': 'Fees Tracking',
@@ -135,6 +141,7 @@ const screenNameToSlug = (name) => {
     'Contact Person': 'contact-person',
     'Projects': 'projects',
     'Tasks': 'tasks',
+    'Task History': 'task-history',
     'Team Members': 'team-members',
     'Departments': 'departments',
     'Fees Tracking': 'fees-tracking',
@@ -552,7 +559,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
               priority: task.priority || 'Medium',
               status: task.status || 'Pending',
               givenBy: task.given_by || task.created_by || 'Management',
-              time: task.created_at ? new Date(task.created_at).toLocaleDateString() : 'Active',
+              time: task.created_at ? formatDate(task.created_at) : 'Active',
               rawTime: new Date(task.created_at || Date.now()).getTime(),
               isSeen: isSeen,
               data: task
@@ -587,7 +594,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
               priority: proj.priority || 'High',
               status: proj.status || 'In Progress',
               clientName: proj.client_name || 'Corporate Client',
-              time: proj.created_at ? new Date(proj.created_at).toLocaleDateString() : 'Active',
+              time: proj.created_at ? formatDate(proj.created_at) : 'Active',
               rawTime: new Date(proj.created_at || Date.now()).getTime(),
               isSeen: isSeen,
               data: proj
@@ -975,6 +982,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
     { name: 'Contact Person', icon: UserCheck, hasSub: true },
     { name: 'Projects', icon: FolderKanban, hasSub: false },
     { name: 'Tasks', icon: CheckSquare, hasSub: true },
+    { name: 'Task History', label: 'Task History', icon: History, hasSub: false },
     { name: 'Attendance', icon: UserCheck, hasSub: false },
     { name: 'Communication', icon: MessageSquare, hasSub: true },
     { name: 'Private Chat', icon: MessageSquare, hasSub: false },
@@ -1006,6 +1014,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
     'Contact Person': 'clients',
     'Projects': 'projects',
     'Tasks': 'tasks',
+    'Task History': 'tasks',
     'Attendance': 'attendance',
     'Team Members': 'team_members',
     'Departments': 'departments',
@@ -1169,7 +1178,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
           >
             <CalendarCheck className="w-3.5 h-3.5 text-gray-500 group-hover:text-[#5b52e0] transition-colors" />
             <span className="text-[#5b52e0]">
-              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+              {formatDateWithWeekday(new Date())}
             </span>
           </button>
 
@@ -1495,6 +1504,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
               <div className={activeItem === 'Team Members' ? 'block animate-page-fade' : 'hidden'}><TeamMembersView userRole={userRole} onShowToast={onShowToast} /></div>
               <div className={activeItem === 'Departments' ? 'block animate-page-fade' : 'hidden'}><DepartmentsView userRole={userRole} onShowToast={onShowToast} /></div>
               <div className={activeItem === 'Tasks' ? 'block animate-page-fade' : 'hidden'}><TasksView onShowToast={onShowToast} /></div>
+              <div className={activeItem === 'Task History' ? 'block animate-page-fade' : 'hidden'}><TaskHistoryView onShowToast={onShowToast} onNavigate={(screen) => navigateTo(screen)} /></div>
               <div className={activeItem === 'Clients' ? 'block animate-page-fade' : 'hidden'}><ClientsView onShowToast={onShowToast} /></div>
               <div className={activeItem === 'Contact Person' ? 'block animate-page-fade' : 'hidden'}><ContactPersonView onShowToast={onShowToast} /></div>
               <div className={activeItem === 'Receipts & Payments' ? 'block animate-page-fade' : 'hidden'}><ReceiptsPaymentsView onShowToast={onShowToast} /></div>
@@ -1857,28 +1867,30 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
       {isSearchOpen && (
         <div
           onClick={(e) => { if (e.target === e.currentTarget) setIsSearchOpen(false); }}
-          className="modal-overlay-backdrop z-[99999]"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-xl p-4 relative">
-            <button onClick={() => setIsSearchOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+          <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-200 p-5 relative animate-modal-smooth my-auto">
+            <button onClick={() => setIsSearchOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer">
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3 border-b border-gray-100 pb-3 mb-3">
-              <Search className="w-5 h-5 text-[#5b52e0]" />
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3.5 mb-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+                <Search className="w-4.5 h-4.5" />
+              </div>
               <input
                 type="text"
                 placeholder="Type client name, trade name, task or file number..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 autoFocus
-                className="w-full text-sm outline-none text-gray-800"
+                className="w-full text-xs sm:text-sm outline-none text-slate-800 font-semibold"
               />
             </div>
 
-            <div className="text-xs text-gray-400 font-semibold px-2 py-1">Quick Suggestions</div>
+            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2 py-1">Quick Suggestions</div>
             <div className="flex flex-col gap-1 text-xs">
-              <div className="p-4 text-center text-gray-400 italic font-medium">Empty records</div>
+              <div className="p-6 text-center text-slate-400 italic font-medium">Type keywords above to search client databases, tasks, and files</div>
             </div>
           </div>
         </div>
@@ -1889,104 +1901,114 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
       {isBroadcastModalOpen && (
         <div
           onClick={(e) => { if (e.target === e.currentTarget) setIsBroadcastModalOpen(false); }}
-          className="modal-overlay-backdrop z-[99999]"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-lg p-6 md:p-8 relative">
-            <button onClick={() => setIsBroadcastModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-2">
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600">
-                <Megaphone className="w-5 h-5" />
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shadow-2xs">
+                  <Megaphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900">Global Alert Broadcast</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Disperse urgent messages across the firm</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-xl font-extrabold font-outfit text-gray-900">Global Alert Broadcast</h3>
-                <p className="text-xs text-gray-500 font-medium">Disperse urgent messages across the firm.</p>
-              </div>
+              <button onClick={() => setIsBroadcastModalOpen(false)} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="flex flex-col gap-4 mt-6">
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               <div>
-                <label className="text-xs font-bold text-gray-700 mb-1 block">Alert Subject</label>
+                <label className="text-xs font-bold text-slate-700 mb-1 block">Alert Subject</label>
                 <input
                   type="text"
                   value={broadcastSubject}
                   onChange={(e) => setBroadcastSubject(e.target.value)}
                   placeholder="e.g., URGENT: Server Maintenance at 5 PM"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-500 text-sm"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-rose-500 text-xs shadow-2xs font-semibold"
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-gray-700 mb-1 block">Alert Message</label>
+                <label className="text-xs font-bold text-slate-700 mb-1 block">Alert Message</label>
                 <textarea
                   rows="3"
                   value={broadcastText}
                   onChange={(e) => setBroadcastText(e.target.value)}
                   placeholder="Type your broadcast message..."
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-red-500 text-sm resize-none"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-rose-500 text-xs resize-none shadow-2xs font-medium"
                 ></textarea>
               </div>
 
-              <div className="p-4 rounded-xl border border-gray-200 bg-gray-50 space-y-3">
-                <div className="text-xs font-bold text-gray-900 mb-2 border-b border-gray-200 pb-2">Target Audience (In-App)</div>
-                <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
-                  <input type="checkbox" defaultChecked className="w-3.5 h-3.5 accent-red-600" /> Send to all Team Members
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2.5 shadow-2xs">
+                <div className="text-xs font-bold text-slate-900 mb-1 border-b border-slate-200 pb-2">Target Audience (In-App)</div>
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                  <input type="checkbox" defaultChecked className="w-3.5 h-3.5 accent-rose-600 rounded" /> Send to all Team Members
                 </label>
-                <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
-                  <input type="checkbox" className="w-3.5 h-3.5 accent-red-600" /> Send to all Clients
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                  <input type="checkbox" className="w-3.5 h-3.5 accent-rose-600 rounded" /> Send to all Clients
                 </label>
               </div>
 
-              <div className="p-4 rounded-xl border border-gray-200 bg-[#1e1e2d] text-white space-y-3 shadow-inner">
-                <div className="text-xs font-bold text-gray-300 mb-2 border-b border-gray-700 pb-2 flex items-center justify-between">
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-900 text-white space-y-3 shadow-inner">
+                <div className="text-xs font-bold text-slate-300 mb-2 border-b border-slate-800 pb-2 flex items-center justify-between">
                   External Dispatch Paths
-                  <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Integrations Active</span>
+                  <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider border border-emerald-500/30">Integrations Active</span>
                 </div>
                 <label className="flex items-center justify-between text-xs font-medium cursor-pointer">
-                  <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500"></div> Push via WhatsApp API</div>
-                  <input type="checkbox" defaultChecked className="w-4 h-4 accent-green-500" />
+                  <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-400"></div> Push via WhatsApp API</div>
+                  <input type="checkbox" defaultChecked className="w-4 h-4 accent-emerald-500 rounded" />
                 </label>
                 <label className="flex items-center justify-between text-xs font-medium cursor-pointer">
-                  <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div> Send Bulk Emails</div>
-                  <input type="checkbox" defaultChecked className="w-4 h-4 accent-blue-500" />
+                  <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-400"></div> Send Bulk Emails</div>
+                  <input type="checkbox" defaultChecked className="w-4 h-4 accent-blue-500 rounded" />
                 </label>
               </div>
-            </div>
 
-            <button
-              onClick={() => {
-                setIsBroadcasting(true);
-                if (onShowToast) onShowToast('Compiling global alert payload...', 'info');
-                setTimeout(() => {
-                  setActiveGlobalAlert({
-                    subject: broadcastSubject || 'URGENT: General Firm Alert',
-                    message: broadcastText || 'Please check with administration for further details.',
-                    time: 'Just now'
-                  });
-                  if (onShowToast) onShowToast('✓ Alert successfully broadcasted via App, Email, and WhatsApp!', 'success');
-                  setIsBroadcasting(false);
-                  setIsBroadcastModalOpen(false);
-                  setBroadcastSubject('');
-                  setBroadcastText('');
-                }, 2000);
-              }}
-              disabled={isBroadcasting}
-              className={`w-full mt-6 py-3.5 rounded-2xl text-white font-bold text-sm transition-all flex items-center justify-center gap-2 ${isBroadcasting ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 shadow-md'}`}
-            >
-              {isBroadcasting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Megaphone className="w-4 h-4" />}
-              {isBroadcasting ? 'Dispatching Signals...' : 'Confirm & Dispatch URGENT Alert'}
-            </button>
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBroadcastModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setIsBroadcasting(true);
+                    if (onShowToast) onShowToast('Compiling global alert payload...', 'info');
+                    setTimeout(() => {
+                      setActiveGlobalAlert({
+                        subject: broadcastSubject || 'URGENT: General Firm Alert',
+                        message: broadcastText || 'Please check with administration for further details.',
+                        time: 'Just now'
+                      });
+                      if (onShowToast) onShowToast('✓ Alert successfully broadcasted via App, Email, and WhatsApp!', 'success');
+                      setIsBroadcasting(false);
+                      setIsBroadcastModalOpen(false);
+                      setBroadcastSubject('');
+                      setBroadcastText('');
+                    }, 2000);
+                  }}
+                  disabled={isBroadcasting}
+                  className={`px-5 py-2.5 rounded-xl text-white font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-md ${isBroadcasting ? 'bg-rose-400 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20 active:scale-95 cursor-pointer'}`}
+                >
+                  {isBroadcasting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
+                  <span>{isBroadcasting ? 'Dispatching Signals...' : 'Confirm & Dispatch Alert'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* FULL-SCREEN GLOBAL ALERT INTRUSIVE POPUP */}
       {activeGlobalAlert && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div className="bg-red-600 rounded-3xl max-w-lg w-full shadow-2xl relative overflow-hidden flex flex-col animate-shake">
-            <div className="absolute -top-20 -right-20 w-40 h-40 bg-red-500 rounded-full blur-3xl opacity-50"></div>
-            <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-yellow-500 rounded-full blur-3xl opacity-30"></div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-rose-600 rounded-3xl max-w-lg w-full shadow-2xl relative overflow-hidden flex flex-col animate-shake">
+            <div className="absolute -top-20 -right-20 w-40 h-40 bg-rose-500 rounded-full blur-3xl opacity-50"></div>
+            <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-amber-500 rounded-full blur-3xl opacity-30"></div>
 
             <div className="relative z-10 p-8 flex flex-col items-center text-center text-white">
               <div className="w-20 h-20 rounded-full bg-white/20 flex items-center justify-center mb-6 shadow-inner border border-white/30 backdrop-blur-sm">
@@ -1997,7 +2019,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                 {activeGlobalAlert.subject}
               </h2>
 
-              <p className="text-sm font-medium text-red-50 mb-8 max-w-sm">
+              <p className="text-sm font-medium text-rose-50 mb-8 max-w-sm">
                 {activeGlobalAlert.message}
               </p>
 
@@ -2006,7 +2028,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                   setActiveGlobalAlert(null);
                   if (onShowToast) onShowToast('Alert acknowledged.', 'info');
                 }}
-                className="w-full py-4 bg-white text-red-600 font-extrabold uppercase tracking-widest text-sm rounded-2xl hover:bg-red-50 transition-colors shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
+                className="w-full py-4 bg-white text-rose-600 font-extrabold uppercase tracking-widest text-sm rounded-2xl hover:bg-rose-50 transition-colors shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
               >
                 I have read this alert
               </button>
@@ -2014,24 +2036,25 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
           </div>
         </div>
       )}
+
       {/* EDIT PROFILE MODAL */}
       {isEditProfileModalOpen && (
         <div
           onClick={(e) => { if (e.target === e.currentTarget) setIsEditProfileModalOpen(false); }}
-          className="modal-overlay-backdrop z-[99999]"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-md overflow-hidden relative">
-            {/* Premium Gradient Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <User className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                     Edit Profile & Avatar
                   </h3>
-                  <p className="text-xs text-gray-300 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Customize your display credentials & identity
                   </p>
                 </div>
@@ -2039,35 +2062,49 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
 
               <button
                 onClick={() => setIsEditProfileModalOpen(false)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 max-h-[80vh] overflow-y-auto scrollbar-thin">
-              <div className="flex flex-col gap-4 text-xs font-semibold">
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
+              
+              {/* Current Avatar & Actions */}
+              <div className="flex items-center gap-4 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl shadow-2xs">
+                <div className="relative group shrink-0">
+                  {userAvatar ? (
+                    <img
+                      src={userAvatar}
+                      alt="Profile Avatar"
+                      className="w-14 h-14 rounded-full object-cover shadow-md ring-4 ring-indigo-100"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-lg text-white shadow-md ring-4 ring-indigo-100 uppercase">
+                      {profileInitials}
+                    </div>
+                  )}
+                  <label
+                    className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-white cursor-pointer transition-opacity"
+                    title="Upload New Photo"
+                  >
+                    <Camera className="w-5 h-5" />
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="image/*"
+                      onChange={handleAvatarUpload}
+                    />
+                  </label>
+                </div>
 
-                {/* Current Avatar & Actions */}
-                <div className="flex items-center gap-4 p-3.5 bg-gray-50 border border-gray-200 rounded-2xl">
-                  <div className="relative group shrink-0">
-                    {userAvatar ? (
-                      <img
-                        src={userAvatar}
-                        alt="Profile Avatar"
-                        className="w-14 h-14 rounded-full object-cover shadow-md ring-4 ring-indigo-100"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-extrabold text-lg text-white shadow-md ring-4 ring-indigo-100 uppercase">
-                        {profileInitials}
-                      </div>
-                    )}
-                    <label
-                      className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center text-white cursor-pointer transition-opacity"
-                      title="Upload New Photo"
-                    >
-                      <Camera className="w-5 h-5" />
+                <div className="flex-1">
+                  <div className="text-xs font-bold text-slate-800 mb-1">Profile Photo</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-white hover:bg-indigo-50 rounded-xl transition-colors border border-slate-200 shadow-2xs cursor-pointer flex items-center gap-1.5">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload</span>
                       <input
                         type="file"
                         className="hidden"
@@ -2075,131 +2112,114 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                         onChange={handleAvatarUpload}
                       />
                     </label>
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="text-xs font-bold text-gray-800 mb-1">Profile Photo</div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-white hover:bg-indigo-50 rounded-xl transition-colors border border-indigo-200 shadow-2xs cursor-pointer flex items-center gap-1.5">
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Upload</span>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept="image/*"
-                          onChange={handleAvatarUpload}
-                        />
-                      </label>
-                      {userAvatar && (
-                        <button
-                          type="button"
-                          onClick={handleRemoveAvatar}
-                          className="px-2.5 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors border border-red-200 flex items-center gap-1 cursor-pointer"
-                          title="Reset avatar"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Reset</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Preset Avatars Selection */}
-                <div>
-                  <label className="text-gray-500 mb-1.5 block uppercase tracking-widest text-[10px]">Or Select a Preset Avatar</label>
-                  <div className="grid grid-cols-6 gap-2">
-                    {PRESET_AVATARS.map((preset, idx) => (
+                    {userAvatar && (
                       <button
-                        key={idx}
                         type="button"
-                        onClick={() => handleSelectPresetAvatar(preset)}
-                        className={`w-10 h-10 rounded-full overflow-hidden border-2 transition-all p-0.5 hover:scale-105 cursor-pointer ${userAvatar === preset ? 'border-indigo-600 ring-2 ring-indigo-400 shadow-sm' : 'border-transparent hover:border-gray-300'
-                          }`}
+                        onClick={handleRemoveAvatar}
+                        className="px-2.5 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-colors border border-rose-200 flex items-center gap-1 cursor-pointer"
+                        title="Reset avatar"
                       >
-                        <img src={preset} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover rounded-full" />
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Reset</span>
                       </button>
-                    ))}
+                    )}
                   </div>
                 </div>
+              </div>
 
-                {/* Full Name Field */}
-                <div>
-                  <label className="text-gray-700 block mb-1">Full Name</label>
-                  <input
-                    type="text"
-                    value={userFullName}
-                    onChange={(e) => setUserFullName(e.target.value)}
-                    className="w-full text-xs border border-gray-300 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 font-semibold text-gray-800"
-                    placeholder="e.g. Krushil Gadhiya"
-                  />
+              {/* Preset Avatars Selection */}
+              <div>
+                <label className="text-slate-400 mb-1.5 block uppercase tracking-widest text-[10px] font-bold">Or Select a Preset Avatar</label>
+                <div className="grid grid-cols-6 gap-2">
+                  {PRESET_AVATARS.map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleSelectPresetAvatar(preset)}
+                      className={`w-10 h-10 rounded-full overflow-hidden border-2 transition-all p-0.5 hover:scale-105 cursor-pointer ${userAvatar === preset ? 'border-indigo-600 ring-2 ring-indigo-400 shadow-sm' : 'border-transparent hover:border-slate-300'
+                        }`}
+                    >
+                      <img src={preset} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover rounded-full" />
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                {/* Email Address (Read Only) */}
-                <div>
-                  <label className="text-gray-700 block mb-1">Email Address (Read Only)</label>
-                  <input
-                    type="email"
-                    readOnly
-                    value={userEmail || "admin@taxpro.com"}
-                    className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 outline-none bg-gray-100 text-gray-500 cursor-not-allowed font-medium font-mono"
-                  />
-                </div>
+              {/* Full Name Field */}
+              <div>
+                <label className="text-slate-700 block mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={userFullName}
+                  onChange={(e) => setUserFullName(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-indigo-600 font-semibold text-slate-800 shadow-2xs"
+                  placeholder="e.g. Krushil Gadhiya"
+                />
+              </div>
 
-                {/* Department */}
-                <div>
-                  <label className="text-gray-700 block mb-1">Department / Role</label>
-                  <input
-                    type="text"
-                    value={userDepartment}
-                    onChange={(e) => setUserDepartment(e.target.value)}
-                    className="w-full text-xs border border-gray-300 rounded-xl px-3 py-2.5 outline-none focus:border-indigo-500 font-semibold text-gray-800"
-                    placeholder="e.g. Finance & Tax"
-                  />
-                </div>
+              {/* Email Address (Read Only) */}
+              <div>
+                <label className="text-slate-700 block mb-1">Email Address (Read Only)</label>
+                <input
+                  type="email"
+                  readOnly
+                  value={userEmail || "admin@taxpro.com"}
+                  className="w-full text-xs border border-slate-200 rounded-xl px-3 py-2 outline-none bg-slate-100 text-slate-500 cursor-not-allowed font-medium font-mono shadow-2xs"
+                />
+              </div>
 
-                <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-2 -mx-6 -mb-6">
-                  <button
-                    type="button"
-                    onClick={() => setIsEditProfileModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={async () => {
-                      localStorage.setItem('taxpro_user_fullname', userFullName);
-                      localStorage.setItem('taxpro_user_department', userDepartment);
-                      if (userAvatar) {
-                        localStorage.setItem('taxpro_user_avatar', userAvatar);
-                      }
-                      
-                      // Direct PostgreSQL users and team_members update
-                      if (userEmail) {
-                        try {
-                          await supabase.from('users').update({
-                            name: userFullName,
-                            avatar: userAvatar
-                          }).ilike('email', userEmail);
+              {/* Department */}
+              <div>
+                <label className="text-slate-700 block mb-1">Department / Role</label>
+                <input
+                  type="text"
+                  value={userDepartment}
+                  onChange={(e) => setUserDepartment(e.target.value)}
+                  className="w-full text-xs border border-slate-300 rounded-xl px-3 py-2 outline-none focus:border-indigo-600 font-semibold text-slate-800 shadow-2xs"
+                  placeholder="e.g. Finance & Tax"
+                />
+              </div>
 
-                          await supabase.from('team_members').update({
-                            name: userFullName,
-                            avatar: userAvatar,
-                            department: userDepartment
-                          }).ilike('email', userEmail);
-                        } catch (err) {}
-                      }
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditProfileModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    localStorage.setItem('taxpro_user_fullname', userFullName);
+                    localStorage.setItem('taxpro_user_department', userDepartment);
+                    if (userAvatar) {
+                      localStorage.setItem('taxpro_user_avatar', userAvatar);
+                    }
+                    
+                    if (userEmail) {
+                      try {
+                        await supabase.from('users').update({
+                          name: userFullName,
+                          avatar: userAvatar
+                        }).ilike('email', userEmail);
 
-                      window.dispatchEvent(new CustomEvent('taxpro_avatar_changed', { detail: userAvatar }));
-                      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
-                      setIsEditProfileModalOpen(false);
-                      if (onShowToast) onShowToast('Profile details & avatar saved successfully in database!', 'success');
-                    }}
-                    className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
-                  >
-                    Save Changes
-                  </button>
-                </div>
+                        await supabase.from('team_members').update({
+                          name: userFullName,
+                          avatar: userAvatar,
+                          department: userDepartment
+                        }).ilike('email', userEmail);
+                      } catch (err) {}
+                    }
+
+                    window.dispatchEvent(new CustomEvent('taxpro_avatar_changed', { detail: userAvatar }));
+                    window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+                    setIsEditProfileModalOpen(false);
+                    if (onShowToast) onShowToast('Profile details & avatar saved successfully!', 'success');
+                  }}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                >
+                  Save Changes
+                </button>
               </div>
             </div>
           </div>
@@ -2210,20 +2230,20 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
       {isComplainModalOpen && (
         <div
           onClick={(e) => { if (e.target === e.currentTarget) setIsComplainModalOpen(false); }}
-          className="modal-overlay-backdrop z-[100]"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-md">
-            {/* Premium Gradient Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth text-slate-800">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-2xs">
                   <AlertCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                     Register Complaint
                   </h3>
-                  <p className="text-xs text-gray-300 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Direct confidential routing to Master Admin Mailbox
                   </p>
                 </div>
@@ -2231,33 +2251,35 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
 
               <button
                 onClick={() => setIsComplainModalOpen(false)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 bg-white flex flex-col gap-4 text-xs font-semibold">
-              <label className="text-gray-700">Detailed Complaint / Grievance Statement <span className="text-red-500">*</span></label>
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
+              <label className="text-slate-700">Detailed Complaint / Grievance Statement <span className="text-rose-500">*</span></label>
               <textarea
                 value={complainText}
                 onChange={e => setComplainText(e.target.value)}
                 placeholder="Describe your issue, feedback, or grievance in detail..."
-                className="w-full h-32 rounded-xl border border-gray-300 p-3 text-xs resize-none focus:outline-none focus:border-indigo-500 placeholder:text-gray-400 bg-gray-50 focus:bg-white"
+                className="w-full h-32 rounded-xl border border-slate-300 p-3 text-xs resize-none outline-none focus:border-indigo-600 placeholder:text-slate-400 bg-white shadow-2xs"
               />
 
-              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex justify-end gap-3 -mx-6 -mb-6 mt-2">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex justify-end gap-3 -mx-6 -mb-6 mt-3 shrink-0">
                 <button
+                  type="button"
                   onClick={() => setIsComplainModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleComplainSubmit}
                   disabled={isSubmittingComplain || !complainText.trim()}
-                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
                 >
                   {isSubmittingComplain ? 'Transmitting...' : 'Send Complaint'}
                 </button>

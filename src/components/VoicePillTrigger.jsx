@@ -303,13 +303,21 @@ export default function VoicePillTrigger({ onOpenAI, isAIAssistantOpen }) {
 
     // 2. Server-side AI brain fallback
     try {
+      const firmName = localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates';
+      const firmTag = localStorage.getItem('taxpro_firm_tag') || 'TaxPro';
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: commandText,
           conversationHistory: [],
-          screenContext: { activeItem: localStorage.getItem('taxpro_active_nav') || 'Dashboard' },
+          screenContext: { 
+            activeItem: localStorage.getItem('taxpro_active_nav') || 'Dashboard',
+            firmName,
+            firmTag
+          },
+          firmName,
+          firmTag,
           userEmail: localStorage.getItem('taxpro_user_email') || 'admin@taxpro.com'
         })
       });

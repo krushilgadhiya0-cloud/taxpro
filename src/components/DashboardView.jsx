@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Search, 
   Clock, 
@@ -29,14 +29,24 @@ import {
   SlidersHorizontal,
   ChevronDown,
   FolderKanban,
-  Briefcase
+  Briefcase,
+  Check,
+  Sparkles,
+  TrendingUp,
+  Plus,
+  ArrowRight,
+  Flame
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import { invalidateQueryCache } from '../lib/postgresClient';
+import soundFX from '../lib/audioFX';
+import { logAuditActivity } from '../lib/auditLogger';
 
-export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }) {
+export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem, onShowToast }) {
   const [activeSidebarItem, setActiveSidebarItem] = useState('Dashboard');
   const [activeSubTab, setActiveSubTab] = useState('Tasks');
   const [activeCategory, setActiveCategory] = useState('All');
+  const [tasksFilterTab, setTasksFilterTab] = useState('All'); // 'All' | 'My' | 'Pending' | 'Completed'
 
   // Applied Active Filter States
   const [dateRangeFilter, setDateRangeFilter] = useState('All Time');
@@ -64,12 +74,17 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
   const [teamMembers, setTeamMembers] = useState([]);
   const [departmentsList, setDepartmentsList] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const dept = localStorage.getItem('taxpro_user_department');
     if (dept) setUserDepartment(dept);
 
     try {
+      invalidateQueryCache('global_tasks');
+      invalidateQueryCache('team_members');
+      invalidateQueryCache('projects');
+
       const [tasksRes, membersRes, deptsRes, projRes] = await Promise.all([
          supabase.from('global_tasks').select('*'),
          supabase.from('team_members').select('*'),
@@ -120,7 +135,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
       }
       
     } catch (e) {}
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -138,13 +153,33 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
       } catch (e) {}
     }
 
-    const handleLocalSync = () => {
+    const handleSync = () => {
       loadData();
       setCurrentTime(new Date().toLocaleString());
     };
-    window.addEventListener('taxpro_db_updated', handleLocalSync);
 
-    const intervalId = window.setInterval(loadData, 30000);
+    const handleScreenChange = (e) => {
+      if (!e.detail || e.detail === 'Dashboard') {
+        loadData();
+        setCurrentTime(new Date().toLocaleString());
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadData();
+        setCurrentTime(new Date().toLocaleString());
+      }
+    };
+
+    window.addEventListener('taxpro_db_updated', handleSync);
+    window.addEventListener('taxpro_tasks_updated', handleSync);
+    window.addEventListener('taxpro_workforce_synced', handleSync);
+    window.addEventListener('taxpro_screen_changed', handleScreenChange);
+    window.addEventListener('focus', handleSync);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    const intervalId = window.setInterval(loadData, 15000);
     
     return () => {
       if (realtimeChannel && supabase && typeof supabase.removeChannel === 'function') {
@@ -152,10 +187,15 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
           supabase.removeChannel(realtimeChannel);
         } catch(e) {}
       }
-      window.removeEventListener('taxpro_db_updated', handleLocalSync);
+      window.removeEventListener('taxpro_db_updated', handleSync);
+      window.removeEventListener('taxpro_tasks_updated', handleSync);
+      window.removeEventListener('taxpro_workforce_synced', handleSync);
+      window.removeEventListener('taxpro_screen_changed', handleScreenChange);
+      window.removeEventListener('focus', handleSync);
+      document.removeEventListener('visibilitychange', handleVisibility);
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [loadData]);
 
   // Available Dynamic Department List
   const availableDepartments = useMemo(() => {
@@ -262,41 +302,119 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
     return (t.priority || '').toLowerCase() === priority.toLowerCase();
   };
 
-  // Active Multi-Layer Filtered Tasks
-  const activeFilteredTasks = useMemo(() => {
+  // Scope-Filtered Tasks (for overall KPI calculation without status filter bias)
+  const scopeTasks = useMemo(() => {
     return tasks.filter(t => {
       return (
         filterTaskByDate(t, dateRangeFilter, customStartDate, customEndDate) &&
         filterTaskByDept(t, selectedDepts) &&
         filterTaskByAssignee(t, selectedAssignee) &&
-        filterTaskByStatus(t, selectedStatus) &&
         filterTaskByPriority(t, selectedPriority)
       );
     });
-  }, [tasks, dateRangeFilter, customStartDate, customEndDate, selectedDepts, selectedAssignee, selectedStatus, selectedPriority, teamMembers]);
+  }, [tasks, dateRangeFilter, customStartDate, customEndDate, selectedDepts, selectedAssignee, selectedPriority, teamMembers]);
+
+  // Active Multi-Layer Filtered Tasks (including status filter)
+  const activeFilteredTasks = useMemo(() => {
+    return scopeTasks.filter(t => filterTaskByStatus(t, selectedStatus));
+  }, [scopeTasks, selectedStatus]);
 
   const currentUserEmail = (localStorage.getItem('taxpro_user_email') || 'admin@taxpro.com').toLowerCase().trim();
   const currentUserName = localStorage.getItem('taxpro_user_name') || localStorage.getItem('taxpro_user_fullname') || 'Administrator';
 
-  // Task Status & Workload Metrics
+  // Toggle Task Completion Directly From Dashboard & Sync Everywhere
+  const handleToggleTaskStatus = async (task, e) => {
+    if (e) e.stopPropagation();
+    const isCurrentlyDone = task.status === 'Completed';
+    const nextStatus = isCurrentlyDone ? 'In Progress' : 'Completed';
+    
+    try {
+      if (nextStatus === 'Completed') soundFX?.playSuccess?.();
+      else soundFX?.playClick?.();
+    } catch(err) {}
+
+    const updatedTask = {
+      ...task,
+      status: nextStatus,
+      completed_at: nextStatus === 'Completed' ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Optimistic Local Update
+    setTasks(prev => prev.map(t => t.id === task.id ? updatedTask : t));
+
+    // 2. Persist to PostgreSQL Database
+    try {
+      invalidateQueryCache('global_tasks');
+      await supabase.from('global_tasks').update({
+        status: nextStatus,
+        completed_at: nextStatus === 'Completed' ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
+      }).eq('id', task.id);
+    } catch (err) {
+      console.warn('[Dashboard Task Status Update Error]:', err);
+    }
+
+    // 3. Update any linked project in PostgreSQL
+    if (task.project && task.project !== 'None') {
+      try {
+        const proj = projects.find(p => p.name === task.project || String(p.id) === String(task.project_id));
+        if (proj && Array.isArray(proj.tasks)) {
+          const updatedProjTasks = proj.tasks.map(pt => {
+            if (pt.title === task.title || pt.id === task.id || pt.globalTaskId === task.id) {
+              return { ...pt, completed: nextStatus === 'Completed' };
+            }
+            return pt;
+          });
+          await supabase.from('projects').update({ tasks: updatedProjTasks }).eq('id', proj.id);
+        }
+      } catch (projErr) {}
+    }
+
+    // 4. Log Audit Activity
+    try {
+      logAuditActivity({
+        action: 'UPDATE_TASK_STATUS',
+        module: 'Practice Dashboard',
+        details: `${currentUserName} updated task "${task.title}" status to ${nextStatus}`,
+        metadata: { taskId: task.id, title: task.title, status: nextStatus }
+      });
+    } catch(err) {}
+
+    // 5. Broadcast to all open views & tabs
+    window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+    window.dispatchEvent(new CustomEvent('taxpro_tasks_updated'));
+
+    if (onShowToast) {
+      if (nextStatus === 'Completed') {
+        onShowToast(`🎉 Awesome! "${task.title}" marked as Completed!`, 'success');
+      } else {
+        onShowToast(`Task "${task.title}" status changed to ${nextStatus}.`, 'info');
+      }
+    }
+  };
+
+  // Task Status & Workload Metrics (Calculated from scopeTasks for accurate live status totals)
   const taskStatusMetrics = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    const total = activeFilteredTasks.length;
+    const total = scopeTasks.length;
     let myTasks = 0;
     let pending = 0;
     let completed = 0;
     let inProgress = 0;
     let overdue = 0;
 
-    activeFilteredTasks.forEach(t => {
-      const assigneeStr = (t.assignee || t.assigned_to || '').toLowerCase();
+    scopeTasks.forEach(t => {
+      const assigneeStr = (t.assignee || t.assigned_to || '').toLowerCase().trim();
+      const cleanEmail = (currentUserEmail || '').toLowerCase().trim();
+      const cleanName = (currentUserName || '').toLowerCase().trim();
+
       const isMyTask = (
-        (currentUserEmail && assigneeStr.includes(currentUserEmail)) ||
-        (currentUserName && assigneeStr.includes(currentUserName.toLowerCase())) ||
-        (currentUserName && currentUserName !== 'Administrator' && assigneeStr.includes(currentUserName.toLowerCase().split(' ')[0])) ||
-        (assigneeStr.includes('krushil'))
+        (cleanEmail && (assigneeStr === cleanEmail || assigneeStr.includes(cleanEmail))) ||
+        (cleanName && cleanName !== 'administrator' && cleanName !== 'my workspace' && (assigneeStr === cleanName || assigneeStr.includes(cleanName) || cleanName.includes(assigneeStr))) ||
+        assigneeStr === 'me'
       );
       if (isMyTask) {
         myTasks++;
@@ -340,7 +458,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
       inProgressPercent,
       overduePercent
     };
-  }, [activeFilteredTasks, currentUserEmail, currentUserName]);
+  }, [scopeTasks, currentUserEmail, currentUserName]);
 
   const taskDashboardCards = [
     {
@@ -515,6 +633,26 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
     return summary;
   }, [activeFilteredTasks]);
 
+  // Direct Interactive Dashboard Task Stream
+  const displayedStreamTasks = useMemo(() => {
+    const cleanEmail = (currentUserEmail || '').toLowerCase().trim();
+    const cleanName = (currentUserName || '').toLowerCase().trim();
+
+    return tasks.filter(t => {
+      if (tasksFilterTab === 'My') {
+        const a = (t.assignee || '').toLowerCase().trim();
+        return (
+          (cleanEmail && (a === cleanEmail || a.includes(cleanEmail))) ||
+          (cleanName && cleanName !== 'administrator' && cleanName !== 'my workspace' && (a === cleanName || a.includes(cleanName) || cleanName.includes(a))) ||
+          a === 'me'
+        );
+      }
+      if (tasksFilterTab === 'Pending') return t.status !== 'Completed';
+      if (tasksFilterTab === 'Completed') return t.status === 'Completed';
+      return true;
+    });
+  }, [tasks, tasksFilterTab, currentUserEmail, currentUserName]);
+
   const recentProjects = useMemo(() => {
     return [...projects].sort((a, b) => {
        const da = new Date(a.createdAt || a.dueDate || 0);
@@ -523,21 +661,18 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
     }).slice(0, 5);
   }, [projects]);
 
-  const sidebarItems = [
-    { name: 'Dashboard', icon: LayoutDashboard, hasSub: false },
-    { name: 'Tasks', icon: CheckSquare, hasSub: true },
-    { name: 'Clients', icon: Users, hasSub: true },
-    { name: 'Contact Person', icon: UserCheck, hasSub: true },
-    { name: 'To Do', icon: ListTodo, hasSub: true },
-    { name: 'Receipts & Payments', icon: Receipt, hasSub: true },
-    { name: 'Register in out', icon: UserPlus, hasSub: true },
-    { name: 'Bulk Messages', icon: MessageSquare, hasSub: true },
-    { name: 'Attendance', icon: CalendarCheck, hasSub: true },
-    { name: 'Time Tracking', icon: Timer, hasSub: true },
-    { name: 'Settings', icon: Settings, hasSub: true },
-    { name: 'Reports', icon: FileText, hasSub: true },
-    { name: 'Fees Tracking', icon: DollarSign, hasSub: true },
-  ];
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      soundFX?.playPop?.();
+    } catch(e) {}
+    await loadData();
+    setCurrentTime(new Date().toLocaleString());
+    setTimeout(() => {
+      setIsRefreshing(false);
+      if (onShowToast) onShowToast('✓ Dashboard synchronized with PostgreSQL live database!', 'success');
+    }, 400);
+  };
 
   return (
     <div className="flex-1 bg-[#f3f4f6] text-gray-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
@@ -578,11 +713,8 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
               <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/20 border border-white/20 backdrop-blur-md text-xs font-medium">
                 <span>Last Refreshed: {currentTime}</span>
                 <button 
-                  onClick={() => {
-                    loadData();
-                    setCurrentTime(new Date().toLocaleString());
-                  }}
-                  className="hover:rotate-180 transition-transform duration-500 cursor-pointer"
+                  onClick={handleManualRefresh}
+                  className={`hover:rotate-180 transition-transform duration-500 cursor-pointer ${isRefreshing ? 'animate-spin' : ''}`}
                   title="Refresh Metrics"
                 >
                   <RefreshCw className="w-3.5 h-3.5 text-white" />
@@ -592,18 +724,27 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
           </div>
 
           {/* METRICS ROW WITH FILTER BUTTON */}
-          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 shadow-xs flex flex-wrap items-center gap-6">
+          <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 shadow-xs flex flex-wrap items-center gap-4 sm:gap-6">
             
-            {/* Metric 1 */}
-            <div className="flex items-center gap-4 min-w-[120px] px-2">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+            {/* Metric 1: Workspaces */}
+            <div 
+              onClick={() => {
+                if (onNavigateItem) onNavigateItem('Settings');
+                else window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Settings' } }));
+              }}
+              className="flex items-center gap-3.5 px-3 py-2 rounded-xl hover:bg-teal-50/50 hover:border-teal-200 border border-transparent transition-all cursor-pointer group active:scale-95"
+              title="Click to open Workspace & Firm Settings"
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-50 group-hover:bg-teal-100 flex items-center justify-center transition-colors">
                 <svg className="w-5 h-5 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
               </div>
               <div className="flex flex-col">
-                <span className="text-xl font-bold text-teal-600 leading-none">1</span>
-                <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Workspaces</span>
+                <span className="text-xl font-black text-teal-600 leading-none group-hover:scale-105 transition-transform font-outfit">1</span>
+                <span className="text-xs font-bold text-gray-700 group-hover:text-teal-700 mt-1 uppercase tracking-wide flex items-center gap-1">
+                  Workspaces <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-teal-600" />
+                </span>
                 <span className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[120px]">
                   1 Admin {userDepartment ? `• ${userDepartment}` : ''}
                 </span>
@@ -613,50 +754,80 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
             {/* Vertical Divider */}
             <div className="h-10 w-px bg-gray-100 hidden sm:block"></div>
 
-            {/* Metric 2 */}
-            <div className="flex items-center gap-4 min-w-[120px] px-2">
-              <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center">
+            {/* Metric 2: Departments */}
+            <div 
+              onClick={() => {
+                if (onNavigateItem) onNavigateItem('Departments');
+                else window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Departments' } }));
+              }}
+              className="flex items-center gap-3.5 px-3 py-2 rounded-xl hover:bg-sky-50/60 hover:border-sky-200 border border-transparent transition-all cursor-pointer group active:scale-95"
+              title="Click to open Departments Management"
+            >
+              <div className="w-10 h-10 rounded-xl bg-sky-50 group-hover:bg-sky-100 flex items-center justify-center transition-colors">
                 <svg className="w-5 h-5 text-sky-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
               </div>
               <div className="flex flex-col">
-                <span className="text-xl font-bold text-sky-500 leading-none">{departmentsList.length || 5}</span>
-                <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Departments</span>
+                <span className="text-xl font-black text-sky-500 leading-none group-hover:scale-105 transition-transform font-outfit">{departmentsList.length || 5}</span>
+                <span className="text-xs font-bold text-gray-700 group-hover:text-sky-600 mt-1 uppercase tracking-wide flex items-center gap-1">
+                  Departments <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-sky-500" />
+                </span>
+                <span className="text-[10px] text-gray-400 mt-0.5">Click to view all</span>
               </div>
             </div>
 
             {/* Vertical Divider */}
             <div className="h-10 w-px bg-gray-100 hidden sm:block"></div>
 
-            {/* Metric 3 */}
-            <div className="flex items-center gap-4 min-w-[120px] px-2">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+            {/* Metric 3: Members */}
+            <div 
+              onClick={() => {
+                if (onNavigateItem) onNavigateItem('Team Members');
+                else window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Team Members' } }));
+              }}
+              className="flex items-center gap-3.5 px-3 py-2 rounded-xl hover:bg-emerald-50/60 hover:border-emerald-200 border border-transparent transition-all cursor-pointer group active:scale-95"
+              title="Click to open Team Members & Staff Directory"
+            >
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 group-hover:bg-emerald-100 flex items-center justify-center transition-colors">
                 <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
               </div>
               <div className="flex flex-col">
-                <span className="text-xl font-bold text-emerald-500 leading-none">{teamMembers.length}</span>
-                <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Members</span>
+                <span className="text-xl font-black text-emerald-500 leading-none group-hover:scale-105 transition-transform font-outfit">{teamMembers.length}</span>
+                <span className="text-xs font-bold text-gray-700 group-hover:text-emerald-600 mt-1 uppercase tracking-wide flex items-center gap-1">
+                  Members <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-emerald-500" />
+                </span>
+                <span className="text-[10px] text-gray-400 mt-0.5">Click to manage staff</span>
               </div>
             </div>
 
             {/* Vertical Divider */}
             <div className="h-10 w-px bg-gray-100 hidden sm:block"></div>
 
-            {/* Metric 4 */}
-            <div className="flex items-center gap-4 min-w-[120px] px-2">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+            {/* Metric 4: Managers */}
+            <div 
+              onClick={() => {
+                if (onNavigateItem) onNavigateItem('Team Members', 'Managers');
+                else window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Team Members', sub: 'Managers' } }));
+              }}
+              className="flex items-center gap-3.5 px-3 py-2 rounded-xl hover:bg-amber-50/60 hover:border-amber-200 border border-transparent transition-all cursor-pointer group active:scale-95"
+              title="Click to view Practice Managers in Team Directory"
+            >
+              <div className="w-10 h-10 rounded-xl bg-amber-50 group-hover:bg-amber-100 flex items-center justify-center transition-colors">
                 <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               </div>
               <div className="flex flex-col">
-                <span className="text-xl font-bold text-amber-500 leading-none">
+                <span className="text-xl font-black text-amber-500 leading-none group-hover:scale-105 transition-transform font-outfit">
                   {teamMembers.filter(m => m.role === 'Manager' || m.role === 'Administrator' || m.role?.toLowerCase().includes('manager')).length}
                 </span>
-                <span className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-wide">Managers</span>
+                <span className="text-xs font-bold text-gray-700 group-hover:text-amber-600 mt-1 uppercase tracking-wide flex items-center gap-1">
+                  Managers <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-amber-500" />
+                </span>
+                <span className="text-[10px] text-gray-400 mt-0.5">Click to view managers</span>
               </div>
             </div>
             
@@ -682,7 +853,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
 
           </div>
 
-          {/* ACTIVE FILTER CHIPS ROW (Displays when any filter is active) */}
+          {/* ACTIVE FILTER CHIPS ROW */}
           {activeFilterCount > 0 && (
             <div className="flex flex-wrap items-center gap-2 mb-6 p-3 bg-indigo-50/60 border border-indigo-200 rounded-2xl animate-fade-in text-xs font-medium">
               <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-900 flex items-center gap-1.5 mr-1">
@@ -960,13 +1131,13 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
           )}
 
           {/* 6 MODERN METRIC CARDS (My Tasks, Total Tasks, Pending, Completed, In Progress, Overdue) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5 mb-6">
             {taskDashboardCards.map((card) => (
               <div 
                 key={card.key}
                 onClick={() => handleCardClick(card.key)}
                 className={`bg-white p-4 sm:p-5 rounded-2xl border-2 ${card.borderColor} ${card.bgColor} flex flex-col justify-between text-center shadow-xs hover:shadow-lg hover:-translate-y-1 active:scale-95 transition-all duration-200 cursor-pointer group`}
-                title={`Click to open ${card.title}`}
+                title={`Click to filter or open ${card.title}`}
               >
                 <span className="text-xs font-bold text-gray-700 leading-tight uppercase tracking-wider group-hover:text-indigo-600 transition-colors">
                   {card.title}
@@ -981,6 +1152,161 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
             ))}
           </div>
 
+          {/* REAL-TIME INTERACTIVE COMPLIANCE TASKS STREAM (1-CLICK DIRECT COMPLETION ON DASHBOARD) */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-8 shadow-xs">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-4 border-b border-gray-100 gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
+                  <CheckSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-extrabold text-gray-900 font-outfit">Live Compliance & Practice Tasks</h2>
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      ⚡ Instant Auto-Sync
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">Click any checkbox to toggle completion and watch live counters update</p>
+                </div>
+              </div>
+
+              {/* Quick Tab Filters */}
+              <div className="flex items-center gap-1.5 p-1 bg-gray-100 rounded-xl">
+                {[
+                  { id: 'All', label: 'All Tasks', count: tasks.length },
+                  { id: 'My', label: 'Assigned to Me', count: taskStatusMetrics.myTasks },
+                  { id: 'Pending', label: 'Pending', count: taskStatusMetrics.pending + taskStatusMetrics.inProgress },
+                  { id: 'Completed', label: 'Completed', count: taskStatusMetrics.completed }
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTasksFilterTab(t.id)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      tasksFilterTab === t.id
+                        ? 'bg-white text-indigo-900 shadow-xs font-black'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/50'
+                    }`}
+                  >
+                    <span>{t.label}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-gray-200/70 text-gray-700 font-mono font-bold">{t.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Overall Completion Progress Bar */}
+            <div className="my-4 p-3.5 bg-gradient-to-r from-indigo-50/70 via-purple-50/50 to-emerald-50/60 rounded-xl border border-indigo-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span className="text-xs font-bold text-gray-800">Practice Completion Rate:</span>
+                <span className="text-sm font-black text-indigo-600 font-outfit">{taskStatusMetrics.completedPercent}%</span>
+                <span className="text-xs text-gray-500 font-medium">({taskStatusMetrics.completed} of {taskStatusMetrics.total} tasks completed)</span>
+              </div>
+              <div className="w-full sm:w-64 h-2.5 bg-gray-200 rounded-full overflow-hidden shrink-0">
+                <div 
+                  className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 transition-all duration-500 rounded-full"
+                  style={{ width: `${taskStatusMetrics.completedPercent}%` }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Task Item Rows */}
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {displayedStreamTasks.length === 0 ? (
+                <div className="p-8 text-center bg-gray-50 rounded-xl border border-gray-100">
+                  <CheckCircle2 className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-gray-500">No compliance tasks found in this view tab.</p>
+                </div>
+              ) : (
+                displayedStreamTasks.slice(0, 8).map((t) => {
+                  const isDone = t.status === 'Completed';
+                  return (
+                    <div 
+                      key={t.id}
+                      onClick={(e) => handleToggleTaskStatus(t, e)}
+                      className={`group p-3 rounded-xl border transition-all flex items-center justify-between gap-3 cursor-pointer select-none ${
+                        isDone 
+                          ? 'bg-emerald-50/30 border-emerald-200/70 hover:bg-emerald-50/60' 
+                          : 'bg-white border-gray-200 hover:border-indigo-300 hover:shadow-xs'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Checkbox */}
+                        <div 
+                          className={`w-5 h-5 rounded-lg flex items-center justify-center transition-all shrink-0 border ${
+                            isDone 
+                              ? 'bg-emerald-500 border-emerald-600 text-white shadow-xs scale-105' 
+                              : 'border-gray-300 group-hover:border-indigo-500 bg-white'
+                          }`}
+                        >
+                          {isDone && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className={`text-xs font-bold truncate transition-all ${
+                            isDone ? 'line-through text-gray-400' : 'text-gray-800 group-hover:text-indigo-600'
+                          }`}>
+                            {t.title}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5 text-[10px] text-gray-500 flex-wrap">
+                            <span className="font-semibold text-gray-600">{t.client || 'General Client'}</span>
+                            <span>•</span>
+                            <span className="px-1.5 py-0.2 rounded bg-gray-100 font-medium text-gray-600">{t.category || 'Compliance'}</span>
+                            <span>•</span>
+                            <span>Assignee: <b className="text-gray-700">{t.assignee || 'Unassigned'}</b></span>
+                            {t.dueDate && (
+                              <>
+                                <span>•</span>
+                                <span className="font-mono text-gray-500">Due: {t.dueDate}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          isDone 
+                            ? 'bg-emerald-100 text-emerald-800' 
+                            : t.status === 'In Progress' 
+                            ? 'bg-purple-100 text-purple-700' 
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {isDone ? '✓ Completed' : t.status || 'Pending'}
+                        </span>
+                        
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          t.priority === 'High' ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {t.priority || 'Medium'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between flex-wrap gap-2 text-xs">
+              <span className="text-gray-400 text-[11px] font-semibold">
+                Showing top tasks • Click anywhere on a row or checkbox to toggle status
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onNavigateItem) onNavigateItem('Tasks');
+                  else window.dispatchEvent(new CustomEvent('taxpro_navigate_tab', { detail: { tab: 'Tasks' } }));
+                }}
+                className="text-xs font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>Open Full Tasks Manager</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
           {/* ALL TASK SUMMARY ROW (Based on the attached image) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             
@@ -988,13 +1314,11 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
             <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-xs flex flex-col">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-extrabold text-gray-900">All Task Summary - Userwise</h3>
-                <select className="border border-gray-200 rounded-lg text-xs font-semibold p-1.5 outline-none text-gray-700 bg-gray-50 focus:ring-2 focus:ring-indigo-500/20">
-                  <option>Working</option>
-                </select>
+                <span className="text-[11px] font-bold text-gray-400">Live Team Workload</span>
               </div>
               <div className="border border-gray-100 rounded-xl overflow-hidden flex-1 flex flex-col">
                 <div className="grid grid-cols-2 bg-gray-50/50 p-3 text-[10px] font-extrabold text-gray-500 border-b border-gray-100 uppercase tracking-widest">
-                  <span>USER</span>
+                  <span>USER / SPECIALIST</span>
                   <span className="text-right">TOTAL TASKS</span>
                 </div>
                 <div className="overflow-y-auto flex-1">
@@ -1003,14 +1327,14 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
                   ) : (
                     Object.entries(userWiseSummary).map(([user, count]) => (
                       <div key={user} className="grid grid-cols-2 p-3 text-xs font-bold text-gray-800 border-b border-gray-100 bg-white items-center">
-                        <span>{user}</span>
+                        <span className="truncate">{user}</span>
                         <span className="text-right text-[#5b52e0] font-black">{count}</span>
                       </div>
                     ))
                   )}
                 </div>
                 <div className="grid grid-cols-2 p-3 text-xs font-bold text-gray-800 bg-gray-50 items-center border-t border-gray-100 mt-auto">
-                  <span>Total</span>
+                  <span>Total Active Tasks</span>
                   <span className="text-right text-[#5b52e0] font-black tracking-wide">{totalTasks}</span>
                 </div>
               </div>
@@ -1021,28 +1345,28 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
               {/* Unassigned Tasks */}
               <button 
                 onClick={() => setTaskDetailType('Unassigned')}
-                className="bg-red-50/60 hover:bg-red-100/80 border border-red-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98]"
+                className="bg-red-50/60 hover:bg-red-100/80 border border-red-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98] cursor-pointer"
               >
                 <span className="text-4xl font-black text-red-600 mb-1 font-outfit">{unassignedTasks}</span>
-                <span className="text-xs font-bold text-gray-600">Unassigned Tasks</span>
+                <span className="text-xs font-bold text-gray-600">Unassigned Tasks (Click to view)</span>
               </button>
               
               {/* Assigned Tasks */}
               <button 
                 onClick={() => setTaskDetailType('Assigned')}
-                className="bg-green-50/60 hover:bg-green-100/80 border border-green-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98]"
+                className="bg-green-50/60 hover:bg-green-100/80 border border-green-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98] cursor-pointer"
               >
                 <span className="text-4xl font-black text-green-600 mb-1 font-outfit">{assignedTasks}</span>
-                <span className="text-xs font-bold text-gray-600">Assigned Tasks</span>
+                <span className="text-xs font-bold text-gray-600">Assigned Tasks (Click to view)</span>
               </button>
 
               {/* Total Tasks */}
               <button 
                 onClick={() => setTaskDetailType('Total')}
-                className="bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98]"
+                className="bg-indigo-50/60 hover:bg-indigo-100/80 border border-indigo-200 transition-all rounded-xl py-5 px-6 flex flex-col items-center justify-center shadow-sm hover:shadow-md active:scale-[0.98] cursor-pointer"
               >
                 <span className="text-4xl font-black text-indigo-600 mb-1 font-outfit">{totalTasks}</span>
-                <span className="text-xs font-bold text-gray-600">Total Tasks</span>
+                <span className="text-xs font-bold text-gray-600">Total Practice Tasks (Click to view)</span>
               </button>
             </div>
           </div>
@@ -1108,13 +1432,11 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
         </main>
       </div>
 
-
-
-      {/* TASK DETAILS MODAL OPENS ON BOX CLICK */}
+      {/* INTERACTIVE TASK DETAILS MODAL OPENS ON BOX CLICK */}
       {taskDetailType && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setTaskDetailType(null)}>
           <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200" 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200" 
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gray-50/50">
@@ -1126,9 +1448,12 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
                 }`}>
                   <ListTodo className="w-4 h-4" />
                 </div>
-                <h3 className="text-lg font-extrabold text-gray-900 font-outfit">{taskDetailType} Tasks Overview</h3>
+                <div>
+                  <h3 className="text-lg font-extrabold text-gray-900 font-outfit">{taskDetailType} Tasks Overview</h3>
+                  <p className="text-[11px] text-gray-400 font-semibold">Click the check box to toggle status in real time</p>
+                </div>
               </div>
-              <button onClick={() => setTaskDetailType(null)} className="p-1.5 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 transition-colors">
+              <button onClick={() => setTaskDetailType(null)} className="p-1.5 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 transition-colors cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1149,24 +1474,48 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
                   </p>
                 </>
               ) : (
-                <div className="w-full flex flex-col gap-2">
+                <div className="w-full flex flex-col gap-2.5">
                   {activeFilteredTasks.filter(t => {
                     if (taskDetailType === 'Unassigned') return !t.assignee || t.assignee === 'None' || t.assignee === 'Unassigned';
                     if (taskDetailType === 'Assigned') return t.assignee && t.assignee !== 'None' && t.assignee !== 'Unassigned';
                     return true;
-                  }).map((t, idx) => (
-                    <div key={idx} className="w-full text-left p-3 border border-gray-100 rounded-xl flex justify-between items-center bg-white shadow-xs">
-                      <div>
-                        <div className="text-xs font-bold text-gray-800">{t.title}</div>
-                        <div className="text-[10px] text-gray-500 font-medium">
-                          {t.client || 'General Client'} • {t.assignee || 'Unassigned'} • Due: {t.dueDate || 'No Due Date'}
+                  }).map((t, idx) => {
+                    const isDone = t.status === 'Completed';
+                    return (
+                      <div 
+                        key={idx} 
+                        onClick={(e) => handleToggleTaskStatus(t, e)}
+                        className={`w-full text-left p-3.5 border rounded-xl flex justify-between items-center transition-all cursor-pointer shadow-2xs ${
+                          isDone 
+                            ? 'bg-emerald-50/40 border-emerald-200' 
+                            : 'bg-white border-gray-100 hover:border-indigo-200 hover:bg-indigo-50/30'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 pr-3">
+                          <div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 border transition-all ${
+                            isDone ? 'bg-emerald-500 border-emerald-600 text-white' : 'border-gray-300 bg-white'
+                          }`}>
+                            {isDone && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className={`text-xs font-bold truncate ${isDone ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                              {t.title}
+                            </div>
+                            <div className="text-[10px] text-gray-500 font-medium mt-0.5 truncate">
+                              {t.client || 'General Client'} • {t.assignee || 'Unassigned'} • Due: {t.dueDate || 'No Due Date'}
+                            </div>
+                          </div>
                         </div>
+
+                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 ${
+                          isDone ? 'bg-emerald-100 text-emerald-700 font-black' : 'bg-indigo-50 text-indigo-600'
+                        }`}>
+                          {isDone ? '✓ Completed' : t.status || 'Pending'}
+                        </span>
                       </div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${t.status === 'Completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                        {t.status}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1174,7 +1523,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem }
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
               <button 
                 onClick={() => setTaskDetailType(null)}
-                className="px-5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm"
+                className="px-5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm cursor-pointer"
               >
                 Close View
               </button>

@@ -2,9 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Building2, Plus, Bot, Users, HelpCircle, UserCog, CheckSquare, Edit, Trash2, ChevronLeft, ChevronRight, X, Download, Printer, Search, Save, Edit2, ShieldCheck, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
+import { printHtml } from '../../lib/printHelper';
 
 export default function DepartmentsView({ userRole: propRole, onShowToast }) {
-  const effectiveRole = (propRole || localStorage.getItem('taxpro_user_role') || 'Admin');
+  const userRole = (propRole || localStorage.getItem('taxpro_user_role') || 'Admin');
+  const effectiveRole = userRole;
   const canManageDepts = effectiveRole === 'Super Admin' || effectiveRole === 'Admin' || effectiveRole === 'Administrator' || effectiveRole === 'Manager' || !effectiveRole.toLowerCase().includes('employee');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -185,16 +187,6 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
       return;
     }
 
-    if (onShowToast) onShowToast('Opening All Departments Master Register Print Document...', 'info');
-
-    // Open isolated high-resolution print window
-    const printWindow = window.open('', '_blank', 'width=1100,height=850');
-    if (!printWindow) {
-      window.print();
-      return;
-    }
-
-    // Helper to calculate members for each dept
     const deptRowsHtml = list.map((d, index) => {
       const assigned = getMembersForDept(d.name);
       const count = assigned.length > 0 ? assigned.length : (d.members || d.head_count || 0);
@@ -208,7 +200,7 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
           <td>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="background: #0f766e; color: white; padding: 3px 6px; border-radius: 4px; font-weight: 900; font-size: 10px; font-family: monospace;">${d.initials || 'DEP'}</span>
-              <strong style="color: #111827; font-size: 12px;">${d.name}</strong>
+              <strong style="color: #111827; font-size: 11.5px;">${d.name}</strong>
             </div>
           </td>
           <td>
@@ -217,15 +209,15 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
             </span>
           </td>
           <td style="text-align: center;">
-            <span style="background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 11px;">
+            <span style="background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 10.5px;">
               ${count}
             </span>
           </td>
-          <td style="color: #374151; font-size: 10px; max-width: 220px; line-height: 1.35;">
+          <td style="color: #374151; font-size: 10px; line-height: 1.35;">
             ${memberNames}
           </td>
-          <td style="color: #4b5563; font-size: 10.5px; line-height: 1.4;">
-            ${d.description || d.desc || 'Operational department responsible for client advisory and compliance.'}
+          <td style="color: #4b5563; font-size: 10px; line-height: 1.35;">
+            ${d.description || d.desc || 'Operational division responsible for client deliverables and compliance.'}
           </td>
           <td style="text-align: center;">
             <span style="background: #ecfdf5; color: #047857; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 9px; text-transform: uppercase;">
@@ -236,329 +228,69 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
       `;
     }).join('');
 
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>TaxPro PMS - Departments & Functional Divisions Master Register</title>
-        <style>
-          @page {
-            size: A4 landscape;
-            margin: 10mm 10mm 10mm 10mm;
-          }
-          * {
-            box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-          }
-          body {
-            background-color: #ffffff;
-            color: #111827;
-            margin: 0;
-            padding: 14px;
-          }
-          .header-box {
-            border-bottom: 2px solid #0f766e;
-            padding-bottom: 10px;
-            margin-bottom: 14px;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-          }
-          .logo-title {
-            font-size: 22px;
-            font-weight: 900;
-            letter-spacing: -0.5px;
-            color: #0f766e;
-            margin: 0 0 2px 0;
-          }
-          .subtitle {
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #1e293b;
-            margin: 0;
-          }
-          .meta-info {
-            text-align: right;
-            font-size: 10px;
-            color: #4b5563;
-          }
-          .meta-info strong {
-            color: #111827;
-          }
-          .summary-cards {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 14px;
-          }
-          .summary-card {
-            flex: 1;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            padding: 8px 12px;
-            border-radius: 8px;
-          }
-          .summary-card-title {
-            font-size: 9px;
-            font-weight: 800;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #64748b;
-            margin-bottom: 2px;
-          }
-          .summary-card-val {
-            font-size: 16px;
-            font-weight: 900;
-            color: #0f766e;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 11px;
-            margin-top: 4px;
-            margin-bottom: 18px;
-          }
-          thead tr {
-            background-color: #f1f5f9;
-            border-top: 1px solid #cbd5e1;
-            border-bottom: 2px solid #64748b;
-          }
-          th {
-            padding: 8px 10px;
-            text-align: left;
-            font-weight: 800;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #334155;
-            border-right: 1px solid #e2e8f0;
-          }
-          th:last-child {
-            border-right: none;
-          }
-          td {
-            padding: 8px 10px;
-            border-bottom: 1px solid #e2e8f0;
-            border-right: 1px solid #f1f5f9;
-            vertical-align: middle;
-          }
-          td:last-child {
-            border-right: none;
-          }
-          tr:nth-child(even) {
-            background-color: #f8fafc;
-          }
-          .footer-box {
-            margin-top: 24px;
-            padding-top: 10px;
-            border-top: 1px solid #cbd5e1;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            font-size: 10px;
-            color: #64748b;
-          }
-          .signatory-line {
-            width: 180px;
-            border-bottom: 1px solid #94a3b8;
-            height: 30px;
-            margin-bottom: 4px;
-          }
-          .print-btn-bar {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #0f766e;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: bold;
-            font-size: 13px;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(15,118,110,0.3);
-            border: none;
-          }
-          @media print {
-            .print-btn-bar {
-              display: none;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header-box">
-          <div>
-            <h1 class="logo-title">TAXPRO PMS</h1>
-            <p class="subtitle">Organizational Departments & Functional Divisions Master Register</p>
-            <div style="font-size: 10px; color: #64748b; margin-top: 3px;">
-              Practice Management & Organizational Governance Architecture
-            </div>
-          </div>
-          <div class="meta-info">
-            <div>Generated: <strong>${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong></div>
-            <div>Registry: <strong>Live PostgreSQL Database Synchronized</strong></div>
-          </div>
-        </div>
-
-        <div class="summary-cards">
-          <div class="summary-card">
-            <div class="summary-card-title">Total Departments</div>
-            <div class="summary-card-val">${list.length} Divisions</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-card-title">Assigned Managers</div>
-            <div class="summary-card-val">${uniqueManagersCount} Department Heads</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-card-title">Total Practice Members</div>
-            <div class="summary-card-val">${teamMembersList.length > 0 ? teamMembersList.length : teamMembers.length} Staff Members</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-card-title">Governance Status</div>
-            <div class="summary-card-val" style="color: #059669;">100% Operational</div>
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 25px; text-align: center;">#</th>
-              <th style="width: 180px;">Department Name</th>
-              <th style="width: 150px;">Department Head / Manager</th>
-              <th style="width: 70px; text-align: center;">Strength</th>
-              <th style="width: 200px;">Assigned Staff / Key Members</th>
-              <th>Operational Scope & Responsibilities</th>
-              <th style="width: 70px; text-align: center;">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${deptRowsHtml}
-          </tbody>
-        </table>
-
-        <div class="footer-box">
-          <div>
-            <div>TaxPro Practice Management System • Official Departmental Architecture</div>
-            <div style="font-size: 9px; margin-top: 2px;">Verified & Authenticated against Enterprise PostgreSQL Database</div>
-          </div>
-          <div style="text-align: right;">
-            <div class="signatory-line"></div>
-            <div>Managing Partner / Practice Head</div>
-          </div>
-        </div>
-
-        <button class="print-btn-bar" onclick="window.print()">🖨️ Print Now</button>
-
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 300);
-          };
-        </script>
-      </body>
-      </html>
+    const bodyHtml = `
+      <div style="margin-bottom: 12px; font-weight: 800; font-size: 13px; color: #1e293b;">
+        Practice Departments & Operational Divisions (${list.length} Functional Areas)
+      </div>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="background: #f1f5f9;">
+            <th style="padding: 8px; border: 1px solid #e2e8f0; width: 35px; text-align: center;">#</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">Department Name</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">Managing Head</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0; width: 70px; text-align: center;">Personnel</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">Allocated Members</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">Functional Responsibilities</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0; width: 60px; text-align: center;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${deptRowsHtml}
+        </tbody>
+      </table>
     `;
 
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+    printHtml('Departments Register', bodyHtml);
+    if (onShowToast) onShowToast('🖨️ Generating printable departments register...', 'info');
   };
 
   const handlePrintSingleDept = (dept) => {
     if (!dept) return;
-    if (onShowToast) onShowToast(`Opening printable dossier for ${dept.name}...`, 'info');
-
-    const printWindow = window.open('', '_blank', 'width=900,height=800');
-    if (!printWindow) {
-      window.print();
-      return;
-    }
 
     const assigned = getMembersForDept(dept.name);
     const count = assigned.length > 0 ? assigned.length : (dept.members || dept.head_count || 0);
 
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>TaxPro PMS - Department Dossier: ${dept.name}</title>
-        <style>
-          @page { size: A4 portrait; margin: 15mm; }
-          * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-          body { padding: 20px; color: #111827; }
-          .header { border-bottom: 2px solid #0f766e; padding-bottom: 12px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-end; }
-          .title { font-size: 24px; font-weight: 900; color: #0f766e; margin: 0; }
-          .subtitle { font-size: 12px; color: #4b5563; font-weight: bold; text-transform: uppercase; margin-top: 4px; }
-          .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-          .card-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 8px; }
-          .members-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-          .member-tag { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; }
-          .print-btn { position: fixed; bottom: 20px; right: 20px; background: #0f766e; color: white; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; }
-          @media print { .print-btn { display: none; } }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <h1 class="title">TAXPRO PMS</h1>
-            <div class="subtitle">Official Department Dossier & Operational Mandate</div>
-          </div>
-          <div style="text-align: right; font-size: 11px; color: #64748b;">
-            <div>Generated: <strong>${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></div>
-            <div>Status: <strong style="color: #059669;">Active & Operational</strong></div>
-          </div>
+    const bodyHtml = `
+      <div style="background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 14px;">
+        <div style="background: #0f766e; color: white; width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 900;">
+          ${dept.initials || 'DEP'}
         </div>
-
-        <div class="card" style="background: #f0fdfa; border-color: #99f6e4;">
-          <div style="display: flex; align-items: center; gap: 14px;">
-            <div style="background: #0f766e; color: white; width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 900;">
-              ${dept.initials || 'DEP'}
-            </div>
-            <div>
-              <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #0f766e;">${dept.name}</h2>
-              <div style="font-size: 12px; color: #115e59; margin-top: 2px;">Managing Head: <strong>${dept.manager || 'Unassigned / Managing Partner'}</strong></div>
-            </div>
-          </div>
+        <div>
+          <div style="font-size: 18px; font-weight: 800; color: #0f766e;">${dept.name}</div>
+          <div style="font-size: 11px; color: #115e59; margin-top: 2px;">Managing Head: <strong>${dept.manager || 'Unassigned / Managing Partner'}</strong></div>
         </div>
+      </div>
 
-        <div class="card">
-          <div class="card-title">Department Functional Scope & Responsibilities</div>
-          <p style="font-size: 13px; line-height: 1.6; color: #334155; margin: 0;">
-            ${dept.description || dept.desc || 'Core functional division managing practice workflows, client deliverables, and professional compliance.'}
-          </p>
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 6px;">Department Functional Scope</div>
+        <p style="font-size: 11.5px; line-height: 1.5; color: #334155; margin: 0;">
+          ${dept.description || dept.desc || 'Core functional division managing practice workflows, client deliverables, and professional compliance.'}
+        </p>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 8px;">Allocated Team Members (${count} Total)</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          ${assigned.length > 0 
+            ? assigned.map(m => `<span style="background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold;">👤 ${m.name} (${m.role || 'Member'})</span>`).join('') 
+            : `<span style="font-size: 11px; color: #64748b;">No dedicated staff exclusively mapped. Operates with general practice pool resources.</span>`
+          }
         </div>
-
-        <div class="card">
-          <div class="card-title">Assigned Personnel & Staff Members (${count} Total)</div>
-          <div class="members-list">
-            ${assigned.length > 0 
-              ? assigned.map(m => `<span class="member-tag">👤 ${m.name} (${m.role || 'Member'})</span>`).join('') 
-              : `<span style="font-size: 12px; color: #64748b;">No dedicated staff exclusively mapped. Operates with general practice pool resources.</span>`
-            }
-          </div>
-        </div>
-
-        <div style="margin-top: 40px; padding-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-end; font-size: 11px; color: #64748b;">
-          <div>TaxPro Practice Management System • Official Record</div>
-          <div style="text-align: right;">
-            <div style="width: 180px; border-bottom: 1px solid #94a3b8; height: 35px; margin-bottom: 4px;"></div>
-            <div>Authorized Practice Signatory</div>
-          </div>
-        </div>
-
-        <button class="print-btn" onclick="window.print()">🖨️ Print Now</button>
-        <script>
-          window.onload = function() { setTimeout(function() { window.print(); }, 300); };
-        </script>
-      </body>
-      </html>
+      </div>
     `;
 
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+    printHtml(`Department Dossier - ${dept.name}`, bodyHtml);
+    if (onShowToast) onShowToast(`🖨️ Generating printable dossier for ${dept.name}...`, 'info');
   };
 
   const handleDownloadSingleDept = (dept) => {
@@ -575,11 +307,20 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
   };
 
   const executeDelete = async () => {
+    const deptToDelete = depts.find(d => d.id === deleteId);
     const { error } = await supabase.from('departments').delete().eq('id', deleteId);
     if (error) {
        if (onShowToast) onShowToast(`Error deleting: ${error.message}`, 'error');
        return;
     }
+
+    logAuditActivity({
+      action: 'DELETE_DEPARTMENT',
+      module: 'Departments',
+      details: `Removed Department "${deptToDelete?.name || deleteId}" from practice structure`,
+      metadata: { id: deleteId, name: deptToDelete?.name }
+    });
+
     setDepts(prev => prev.filter(d => d.id !== deleteId));
     setDeleteId(null);
     if (onShowToast) onShowToast('Department deleted.', 'info');
@@ -806,20 +547,20 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
       {isAddModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsAddModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-2xl">
-            {/* Premium Gradient Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-emerald-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-2xs">
                   <Building2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                     Add Department
                   </h3>
-                  <p className="text-xs text-gray-300 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Create a new organizational branch & management scope
                   </p>
                 </div>
@@ -827,20 +568,20 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
 
               <button 
                 onClick={() => setIsAddModalOpen(false)} 
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <form onSubmit={handleAddDept} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+            <form onSubmit={handleAddDept} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {/* Column 1: Identity & Manager */}
                 <div className="flex flex-col gap-3.5">
                   <div>
-                    <label className="text-gray-700 block mb-1">Department Name <span className="text-red-500">*</span></label>
+                    <label className="text-slate-700 block mb-1">Department Name <span className="text-rose-500">*</span></label>
                     <select
                       value={newDeptForm.isOther ? 'Other' : newDeptForm.name}
                       onChange={(e) => {
@@ -851,7 +592,7 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
                           setNewDeptForm({ ...newDeptForm, name: val, isOther: false });
                         }
                       }}
-                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-emerald-500 transition-all font-medium text-xs text-gray-900 cursor-pointer"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-emerald-600 transition-all font-semibold text-xs text-slate-900 cursor-pointer shadow-2xs"
                     >
                       <option value="Compliance">Compliance</option>
                       <option value="Tax & Audit">Tax & Audit</option>
@@ -871,19 +612,19 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
                         value={newDeptForm.customName}
                         onChange={e => setNewDeptForm({...newDeptForm, customName: e.target.value})}
                         placeholder="Enter custom department name..."
-                        className="w-full px-3 py-2.5 bg-white border border-emerald-300 rounded-xl outline-none focus:border-emerald-500 transition-all font-medium text-xs text-gray-900 mt-2"
+                        className="w-full px-3 py-2 bg-white border border-emerald-300 rounded-xl outline-none focus:border-emerald-600 transition-all font-medium text-xs text-slate-900 mt-2 shadow-2xs"
                       />
                     )}
                   </div>
 
                   <div>
-                    <label className="text-gray-700 block mb-1">Assign Manager (Optional)</label>
+                    <label className="text-slate-700 block mb-1">Assign Manager (Optional)</label>
                     <div className="relative">
-                      <UserCog className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <UserCog className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <select 
                         value={newDeptForm.manager}
                         onChange={e => setNewDeptForm({...newDeptForm, manager: e.target.value})}
-                        className="w-full px-3 py-2.5 pl-9 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-emerald-500 font-medium text-xs text-gray-900 cursor-pointer"
+                        className="w-full px-3 py-2 pl-9 bg-white border border-slate-300 rounded-xl outline-none focus:border-emerald-600 font-medium text-xs text-slate-900 cursor-pointer shadow-2xs"
                       >
                         <option value="">Leave Unassigned</option>
                         {availableManagers.map(m => (
@@ -897,31 +638,31 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
                 {/* Column 2: Scope & Function */}
                 <div className="flex flex-col gap-3.5">
                   <div>
-                    <label className="text-gray-700 block mb-1">Department Description & Scope <span className="text-red-500">*</span></label>
+                    <label className="text-slate-700 block mb-1">Department Description & Scope <span className="text-rose-500">*</span></label>
                     <textarea 
                       required 
                       rows={5}
                       value={newDeptForm.desc}
                       onChange={e => setNewDeptForm({...newDeptForm, desc: e.target.value})}
                       placeholder="What is this department's primary function, responsibilities, and operational scope?"
-                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-emerald-500 resize-none text-xs text-gray-800 min-h-[110px]"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-emerald-600 resize-none text-xs text-slate-800 min-h-[110px] shadow-2xs"
                     />
                   </div>
                 </div>
               </div>
 
               {/* Bottom Sticky Actions */}
-              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
-                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
                 >
                   Create Department
                 </button>
@@ -935,20 +676,20 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
       {editingDept && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setEditingDept(null); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-2xl">
-            {/* Premium Gradient Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-emerald-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-2xs">
                   <Edit2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                     Edit Department: {editingDept.name}
                   </h3>
-                  <p className="text-xs text-gray-300 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Update department title, head of division & functional scope
                   </p>
                 </div>
@@ -956,36 +697,36 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
 
               <button 
                 onClick={() => setEditingDept(null)} 
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <form onSubmit={handleEditDeptSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+            <form onSubmit={handleEditDeptSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="flex flex-col gap-3.5">
                   <div>
-                    <label className="text-gray-700 block mb-1">Department Name <span className="text-red-500">*</span></label>
+                    <label className="text-slate-700 block mb-1">Department Name <span className="text-rose-500">*</span></label>
                     <input 
                       type="text" 
                       required 
                       value={editingDept.name || ''} 
                       onChange={e => setEditingDept({...editingDept, name: e.target.value})} 
-                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-emerald-500 text-xs font-semibold" 
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-emerald-600 text-xs font-semibold text-slate-900 shadow-2xs" 
                     />
                   </div>
 
                   <div>
-                    <label className="text-gray-700 block mb-1">Department Head / Manager</label>
+                    <label className="text-slate-700 block mb-1">Department Head / Manager</label>
                     <div className="relative">
-                      <UserCog className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <UserCog className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <select 
                         value={editingDept.manager || ''} 
                         onChange={e => setEditingDept({...editingDept, manager: e.target.value})} 
-                        className="w-full px-3 py-2.5 pl-9 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-emerald-500 font-medium text-xs text-gray-900 cursor-pointer"
+                        className="w-full px-3 py-2 pl-9 bg-white border border-slate-300 rounded-xl outline-none focus:border-emerald-600 font-medium text-xs text-slate-900 cursor-pointer shadow-2xs"
                       >
                         <option value="">Leave Unassigned</option>
                         {availableManagers.map(m => (
@@ -998,29 +739,29 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
 
                 <div className="flex flex-col gap-3.5">
                   <div>
-                    <label className="text-gray-700 block mb-1">Operational Scope & Description</label>
+                    <label className="text-slate-700 block mb-1">Operational Scope & Description</label>
                     <textarea 
                       rows={5} 
                       value={editingDept.description || editingDept.desc || ''} 
                       onChange={e => setEditingDept({...editingDept, description: e.target.value, desc: e.target.value})} 
-                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-emerald-500 resize-none text-xs text-gray-800 min-h-[110px]" 
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-emerald-600 resize-none text-xs text-slate-800 min-h-[110px] shadow-2xs" 
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Bottom Sticky Actions */}
-              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+              {/* Bottom Actions */}
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button 
                   type="button" 
                   onClick={() => setEditingDept(null)} 
-                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
                 >
                   <Save className="w-4 h-4" /> Save Changes
                 </button>
@@ -1034,14 +775,17 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
       {deleteId && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setDeleteId(null); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-sm p-6 text-center border border-red-100 dark:border-red-900/30 animate-shake">
-            <h3 className="text-xl font-extrabold text-gray-900 mb-2 font-outfit">Delete Department</h3>
-            <p className="text-sm text-gray-500 mb-6 font-medium">Are you sure you want to permanently disband this department? This action cannot be undone.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setDeleteId(null)} className="flex-1 py-2.5 rounded-xl font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer">Cancel</button>
-              <button onClick={executeDelete} className="flex-1 py-2.5 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 shadow-md transition-colors cursor-pointer">Delete</button>
+          <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 text-center my-auto animate-modal-smooth">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3 border border-rose-100 shadow-2xs">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-black text-slate-900 mb-1 font-outfit">Delete Department</h3>
+            <p className="text-xs text-slate-500 mb-5 font-medium leading-relaxed">Are you sure you want to permanently disband this department? This action cannot be undone.</p>
+            <div className="flex gap-2.5">
+              <button onClick={() => setDeleteId(null)} className="flex-1 py-2 rounded-xl font-bold text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer">Cancel</button>
+              <button onClick={executeDelete} className="flex-1 py-2 rounded-xl font-bold text-xs text-white bg-rose-600 hover:bg-rose-700 shadow-xs transition-colors cursor-pointer">Delete</button>
             </div>
           </div>
         </div>
@@ -1049,88 +793,94 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
 
       {/* DEPT STATS / DOSSIER MODAL */}
       {activeDeptStat && (
-        <div className="modal-overlay-backdrop z-[60]" onClick={() => setActiveDeptStat(null)}>
+        <div 
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto" 
+          onClick={() => setActiveDeptStat(null)}
+        >
           <div 
-            className="modal-content-box max-w-2xl border border-gray-100"
+            className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="relative bg-gradient-to-br from-[#0f766e] to-[#042f2e] w-full p-6 sm:p-8 pb-10 text-white">
-               <button onClick={() => setActiveDeptStat(null)} className="absolute top-4 right-4 p-2 bg-black/10 text-white rounded-full hover:bg-black/20 transition-colors cursor-pointer">
-                 <X className="w-4 h-4" />
-               </button>
-               
-               <div className="flex items-center gap-4">
-                 <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center text-white font-black text-2xl shadow-inner border border-white/20">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
+               <div className="flex items-center gap-3">
+                 <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700 font-black text-xl shadow-2xs">
                     {activeDeptStat.initials || 'DEP'}
                  </div>
-                 <div className="text-white">
-                   <h3 className="font-extrabold text-2xl tracking-tight leading-none mb-1 font-outfit">{activeDeptStat.name}</h3>
-                   <div className="flex items-center gap-2 text-emerald-100 text-sm font-semibold">
-                      <Building2 className="w-3.5 h-3.5" /> Operations Branch & Functional Scope
+                 <div>
+                   <h3 className="font-black text-lg sm:text-xl text-slate-900 tracking-tight leading-none mb-1 font-outfit">{activeDeptStat.name}</h3>
+                   <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold">
+                      <Building2 className="w-3.5 h-3.5 text-emerald-600" /> Operations Branch & Functional Scope
                    </div>
                  </div>
                </div>
+
+               <button 
+                 onClick={() => setActiveDeptStat(null)} 
+                 className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+               >
+                 <X className="w-5 h-5" />
+               </button>
             </div>
 
             {/* Stats Body */}
-            <div className="px-6 pb-6 -mt-4 z-10 relative">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 overscroll-contain chat-custom-scrollbar">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                  
-                 <div className="bg-white rounded-2xl p-4 shadow-xs border border-gray-100 text-center">
-                    <div className="text-gray-400 text-[9px] font-bold uppercase tracking-widest mb-1">Members</div>
-                    <div className="text-2xl font-black text-gray-900 leading-none">{getMembersForDept(activeDeptStat.name).length || activeDeptStat.members || 0}</div>
+                 <div className="bg-slate-50 rounded-2xl p-4 shadow-2xs border border-slate-200 text-center">
+                    <div className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1">Members</div>
+                    <div className="text-2xl font-black text-slate-900 leading-none">{getMembersForDept(activeDeptStat.name).length || activeDeptStat.members || 0}</div>
                  </div>
 
-                 <div className="bg-white rounded-2xl p-4 shadow-xs border border-gray-100 text-center">
-                    <div className="text-gray-400 text-[9px] font-bold uppercase tracking-widest mb-1">Status</div>
-                    <div className="text-xs font-black text-emerald-600 leading-none mt-1 uppercase">Active</div>
+                 <div className="bg-slate-50 rounded-2xl p-4 shadow-2xs border border-slate-200 text-center">
+                    <div className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1">Status</div>
+                    <div className="text-xs font-black text-emerald-700 leading-none mt-1 uppercase">Active</div>
                  </div>
 
-                 <div className="bg-white rounded-2xl p-4 shadow-xs border border-gray-100 text-center">
-                    <div className="text-gray-400 text-[9px] font-bold uppercase tracking-widest mb-1">Governance</div>
-                    <div className="text-xs font-black text-indigo-600 leading-none mt-1">Managed</div>
+                 <div className="bg-slate-50 rounded-2xl p-4 shadow-2xs border border-slate-200 text-center">
+                    <div className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1">Governance</div>
+                    <div className="text-xs font-black text-indigo-700 leading-none mt-1">Managed</div>
                  </div>
 
-                 <div className="bg-white rounded-2xl p-4 shadow-xs border border-gray-100 text-center bg-gray-50/50">
-                    <div className="text-gray-400 text-[9px] font-bold uppercase tracking-widest mb-1">Initials</div>
-                    <div className="text-xl font-black text-gray-600 leading-none">{activeDeptStat.initials || 'DEP'}</div>
+                 <div className="bg-slate-50 rounded-2xl p-4 shadow-2xs border border-slate-200 text-center">
+                    <div className="text-slate-400 text-[9px] font-bold uppercase tracking-widest mb-1">Initials</div>
+                    <div className="text-xl font-black text-slate-700 leading-none">{activeDeptStat.initials || 'DEP'}</div>
                  </div>
 
               </div>
 
               {/* Functional Scope Card */}
-              <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
-                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
                   <FileText className="w-3.5 h-3.5 text-emerald-600" /> Operational Mandate & Responsibilities
                 </div>
-                <p className="text-xs text-gray-700 leading-relaxed font-medium">
+                <p className="text-xs text-slate-700 leading-relaxed font-medium">
                   {activeDeptStat.description || activeDeptStat.desc || 'Core functional division managing professional workflows, quality deliverables, and client satisfaction.'}
                 </p>
               </div>
 
               {/* Assigned Members List */}
-              <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
-                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5 text-indigo-600" /> Assigned Personnel ({getMembersForDept(activeDeptStat.name).length})
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {getMembersForDept(activeDeptStat.name).length > 0 ? (
                     getMembersForDept(activeDeptStat.name).map((m, idx) => (
-                      <span key={idx} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-bold">
-                        👤 {m.name} <span className="text-[10px] text-emerald-600 font-normal">({m.role || 'Staff'})</span>
+                      <span key={idx} className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-white border border-slate-200 text-slate-800 text-xs font-bold shadow-2xs">
+                        👤 {m.name} <span className="text-[10px] text-emerald-700 font-normal">({m.role || 'Staff'})</span>
                       </span>
                     ))
                   ) : (
-                    <div className="text-xs text-gray-400 italic">No dedicated staff assigned exclusively. Operates with general practice pool.</div>
+                    <div className="text-xs text-slate-400 italic">No dedicated staff assigned exclusively. Operates with general practice pool.</div>
                   )}
                 </div>
               </div>
 
               {/* Manager Assignment UI */}
-              {userRole === 'Admin' && (
-                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4">
-                  <label className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-2 mb-3">
+              {canManageDepts && (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2 mb-2">
                     <UserCog className="w-4 h-4 text-indigo-600" /> Assign Manager
                   </label>
                   <div className="relative">
@@ -1142,7 +892,7 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
                         setActiveDeptStat({...activeDeptStat, manager: newManager});
                         if (onShowToast) onShowToast(`Manager updated to ${newManager || 'Unassigned'}`, 'success');
                       }}
-                      className="w-full bg-white px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 outline-none focus:border-indigo-500 shadow-xs appearance-none cursor-pointer"
+                      className="w-full bg-white px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-300 outline-none focus:border-indigo-600 shadow-2xs cursor-pointer text-slate-800"
                     >
                       <option value="">Leave Unassigned</option>
                       {availableManagers.map(m => (
@@ -1150,36 +900,36 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
                       ))}
                     </select>
                   </div>
-                  <p className="text-[10px] text-gray-500 mt-2 font-medium">Managers have elevated permissions to dispatch bulk assignations to members within this department scope.</p>
+                  <p className="text-[10px] text-slate-500 mt-2 font-medium">Managers have elevated permissions to dispatch bulk assignations to members within this department scope.</p>
                 </div>
               )}
 
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center gap-3">
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 border-t border-slate-100 flex items-center gap-2.5 shrink-0">
                <button 
                  onClick={() => handlePrintSingleDept(activeDeptStat)}
-                 className="flex-1 py-2.5 bg-white border border-emerald-300 text-emerald-700 text-xs font-bold rounded-xl shadow-xs hover:bg-emerald-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                 className="flex-1 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl shadow-2xs hover:bg-slate-50 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                >
-                 <Printer className="w-4 h-4 text-emerald-600" /> Print Dossier
+                 <Printer className="w-3.5 h-3.5 text-slate-600" /> Print Dossier
                </button>
                <button 
                  onClick={() => handleDownloadSingleDept(activeDeptStat)}
-                 className="flex-1 py-2.5 bg-white border border-gray-200 text-gray-700 text-xs font-bold rounded-xl shadow-xs hover:bg-gray-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                 className="flex-1 py-2 bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl shadow-2xs hover:bg-slate-50 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                >
-                 <Download className="w-4 h-4" /> CSV
+                 <Download className="w-3.5 h-3.5" /> CSV
                </button>
                <button 
                  onClick={() => setActiveDeptStat(null)}
-                 className="flex-1 py-2.5 bg-[#0f766e] text-white text-xs font-bold rounded-xl shadow-md hover:bg-teal-800 transition-all cursor-pointer"
+                 className="flex-1 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-md hover:bg-emerald-700 transition-all cursor-pointer"
                >
-                 Done
+                 Close Dossier
                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
     </div>
   );

@@ -3,24 +3,27 @@ import { ShieldCheck, Sparkles } from 'lucide-react';
 
 export default function LoadingScreen({ onFinished }) {
   const [progress, setProgress] = useState(0);
+  const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 100) {
           clearInterval(timer);
-          setTimeout(() => onFinished(), 300);
+          setIsExiting(true);
+          setTimeout(() => onFinished(), 350);
           return 100;
         }
-        return prev + 2;
+        return prev + 4;
       });
-    }, 25);
+    }, 20);
 
     return () => clearInterval(timer);
   }, [onFinished]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black text-white animate-fade-in">
+    <div className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#090909] text-white transition-opacity duration-300 ${isExiting ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+
       
       {/* Glow Backdrop */}
       <div className="w-96 h-96 rounded-full bg-cyan-500/10 filter blur-[100px] absolute"></div>

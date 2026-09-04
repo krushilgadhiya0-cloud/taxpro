@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   ShieldAlert,
   ShieldX,
+  Edit2,
+  CreditCard,
   Mail, 
   Phone, 
   Building, 
@@ -61,6 +63,8 @@ import {
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
 import { requireFirmSetup } from '../../lib/firmGatekeeper';
+import { printHtml } from '../../lib/printHelper';
+import { formatDate } from '../../lib/dateUtils';
 
 const ALL_MODULES = [
   { id: 'dashboard', name: 'Dashboard Analytics', icon: LayoutDashboard, category: 'Management & Governance', desc: 'Real-time practice analytics, KPI metrics, revenue charts, and operational summary' },
@@ -185,7 +189,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     };
   }, []);
 
-  // Form states for invitation
+  // Form states for adding/inviting new member
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -193,15 +197,25 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     upi_id: '',
     role: 'Employee',
     department: 'General',
+    status: 'Active',
+    salary: '₹50,000/mo',
+    pan: '',
+    bank_account: '',
+    ifsc: '',
+    emergency_contact: '',
+    date_of_joining: new Date().toISOString().slice(0, 10),
+    notes: '',
     password: ''
   });
 
+  const [editingMember, setEditingMember] = useState(null);
   const [isInviting, setIsInviting] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const handleInviteSubmit = async (e) => {
     e.preventDefault();
     if (!formData.email || !formData.name) {
-      if (onShowToast) onShowToast('Email and Name are required.', 'error');
+      if (onShowToast) onShowToast('Email and Full Name are required.', 'error');
       return;
     }
 
@@ -211,7 +225,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     // 1. Check if email is already present in existing directory list
     const isAlreadyLocal = members.some(m => (m.email || '').toLowerCase().trim() === cleanEmail);
     if (isAlreadyLocal) {
-      if (onShowToast) onShowToast(`⚠️ Account Already Registered: "${cleanEmail}" is already an active member in your practice directory. Cannot send duplicate invite.`, 'error');
+      if (onShowToast) onShowToast(`⚠️ Account Already Registered: "${cleanEmail}" is already in your practice directory. Duplicate accounts are prevented.`, 'error');
       return;
     }
 
@@ -222,7 +236,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     }
     
     if (formData.password && formData.password.length < 6) {
-      if (onShowToast) onShowToast('Preset Password must be strictly at least 6 characters.', 'warning');
+      if (onShowToast) onShowToast('Preset Password must be at least 6 characters.', 'warning');
       return;
     }
 
@@ -266,22 +280,29 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       let registeredCredentials = null;
       let emailSent = false;
 
-      // 1. Dispatch to server invitation and dual-table PostgreSQL registration endpoint
-      // 1. Direct reliable upsert to PostgreSQL team_members table
+      // 1. Direct reliable upsert to PostgreSQL team_members table with ALL details
       const empId = `EMP-${Date.now().toString().slice(-6)}`;
       const memberPayload = {
         id: empId,
         name: cleanName,
         email: cleanEmail,
-        phone: purePhone,
-        role: formData.role,
-        department: formData.department,
-        status: 'Pending Invite',
+        phone: purePhone ? `+91 ${purePhone}` : (formData.phone || null),
+        role: formData.role || 'Employee',
+        department: formData.department || 'General',
+        status: formData.status || 'Active',
         preset_password: effectivePassword,
         permissions: initialPerms,
         upi_id: formData.upi_id ? formData.upi_id.trim() : null,
-        salary: '$10,000/mo',
-        online: false
+        salary: formData.salary ? formData.salary.trim() : '₹50,000/mo',
+        pan: formData.pan ? formData.pan.trim().toUpperCase() : null,
+        bank_account: formData.bank_account ? formData.bank_account.trim() : null,
+        ifsc: formData.ifsc ? formData.ifsc.trim().toUpperCase() : null,
+        emergency_contact: formData.emergency_contact ? formData.emergency_contact.trim() : null,
+        date_of_joining: formData.date_of_joining || new Date().toISOString().slice(0, 10),
+        notes: formData.notes ? formData.notes.trim() : null,
+        attendance: '98.5%',
+        tasks_completed: 0,
+        online: true
       };
 
       try {
@@ -296,9 +317,9 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
         email: cleanEmail,
         password: effectivePassword,
         name: cleanName,
-        role: formData.role,
+        role: formData.role || 'Employee',
         company: firmName || 'TaxPro Enterprise',
-        phone: purePhone,
+        phone: purePhone ? `+91 ${purePhone}` : (formData.phone || null),
         phone_verified: true,
         lock_pin: '1234',
         status: 'Active'
@@ -322,16 +343,18 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
             generatedPassword: effectivePassword,
             role: formData.role,
             department: formData.department,
-            phone: purePhone,
-            salary: '$10,000/mo',
+            phone: purePhone ? `+91 ${purePhone}` : '',
+            salary: memberPayload.salary,
             permissions: initialPerms,
+            id: memberPayload.id,
+            employeeId: memberPayload.id,
             origin: window.location.origin
           })
         });
 
-        const data = await resp.json();
-        if (data && data.success) {
-          emailSent = data.emailDispatched || false;
+        const data = await resp.json().catch(() => null);
+        if (data && (data.success || data.emailDispatched)) {
+          emailSent = true;
         }
       } catch (networkErr) {
         console.warn('[Invite Mailer Network Note]:', networkErr);
@@ -342,12 +365,17 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
         password: effectivePassword,
         role: formData.role,
         department: formData.department,
-        name: cleanName
+        name: cleanName,
+        id: memberPayload.id
       };
 
-      // Re-fetch directory and immediately switch to 'Invitations' tab
+      // Re-fetch directory and switch to appropriate tab
       await fetchMembers();
-      setActiveTab('Invitations');
+      if (formData.status === 'Pending Invite') {
+        setActiveTab('Invitations');
+      } else {
+        setActiveTab('Members');
+      }
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
       // Close input modal and open Success Credentials Confirmation Modal
@@ -361,12 +389,12 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       logAuditActivity({
         action: 'ADD_MEMBER',
         module: 'Team Members',
-        details: `Invited new team member "${cleanName}" (${formData.role}) in Department "${formData.department}" [${cleanEmail}]`,
+        details: `Registered team member "${cleanName}" (${formData.role}) in Department "${formData.department}" with salary ${memberPayload.salary} [${cleanEmail}]`,
         metadata: { name: cleanName, role: formData.role, department: formData.department, email: cleanEmail }
       });
 
       if (onShowToast) {
-        onShowToast(`✓ Invitation created for ${cleanName}! Sitting in 'Invitations' awaiting first login.`, 'success');
+        onShowToast(`✓ Team member "${cleanName}" successfully registered with full details!`, 'success');
       }
 
     } catch (err) {
@@ -375,7 +403,109 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       setIsInviting(false);
     }
     
-    setFormData({ name: '', email: '', phone: '', role: 'Employee', department: 'General', password: '' });
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      upi_id: '',
+      role: 'Employee',
+      department: 'General',
+      status: 'Active',
+      salary: '₹50,000/mo',
+      pan: '',
+      bank_account: '',
+      ifsc: '',
+      emergency_contact: '',
+      date_of_joining: new Date().toISOString().slice(0, 10),
+      notes: '',
+      password: ''
+    });
+  };
+
+  // Save changes to existing team member
+  const handleSaveMemberEdits = async (e) => {
+    e.preventDefault();
+    if (!editingMember || !editingMember.name || !editingMember.email) {
+      if (onShowToast) onShowToast('Full Name and Email Address are required.', 'error');
+      return;
+    }
+
+    const cleanName = editingMember.name.trim();
+    const cleanEmail = editingMember.email.trim().toLowerCase();
+    const cleanPhone = (editingMember.phone || '').trim();
+
+    setIsSavingEdit(true);
+
+    try {
+      const updatePayload = {
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone || null,
+        role: editingMember.role || 'Employee',
+        department: editingMember.department || 'General',
+        status: editingMember.status || 'Active',
+        salary: editingMember.salary ? editingMember.salary.trim() : '₹50,000/mo',
+        pan: editingMember.pan ? editingMember.pan.trim().toUpperCase() : null,
+        bank_account: editingMember.bank_account ? editingMember.bank_account.trim() : null,
+        ifsc: editingMember.ifsc ? editingMember.ifsc.trim().toUpperCase() : null,
+        emergency_contact: editingMember.emergency_contact ? editingMember.emergency_contact.trim() : null,
+        date_of_joining: editingMember.date_of_joining || null,
+        upi_id: editingMember.upi_id ? editingMember.upi_id.trim() : null,
+        notes: editingMember.notes ? editingMember.notes.trim() : null,
+        updated_at: new Date().toISOString()
+      };
+
+      if (editingMember.preset_password && editingMember.preset_password.trim()) {
+        updatePayload.preset_password = editingMember.preset_password.trim();
+      }
+
+      const { error: tmErr } = await supabase
+        .from('team_members')
+        .update(updatePayload)
+        .eq('id', editingMember.id);
+
+      if (tmErr) throw tmErr;
+
+      // Also mirror to users table
+      try {
+        const userUpdatePayload = {
+          name: cleanName,
+          role: editingMember.role || 'Employee',
+          phone: cleanPhone || null,
+          updated_at: new Date().toISOString()
+        };
+        if (editingMember.preset_password && editingMember.preset_password.trim()) {
+          userUpdatePayload.password = editingMember.preset_password.trim();
+        }
+        await supabase.from('users').update(userUpdatePayload).eq('email', cleanEmail);
+      } catch (uErr) {
+        console.warn('[User mirror update notice]:', uErr);
+      }
+
+      // Update local members state
+      setMembers(prev => prev.map(m => m.id === editingMember.id ? { ...m, ...updatePayload } : m));
+
+      if (selectedMemberForTasks && selectedMemberForTasks.id === editingMember.id) {
+        setSelectedMemberForTasks(prev => ({ ...prev, ...updatePayload }));
+      }
+
+      logAuditActivity({
+        action: 'UPDATE_MEMBER',
+        module: 'Team Members',
+        details: `Updated details for "${cleanName}" (${editingMember.role}) in Department "${editingMember.department}" [${cleanEmail}]`,
+        metadata: { id: editingMember.id, name: cleanName, role: editingMember.role, department: editingMember.department }
+      });
+
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      if (onShowToast) onShowToast(`✓ Profile & details successfully updated for ${cleanName}!`, 'success');
+      setEditingMember(null);
+    } catch (err) {
+      console.error('[Edit Member Error]:', err);
+      if (onShowToast) onShowToast(`Failed to update member: ${err.message}`, 'error');
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const copyCredentialsToClipboard = () => {
@@ -406,6 +536,13 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       setMembers(prev => prev.map(m => m.id === member.id ? { ...m, status: nextStatus } : m));
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
+      logAuditActivity({
+        action: isCurrentlyActive ? 'REVOKE_ACCESS' : 'RESTORE_ACCESS',
+        module: 'Team Members',
+        details: `${isCurrentlyActive ? 'Revoked' : 'Restored'} account access for "${member.name}" [${member.email || member.id}]`,
+        metadata: { id: member.id, name: member.name, status: nextStatus }
+      });
+
       if (isCurrentlyActive) {
         if (onShowToast) onShowToast(`🔒 Access REVOKED for ${member.name}. Account is now suspended.`, 'warning');
       } else {
@@ -432,6 +569,13 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
       setMembers(prev => prev.map(m => m.id === member.id ? { ...m, status: 'Active', online: true } : m));
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      logAuditActivity({
+        action: 'MEMBER_LOGIN',
+        module: 'Team Members',
+        details: `Simulated initial portal login and activated "${member.name}"`,
+        metadata: { id: member.id, name: member.name }
+      });
 
       if (onShowToast) onShowToast(`✓ ${member.name} completed first login and moved to Active Members directory!`, 'success');
       setActiveTab('Members');
@@ -490,6 +634,13 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
         status: accessForm.status,
         permissions: accessForm.permissions
       } : m));
+
+      logAuditActivity({
+        action: 'UPDATE_PERMISSIONS',
+        module: 'Team Members',
+        details: `Updated role to "${accessForm.role}" and permissions matrix for "${accessModalMember.name}" (${accessModalMember.email})`,
+        metadata: { id: accessModalMember.id, name: accessModalMember.name, role: accessForm.role, status: accessForm.status }
+      });
 
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
@@ -553,12 +704,20 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   const executeDelete = async () => {
     if (!deleteData) return;
     
+    const targetMember = members.find(m => m.id === deleteData.id);
     const { error } = await supabase.from('team_members').delete().eq('id', deleteData.id);
     if (error) {
        if (onShowToast) onShowToast(`Failed to delete: ${error.message}`, 'error');
        return;
     }
     
+    logAuditActivity({
+      action: 'DELETE_MEMBER',
+      module: 'Team Members',
+      details: `Permanently deleted member account "${targetMember?.name || deleteData.id}" (${targetMember?.email || 'N/A'})`,
+      metadata: { id: deleteData.id, name: targetMember?.name }
+    });
+
     setMembers(prev => prev.filter(x => x.id !== deleteData.id));
     setDeleteData(null);
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
@@ -581,6 +740,13 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
         return;
      }
 
+     logAuditActivity({
+       action: 'ARCHIVE_MEMBER',
+       module: 'Team Members',
+       details: `Moved team member "${obj.name}" to Past Employees archive`,
+       metadata: { id: obj.id, name: obj.name }
+     });
+
      setMembers(prev => prev.map(m => m.id === obj.id ? { ...m, status: 'Past' } : m));
      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
      if (onShowToast) onShowToast(`${obj.name} successfully moved to Past Employees.`, 'info');
@@ -591,6 +757,14 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     try {
       const { error } = await supabase.from('team_members').update({ status: 'Active' }).eq('id', obj.id);
       if (error) throw error;
+
+      logAuditActivity({
+        action: 'RESTORE_MEMBER',
+        module: 'Team Members',
+        details: `Restored team member "${obj.name}" from archive to Active status`,
+        metadata: { id: obj.id, name: obj.name }
+      });
+
       setMembers(prev => prev.map(m => m.id === obj.id ? { ...m, status: 'Active' } : m));
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
       if (onShowToast) onShowToast(`✓ Restored ${obj.name} to Active Members directory.`, 'success');
@@ -644,12 +818,14 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     if (!member) return [];
     const cleanName = (member.name || '').toLowerCase().trim();
     const cleanEmail = (member.email || '').toLowerCase().trim();
+    const cleanId = (member.id || '').toLowerCase().trim();
     return tasks.filter(t => {
       const assignee = (t.assignee || '').toLowerCase().trim();
       if (!assignee) return false;
       return (
         assignee === cleanName ||
         assignee === cleanEmail ||
+        (cleanId && (assignee === cleanId || assignee.includes(cleanId))) ||
         assignee.includes(cleanName) ||
         cleanName.includes(assignee)
       );
@@ -731,9 +907,9 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     const member = selectedMemberForTasks;
     const list = filteredMemberTasks;
     const metrics = memberMetrics;
-    const now = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const now = formatDate(new Date());
 
-    const timeframeLabel = tasksTimeframe === 'day' ? `Specific Day: ${selectedDay}`
+    const timeframeLabel = tasksTimeframe === 'day' ? `Specific Day: ${formatDate(selectedDay)}`
       : tasksTimeframe === 'month' ? `Specific Month: ${selectedMonth}`
       : tasksTimeframe === 'year' ? `Year: ${selectedYear}`
       : tasksTimeframe === 'today' ? 'Today'
@@ -748,22 +924,15 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       metadata: { memberEmail: member.email, timeframe: tasksTimeframe }
     });
 
-    const printWindow = window.open('', '_blank', 'width=950,height=800');
-    if (!printWindow) {
-      if (onShowToast) onShowToast('Please allow popups to print task report.', 'warning');
-      window.print();
-      return;
-    }
-
     const tableRows = list.map((t, idx) => `
       <tr style="border-bottom: 1px solid #e5e7eb; background: ${idx % 2 === 0 ? '#ffffff' : '#f9fafb'};">
-        <td style="padding: 10px 12px; font-weight: 600; color: #111827;">${t.title || 'Untitled Task'}</td>
-        <td style="padding: 10px 12px; color: #4b5563;">${t.client || 'Practice'}</td>
-        <td style="padding: 10px 12px; color: #4b5563;">${t.category || 'General'}</td>
-        <td style="padding: 10px 12px; font-family: monospace; color: #374151;">${t.due_date || t.dueDate || 'No Date'}</td>
-        <td style="padding: 10px 12px; color: #374151;">${t.priority || 'Normal'}</td>
-        <td style="padding: 10px 12px; text-align: right;">
-          <span style="display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; 
+        <td style="padding: 7px 10px; font-weight: 700; color: #111827;">${t.title || 'Untitled Task'}</td>
+        <td style="padding: 7px 10px; color: #4b5563;">${t.client || 'Practice'}</td>
+        <td style="padding: 7px 10px; color: #4b5563;">${t.category || 'General'}</td>
+        <td style="padding: 7px 10px; font-family: monospace; color: #374151;">${formatDate(t.due_date || t.dueDate)}</td>
+        <td style="padding: 7px 10px; color: #374151;">${t.priority || 'Normal'}</td>
+        <td style="padding: 7px 10px; text-align: right;">
+          <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 9.5px; font-weight: 700; 
             ${t.status === 'Completed' ? 'background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0;' :
               t.status === 'In Progress' ? 'background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe;' :
               'background: #fef3c7; color: #92400e; border: 1px solid #fde68a;'}">
@@ -773,114 +942,68 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       </tr>
     `).join('');
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>TaxPro PMS - Task Audit Report - ${member.name}</title>
-        <style>
-          @page { size: A4; margin: 12mm; }
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1f2937; margin: 0; padding: 20px; font-size: 12px; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #5b52e0; padding-bottom: 15px; margin-bottom: 20px; }
-          .logo-title { font-size: 20px; font-weight: 900; color: #181c32; letter-spacing: -0.5px; }
-          .sub-title { font-size: 11px; color: #6b7280; margin-top: 3px; font-weight: 600; }
-          .meta-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-          .meta-label { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #94a3b8; }
-          .meta-value { font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 2px; }
-          .metrics-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
-          .metric-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; text-align: center; }
-          .metric-num { font-size: 18px; font-weight: 900; font-family: monospace; margin-top: 4px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
-          th { background: #f1f5f9; padding: 9px 12px; text-align: left; font-weight: 800; color: #475569; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; border-bottom: 2px solid #cbd5e1; }
-          .footer { margin-top: 25px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <div class="logo-title">TAXPRO PRACTICE MANAGEMENT SYSTEM</div>
-            <div class="sub-title">Staff Task Audit & Workload Deliverables Report</div>
-          </div>
-          <div style="text-align: right;">
-            <div style="font-weight: 800; font-size: 11px; color: #5b52e0;">CONFIDENTIAL AUDIT DOSSIER</div>
-            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Generated: ${now}</div>
-          </div>
+    const bodyHtml = `
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+        <div>
+          <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #94a3b8;">Team Member</div>
+          <div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px;">${member.name}</div>
         </div>
-
-        <div class="meta-box">
-          <div>
-            <div class="meta-label">Team Member</div>
-            <div class="meta-value">${member.name}</div>
-          </div>
-          <div>
-            <div class="meta-label">Assigned Role</div>
-            <div class="meta-value">${member.role || 'Employee'}</div>
-          </div>
-          <div>
-            <div class="meta-label">Department</div>
-            <div class="meta-value">${member.department || 'Tax & Compliance'}</div>
-          </div>
-          <div>
-            <div class="meta-label">Audited Timeframe</div>
-            <div class="meta-value" style="color: #5b52e0;">${timeframeLabel}</div>
-          </div>
+        <div>
+          <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #94a3b8;">Assigned Role</div>
+          <div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px;">${member.role || 'Employee'}</div>
         </div>
-
-        <div class="metrics-grid">
-          <div class="metric-card" style="background: #f8fafc; border-color: #cbd5e1;">
-            <div class="meta-label">Total Deliverables</div>
-            <div class="metric-num" style="color: #0f172a;">${metrics.total}</div>
-          </div>
-          <div class="metric-card" style="background: #eff6ff; border-color: #bfdbfe;">
-            <div class="meta-label" style="color: #2563eb;">In Progress</div>
-            <div class="metric-num" style="color: #1d4ed8;">${metrics.inProgress}</div>
-          </div>
-          <div class="metric-card" style="background: #f0fdf4; border-color: #bbf7d0;">
-            <div class="meta-label" style="color: #16a34a;">Completed</div>
-            <div class="metric-num" style="color: #15803d;">${metrics.completed}</div>
-          </div>
-          <div class="metric-card" style="background: #fffbeb; border-color: #fde68a;">
-            <div class="meta-label" style="color: #d97706;">Pending / Queued</div>
-            <div class="metric-num" style="color: #b45309;">${metrics.pending}</div>
-          </div>
-          <div class="metric-card" style="background: #f5f3ff; border-color: #ddd6fe;">
-            <div class="meta-label" style="color: #7c3aed;">Completion Rate</div>
-            <div class="metric-num" style="color: #6d28d9;">${metrics.rate}%</div>
-          </div>
+        <div>
+          <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #94a3b8;">Department</div>
+          <div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px;">${member.department || 'Tax & Compliance'}</div>
         </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Task Title & Scope</th>
-              <th>Client / Entity</th>
-              <th>Category</th>
-              <th>Due Date</th>
-              <th>Priority</th>
-              <th style="text-align: right;">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${list.length > 0 ? tableRows : '<tr><td colspan="6" style="padding: 20px; text-align: center; color: #94a3b8; font-style: italic;">No tasks found for the selected timeframe filter.</td></tr>'}
-          </tbody>
-        </table>
-
-        <div class="footer">
-          <div>Generated by TaxPro PMS Enterprise Suite</div>
-          <div>Page 1 of 1 • Internal Practice Record</div>
+        <div>
+          <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #94a3b8;">Timeframe</div>
+          <div style="font-size: 12px; font-weight: 800; color: #5b52e0; margin-top: 2px;">${timeframeLabel}</div>
         </div>
+      </div>
 
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 250);
-          };
-        </script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+      <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 14px;">
+        <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; text-align: center; background: #f8fafc;">
+          <div style="font-size: 9px; font-weight: 800; color: #64748b;">Total</div>
+          <div style="font-size: 14px; font-weight: 900; color: #0f172a; margin-top: 2px;">${metrics.total}</div>
+        </div>
+        <div style="border: 1px solid #bfdbfe; border-radius: 6px; padding: 6px; text-align: center; background: #eff6ff;">
+          <div style="font-size: 9px; font-weight: 800; color: #2563eb;">In Progress</div>
+          <div style="font-size: 14px; font-weight: 900; color: #1d4ed8; margin-top: 2px;">${metrics.inProgress}</div>
+        </div>
+        <div style="border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px; text-align: center; background: #f0fdf4;">
+          <div style="font-size: 9px; font-weight: 800; color: #16a34a;">Completed</div>
+          <div style="font-size: 14px; font-weight: 900; color: #15803d; margin-top: 2px;">${metrics.completed}</div>
+        </div>
+        <div style="border: 1px solid #fde68a; border-radius: 6px; padding: 6px; text-align: center; background: #fffbeb;">
+          <div style="font-size: 9px; font-weight: 800; color: #d97706;">Pending</div>
+          <div style="font-size: 14px; font-weight: 900; color: #b45309; margin-top: 2px;">${metrics.pending}</div>
+        </div>
+        <div style="border: 1px solid #ddd6fe; border-radius: 6px; padding: 6px; text-align: center; background: #f5f3ff;">
+          <div style="font-size: 9px; font-weight: 800; color: #7c3aed;">Rate</div>
+          <div style="font-size: 14px; font-weight: 900; color: #6d28d9; margin-top: 2px;">${metrics.rate}%</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Task Title & Scope</th>
+            <th>Client / Entity</th>
+            <th>Category</th>
+            <th>Due Date</th>
+            <th>Priority</th>
+            <th style="text-align: right;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.length > 0 ? tableRows : '<tr><td colspan="6" style="padding: 16px; text-align: center; color: #94a3b8; font-style: italic;">No tasks found for the selected timeframe.</td></tr>'}
+        </tbody>
+      </table>
+    `;
+
+    printHtml(`Task Audit Dossier - ${member.name}`, bodyHtml);
+    if (onShowToast) onShowToast(`🖨️ Generating task audit report for ${member.name}...`, 'info');
   };
 
   const triggerPrint = () => {
@@ -891,22 +1014,15 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       metadata: { count: members.length }
     });
 
-    const now = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-    const printWindow = window.open('', '_blank', 'width=950,height=800');
-    if (!printWindow) {
-      window.print();
-      return;
-    }
-
     const rows = currentList.map((m, idx) => `
       <tr style="border-bottom: 1px solid #e5e7eb; background: ${idx % 2 === 0 ? '#ffffff' : '#f9fafb'};">
-        <td style="padding: 10px 12px; font-weight: 700; color: #111827;">${m.name || 'Unnamed'}</td>
-        <td style="padding: 10px 12px; color: #4b5563;">${m.email || 'N/A'}</td>
-        <td style="padding: 10px 12px; color: #4b5563;">${m.phone || 'N/A'}</td>
-        <td style="padding: 10px 12px; font-weight: 600; color: #374151;">${m.role || 'Employee'}</td>
-        <td style="padding: 10px 12px; color: #4b5563;">${m.department || 'General'}</td>
-        <td style="padding: 10px 12px; text-align: right;">
-          <span style="display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700;
+        <td style="padding: 7px 10px; font-weight: 700; color: #111827;">${m.name || 'Unnamed'}</td>
+        <td style="padding: 7px 10px; color: #4b5563;">${m.email || 'N/A'}</td>
+        <td style="padding: 7px 10px; color: #4b5563;">${m.phone || 'N/A'}</td>
+        <td style="padding: 7px 10px; font-weight: 600; color: #374151;">${m.role || 'Employee'}</td>
+        <td style="padding: 7px 10px; color: #4b5563;">${m.department || 'General'}</td>
+        <td style="padding: 7px 10px; text-align: right;">
+          <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9.5px; font-weight: 700;
             ${m.status === 'Active' ? 'background: #d1fae5; color: #065f46;' : 'background: #fee2e2; color: #991b1b;'}">
             ${m.status || 'Active'}
           </span>
@@ -914,65 +1030,29 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       </tr>
     `).join('');
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>TaxPro PMS - Team Directory</title>
-        <style>
-          @page { size: A4; margin: 12mm; }
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1f2937; margin: 0; padding: 20px; font-size: 12px; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #5b52e0; padding-bottom: 15px; margin-bottom: 20px; }
-          .logo-title { font-size: 20px; font-weight: 900; color: #181c32; }
-          table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }
-          th { background: #f1f5f9; padding: 9px 12px; text-align: left; font-weight: 800; color: #475569; text-transform: uppercase; font-size: 10px; border-bottom: 2px solid #cbd5e1; }
-          .footer { margin-top: 25px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <div class="logo-title">TAXPRO PRACTICE MANAGEMENT SYSTEM</div>
-            <div style="font-size: 11px; color: #6b7280; margin-top: 3px;">Team Directory & Workforce Access Hierarchy</div>
-          </div>
-          <div style="text-align: right;">
-            <div style="font-size: 11px; color: #64748b;">Date: ${now}</div>
-            <div style="font-size: 11px; font-weight: 700; color: #5b52e0; margin-top: 2px;">Total: ${currentList.length} Accounts</div>
-          </div>
-        </div>
+    const bodyHtml = `
+      <div style="margin-bottom: 12px; font-weight: 800; font-size: 13px; color: #1e293b;">
+        Team Members & Workforce Directory (${currentList.length} Active Accounts)
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Member Name</th>
+            <th>Email Address</th>
+            <th>Phone</th>
+            <th>Role</th>
+            <th>Department</th>
+            <th style="text-align: right;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    `;
 
-        <table>
-          <thead>
-            <tr>
-              <th>Member Name</th>
-              <th>Email Address</th>
-              <th>Phone</th>
-              <th>Role</th>
-              <th>Department</th>
-              <th style="text-align: right;">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
-
-        <div class="footer">
-          <div>Generated by TaxPro PMS Enterprise Suite</div>
-          <div>Page 1 of 1 • Internal Practice Record</div>
-        </div>
-
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 250);
-          };
-        </script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    printHtml('Team Members Directory', bodyHtml);
+    if (onShowToast) onShowToast('🖨️ Generating printable team directory...', 'info');
   };
 
   // ============================================================================
@@ -1613,11 +1693,11 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                     </div>
                   </div>
                   
-                  {/* Contact Info */}
+                  {/* Contact & Detailed Profile Info */}
                   <div className="pt-2.5 border-t border-gray-100 flex flex-col gap-1.5 text-xs text-gray-600 font-medium">
                      <div className="flex items-center gap-2 truncate">
                        <Mail className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                       <span className="truncate">{obj.email}</span>
+                       <span className="truncate">{obj.email || 'No email'}</span>
                      </div>
                      {obj.phone && (
                        <div className="flex items-center gap-2 truncate">
@@ -1629,6 +1709,30 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                        <div className="flex items-center gap-2 truncate">
                          <Building className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                          <span className="truncate">Dept: {obj.department}</span>
+                       </div>
+                     )}
+                     {obj.salary && (
+                       <div className="flex items-center gap-2 truncate text-emerald-700 font-bold">
+                         <IndianRupee className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                         <span>Salary: {obj.salary}</span>
+                       </div>
+                     )}
+                     {obj.date_of_joining && (
+                       <div className="flex items-center gap-2 truncate text-gray-500 text-[11px]">
+                         <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                         <span>Joined: {formatDate(obj.date_of_joining)}</span>
+                       </div>
+                     )}
+                     {obj.pan && (
+                       <div className="flex items-center gap-2 truncate font-mono text-[11px] text-gray-600">
+                         <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                         <span>PAN: {obj.pan}</span>
+                       </div>
+                     )}
+                     {obj.upi_id && (
+                       <div className="flex items-center gap-2 truncate font-mono text-[11px] text-indigo-600">
+                         <QrCode className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+                         <span>UPI: {obj.upi_id}</span>
                        </div>
                      )}
                   </div>
@@ -1650,6 +1754,17 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
                     {/* Archive & Delete Icons */}
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingMember({ ...obj });
+                        }}
+                        className="p-1.5 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-emerald-200"
+                        title="Edit Full Member Details"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
                       {activeTab !== 'Past' && (
                         <button 
                           type="button"
@@ -1738,16 +1853,31 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
                   {/* ADMIN ACCESS CONTROL BUTTONS */}
                   {isAdmin && activeTab === 'Members' && (
-                    <div className="grid grid-cols-2 gap-2 mt-1 z-10" onClick={(e) => e.stopPropagation()}>
+                    <div className="grid grid-cols-3 gap-1.5 mt-1 z-10" onClick={(e) => e.stopPropagation()}>
                       
+                      {/* Edit Details Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingMember({ ...obj });
+                        }}
+                        className="py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded-xl border border-emerald-200 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                        title="Edit Member Details"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+
                       {/* Detailed Permissions Modal Button */}
                       <button
                         type="button"
                         onClick={(e) => handleOpenAccessModal(e, obj)}
                         className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-xl border border-indigo-200 flex items-center justify-center gap-1 transition-all cursor-pointer"
+                        title="Manage Permissions"
                       >
                         <SlidersHorizontal className="w-3 h-3" />
-                        <span>Permissions</span>
+                        <span>Perms</span>
                       </button>
 
                       {/* Quick Revoke / Grant Access Toggle */}
@@ -1756,19 +1886,20 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                         onClick={(e) => handleToggleQuickAccess(e, obj)}
                         className={`py-1.5 px-2 text-[11px] font-bold rounded-xl border flex items-center justify-center gap-1 transition-all cursor-pointer ${
                           isRevoked
-                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+                            ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300'
                             : 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300'
                         }`}
+                        title={isRevoked ? 'Unlock Account' : 'Lock Account'}
                       >
                         {isRevoked ? (
                           <>
                             <Unlock className="w-3 h-3" />
-                            <span>Grant Access</span>
+                            <span>Unlock</span>
                           </>
                         ) : (
                           <>
                             <Lock className="w-3 h-3" />
-                            <span>Revoke Access</span>
+                            <span>Lock</span>
                           </>
                         )}
                       </button>
@@ -1856,114 +1987,104 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
       {/* 
         ========================================================================
-        NEW INVITE MEMBER MODAL FORM
+        ADD / INVITE TEAM MEMBER MODAL FORM (FULL DETAILS)
         ========================================================================
       */}
       {isInviteModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsInviteModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-3xl">
-            {/* Premium Gradient Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
-                  <Users2 className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+                  <UserPlus className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
-                    Invite Team Member
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
+                    Add / Register Team Member
                   </h3>
-                  <p className="text-xs text-gray-300 mt-0.5">
-                    Register a new employee, set role designation & initialize credentials
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Register a new staff member with complete profile, payroll, KYC, and credentials
                   </p>
                 </div>
               </div>
 
               <button 
+                type="button"
                 onClick={() => setIsInviteModalOpen(false)} 
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleInviteSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+            <form onSubmit={handleInviteSubmit} className="flex-1 overflow-y-auto p-6 flex flex-col gap-5 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                
-                {/* Column 1: Personal & Contact */}
-                <div className="flex flex-col gap-3.5">
+              {/* SECTION 1: Personal & Employment Identity */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 sm:p-5 flex flex-col gap-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                  <User className="w-4 h-4 text-indigo-600" />
+                  <span>1. Identity & Designation</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                   <div>
-                    <label className="text-gray-700 block mb-1">Full Name <span className="text-red-500">*</span></label>
+                    <label className="text-slate-700 block mb-1">Full Name <span className="text-rose-500">*</span></label>
                     <div className="relative">
-                      <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input 
                         type="text" 
                         placeholder="e.g. Rahul Sharma"
                         value={formData.name}
                         onChange={(e) => setFormData({...formData, name: e.target.value})}
-                        className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors"
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs"
                         required
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-gray-700 block mb-1">Official Email Address <span className="text-red-500">*</span></label>
+                    <label className="text-slate-700 block mb-1">Official Email Address <span className="text-rose-500">*</span></label>
                     <div className="relative">
-                      <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input 
                         type="email" 
                         placeholder="e.g. rahul@firm.com"
                         value={formData.email}
                         onChange={(e) => setFormData({...formData, email: e.target.value})}
-                        className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors"
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs"
                         required
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-gray-700 block mb-1">Phone Number (10 Digits)</label>
+                    <label className="text-slate-700 block mb-1">Phone Number (10 Digits)</label>
                     <div className="relative">
-                      <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input 
                         type="tel" 
                         placeholder="e.g. 9876543210"
                         maxLength={10}
                         value={formData.phone}
                         onChange={(e) => setFormData({...formData, phone: e.target.value.replace(/[^0-9]/g, '')})}
-                        className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-gray-700 block mb-1">UPI ID / VPA (Optional)</label>
-                    <div className="relative">
-                      <QrCode className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input 
-                        type="text" 
-                        placeholder="e.g. rahul@okaxis or 9876543210@paytm"
-                        value={formData.upi_id || ''}
-                        onChange={(e) => setFormData({...formData, upi_id: e.target.value})}
-                        className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors font-mono"
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Column 2: Role, Department & Credentials */}
-                <div className="flex flex-col gap-3.5">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                   <div>
-                    <label className="text-gray-700 block mb-1">Role / Designation</label>
+                    <label className="text-slate-700 block mb-1">Role / Designation</label>
                     <select
                       value={formData.role}
                       onChange={(e) => setFormData({...formData, role: e.target.value})}
-                      className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors cursor-pointer"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs"
                     >
                       <option value="Employee">Employee (Associate)</option>
                       <option value="Manager">Department Manager</option>
@@ -1972,11 +2093,11 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-gray-700 block mb-1">Department</label>
+                    <label className="text-slate-700 block mb-1">Department</label>
                     <select
                       value={formData.department}
                       onChange={(e) => setFormData({...formData, department: e.target.value})}
-                      className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors cursor-pointer"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs"
                     >
                       <option value="General">General</option>
                       {departmentsList.map(d => (
@@ -1986,39 +2107,381 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-gray-700 block mb-1">Preset Temporary Password</label>
+                    <label className="text-slate-700 block mb-1">Initial Status</label>
+                    <select
+                      value={formData.status}
+                      onChange={(e) => setFormData({...formData, status: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <option value="Active">Active (Ready Now)</option>
+                      <option value="Pending Invite">Pending Invite</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Payroll & Compensation */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 sm:p-5 flex flex-col gap-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                  <IndianRupee className="w-4 h-4 text-emerald-600" />
+                  <span>2. Payroll & Compensation</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="text-slate-700 block mb-1">Monthly Salary / CTC</label>
                     <div className="relative">
-                      <KeyRound className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <IndianRupee className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input 
+                        type="text" 
+                        placeholder="e.g. ₹50,000/mo"
+                        value={formData.salary}
+                        onChange={(e) => setFormData({...formData, salary: e.target.value})}
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">UPI ID / VPA</label>
+                    <div className="relative">
+                      <QrCode className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input 
+                        type="text" 
+                        placeholder="e.g. rahul@okaxis or 9876543210@paytm"
+                        value={formData.upi_id || ''}
+                        onChange={(e) => setFormData({...formData, upi_id: e.target.value})}
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="text-slate-700 block mb-1">Bank Account Number</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. 50100234567890"
+                      value={formData.bank_account || ''}
+                      onChange={(e) => setFormData({...formData, bank_account: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">IFSC Code</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. HDFC0001234"
+                      value={formData.ifsc || ''}
+                      onChange={(e) => setFormData({...formData, ifsc: e.target.value.toUpperCase()})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono uppercase shadow-2xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 3: KYC & Compliance */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 sm:p-5 flex flex-col gap-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                  <ShieldCheck className="w-4 h-4 text-blue-600" />
+                  <span>3. KYC & Service Details</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                  <div>
+                    <label className="text-slate-700 block mb-1">Permanent Account Number (PAN)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. ABCDE1234F"
+                      maxLength={10}
+                      value={formData.pan || ''}
+                      onChange={(e) => setFormData({...formData, pan: e.target.value.toUpperCase()})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono uppercase shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">Date of Joining</label>
+                    <input 
+                      type="date" 
+                      value={formData.date_of_joining || ''}
+                      onChange={(e) => setFormData({...formData, date_of_joining: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">Emergency Contact Phone</label>
+                    <input 
+                      type="tel" 
+                      placeholder="e.g. 9811122233"
+                      value={formData.emergency_contact || ''}
+                      onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 4: Credentials & Notes */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 sm:p-5 flex flex-col gap-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                  <KeyRound className="w-4 h-4 text-purple-600" />
+                  <span>4. Account Credentials & Notes</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="text-slate-700 block mb-1">Preset Temporary Password</label>
+                    <div className="relative">
+                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input 
                         type="text" 
                         placeholder="e.g. TaxPro@2026"
                         value={formData.password}
                         onChange={(e) => setFormData({...formData, password: e.target.value})}
-                        className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 text-xs font-medium text-gray-800 outline-none focus:bg-white focus:border-indigo-500 transition-colors font-mono"
+                        className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
                       />
                     </div>
-                    <span className="text-[10px] text-gray-400 mt-1 block">Leave blank to auto-generate a secure token.</span>
+                    <span className="text-[10px] text-slate-400 mt-1 block">Leave blank to auto-generate a secure token.</span>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">Internal Notes</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Assigned to GST advisory and audit engagements"
+                      value={formData.notes || ''}
+                      onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs"
+                    />
                   </div>
                 </div>
-
               </div>
 
               {/* Bottom Sticky Actions */}
-              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button 
                   type="button" 
                   onClick={() => setIsInviteModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
                   disabled={isInviting}
-                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
                 >
-                  {isInviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  <span>Register & Dispatch Invite</span>
+                  {isInviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>Save & Register Member</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 
+        ========================================================================
+        EDIT TEAM MEMBER FULL PROFILE & DETAILS MODAL
+        ========================================================================
+      */}
+      {editingMember && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingMember(null); }}
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+        >
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
+                    Edit Team Member Profile
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Update personal, designation, compensation, and KYC records for <strong className="text-slate-800">{editingMember.name}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <button 
+                type="button"
+                onClick={() => setEditingMember(null)} 
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMemberEdits} className="flex-1 overflow-y-auto p-6 flex flex-col gap-5 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
+              
+              {/* SECTION 1: Identity & Designation */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 sm:p-5 flex flex-col gap-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                  <User className="w-4 h-4 text-indigo-600" />
+                  <span>1. Identity & Designation</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                  <div>
+                    <label className="text-slate-700 block mb-1">Full Name <span className="text-rose-500">*</span></label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="Full Name"
+                      value={editingMember.name || ''}
+                      onChange={(e) => setEditingMember({...editingMember, name: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">Official Email Address <span className="text-rose-500">*</span></label>
+                    <input 
+                      type="email" 
+                      required
+                      placeholder="Email Address"
+                      value={editingMember.email || ''}
+                      onChange={(e) => setEditingMember({...editingMember, email: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">Phone Number</label>
+                    <input 
+                      type="tel" 
+                      placeholder="Phone"
+                      value={editingMember.phone || ''}
+                      onChange={(e) => setEditingMember({...editingMember, phone: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                  <div>
+                    <label className="text-slate-700 block mb-1">Role / Designation</label>
+                    <select
+                      value={editingMember.role || 'Employee'}
+                      onChange={(e) => setEditingMember({...editingMember, role: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <option value="Employee">Employee (Associate)</option>
+                      <option value="Manager">Department Manager</option>
+                      <option value="Administrator">Administrator</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">Department</label>
+                    <select
+                      value={editingMember.department || 'General'}
+                      onChange={(e) => setEditingMember({...editingMember, department: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <option value="General">General</option>
+                      {departmentsList.map(d => (
+                         <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">Status</label>
+                    <select
+                      value={editingMember.status || 'Active'}
+                      onChange={(e) => setEditingMember({...editingMember, status: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Pending Invite">Pending Invite</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Compensation & Payroll */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 sm:p-5 flex flex-col gap-3.5 shadow-2xs">
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                  <IndianRupee className="w-4 h-4 text-emerald-600" />
+                  <span>2. Compensation & Payroll</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="text-slate-700 block mb-1">Monthly Salary / CTC</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. ₹50,000/mo"
+                      value={editingMember.salary || ''}
+                      onChange={(e) => setEditingMember({...editingMember, salary: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">UPI ID / VPA</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. rahul@okaxis"
+                      value={editingMember.upi_id || ''}
+                      onChange={(e) => setEditingMember({...editingMember, upi_id: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="text-slate-700 block mb-1">Bank Account Number</label>
+                    <input 
+                      type="text" 
+                      placeholder="Bank Account #"
+                      value={editingMember.bank_account || ''}
+                      onChange={(e) => setEditingMember({...editingMember, bank_account: e.target.value})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-slate-700 block mb-1">IFSC Code</label>
+                    <input 
+                      type="text" 
+                      placeholder="IFSC Code"
+                      value={editingMember.ifsc || ''}
+                      onChange={(e) => setEditingMember({...editingMember, ifsc: e.target.value.toUpperCase()})}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono uppercase shadow-2xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Sticky Actions */}
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
+                <button 
+                  type="button" 
+                  onClick={() => setEditingMember(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSavingEdit}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span>Save Profile Updates</span>
                 </button>
               </div>
             </form>
@@ -2030,17 +2493,17 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       {deleteData && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setDeleteData(null); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-sm p-6 text-center">
-             <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+          <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 text-center my-auto animate-modal-smooth">
+             <div className="w-12 h-12 bg-rose-50 rounded-2xl border border-rose-100 flex items-center justify-center mx-auto mb-3 text-rose-600 shadow-2xs">
                 <Trash2 className="w-6 h-6" />
              </div>
-             <h3 className="text-lg font-bold text-gray-900 mb-1">Confirm Permanent Deletion</h3>
-             <p className="text-xs text-gray-500 mb-6">Are you sure you want to permanently delete this member record?</p>
-             <div className="flex items-center justify-center gap-3">
-               <button onClick={() => setDeleteData(null)} className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer">Cancel</button>
-               <button onClick={executeDelete} className="px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md cursor-pointer">Confirm Delete</button>
+             <h3 className="text-lg font-black text-slate-900 mb-1 font-outfit">Confirm Permanent Deletion</h3>
+             <p className="text-xs text-slate-500 mb-5 font-medium leading-relaxed">Are you sure you want to permanently delete this member record?</p>
+             <div className="flex items-center justify-center gap-2.5">
+               <button onClick={() => setDeleteData(null)} className="flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer">Cancel</button>
+               <button onClick={executeDelete} className="flex-1 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs cursor-pointer">Confirm Delete</button>
              </div>
           </div>
         </div>
@@ -2054,40 +2517,40 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       {credentialsSuccessModal && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setCredentialsSuccessModal(null); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-lg overflow-hidden shadow-2xl border border-emerald-500/30">
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
             {/* Header */}
-            <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-gray-900 text-white p-6 flex items-center justify-between border-b border-emerald-800/40">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-950/50">
-                  <ShieldCheck className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-2xs">
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-black font-outfit text-white">
+                    <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900">
                       Account Registered & Active
                     </h3>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
-                      PostgreSQL Live
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                      Live
                     </span>
                   </div>
-                  <p className="text-xs text-emerald-200/80 mt-0.5">
-                    Credentials successfully saved for <b>{credentialsSuccessModal.name}</b>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Credentials successfully saved for <strong className="text-slate-800">{credentialsSuccessModal.name}</strong>
                   </p>
                 </div>
               </div>
 
               <button 
                 onClick={() => setCredentialsSuccessModal(null)} 
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Content Body */}
-            <div className="p-6 flex flex-col gap-4 bg-white text-gray-800">
+            <div className="p-6 flex flex-col gap-4 bg-white text-slate-800 overflow-y-auto overscroll-contain chat-custom-scrollbar flex-1">
               
               {/* Email Dispatch & Ready Status */}
               <div className={`p-3.5 rounded-2xl border flex items-start gap-3 text-xs ${
@@ -2101,61 +2564,74 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                   <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
                 )}
                 <div>
-                  <p className="font-bold text-gray-900">
+                  <p className="font-bold text-slate-900">
                     {credentialsSuccessModal.emailDispatched 
                       ? '✓ Live Invitation Email Dispatched' 
-                      : 'Account Active & PostgreSQL Ready'}
+                      : 'Account Active & Database Ready'}
                   </p>
-                  <p className="text-gray-600 mt-0.5 leading-relaxed">
+                  <p className="text-slate-500 mt-0.5 leading-relaxed">
                     {credentialsSuccessModal.emailDispatched ? (
-                      <span>Official invitation with temporary credentials was transmitted to <b>{credentialsSuccessModal.credentials.email}</b>.</span>
+                      <span>Official invitation with temporary credentials was transmitted to <b className="text-slate-800">{credentialsSuccessModal.credentials.email}</b>.</span>
                     ) : (
-                      <span>Credentials saved in database. Share the details below with <b>{credentialsSuccessModal.name}</b> or set SMTP in Settings for automatic Gmail delivery.</span>
+                      <span>Credentials saved in database. Share the details below with <b className="text-slate-800">{credentialsSuccessModal.name}</b> or set SMTP in Settings for automatic Gmail delivery.</span>
                     )}
                   </p>
                 </div>
               </div>
 
               {/* Credentials Box */}
-              <div className="bg-gray-900 text-white rounded-2xl p-5 border border-gray-800 shadow-inner flex flex-col gap-3 font-mono text-xs">
-                <div className="flex items-center justify-between pb-2 border-b border-gray-800">
-                  <span className="text-gray-400 font-sans font-bold">Designated Portal:</span>
+              <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 shadow-inner flex flex-col gap-3 font-mono text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <span className="text-slate-400 font-sans font-bold">Designated Portal:</span>
                   <span className="px-2.5 py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-bold font-sans">
                     {credentialsSuccessModal.credentials.role === 'Manager' ? '👔 Manager Portal' : (credentialsSuccessModal.credentials.role === 'Administrator' ? '👑 Admin Portal' : '💼 Employee Portal')}
                   </span>
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <span className="text-gray-400 font-sans text-[11px]">Assigned Login ID (Email):</span>
-                  <div className="p-2.5 bg-black/50 rounded-xl border border-gray-800 text-teal-300 font-bold select-all flex items-center justify-between">
+                  <span className="text-slate-400 font-sans text-[11px]">Assigned Login Email:</span>
+                  <div className="p-2.5 bg-black/50 rounded-xl border border-slate-800 text-teal-300 font-bold select-all flex items-center justify-between">
                     <span>{credentialsSuccessModal.credentials.email}</span>
                   </div>
                 </div>
 
+                {credentialsSuccessModal.credentials.id && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-slate-400 font-sans text-[11px]">Employee Login ID (Alternative):</span>
+                    <div className="p-2.5 bg-black/50 rounded-xl border border-slate-800 text-cyan-300 font-bold select-all flex items-center justify-between">
+                      <span>{credentialsSuccessModal.credentials.id}</span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-1">
-                  <span className="text-gray-400 font-sans text-[11px]">Active Password:</span>
-                  <div className="p-2.5 bg-black/50 rounded-xl border border-gray-800 text-amber-300 font-bold select-all flex items-center justify-between">
+                  <span className="text-slate-400 font-sans text-[11px]">Active Password:</span>
+                  <div className="p-2.5 bg-black/50 rounded-xl border border-slate-800 text-amber-300 font-bold select-all flex items-center justify-between">
                     <span>{credentialsSuccessModal.credentials.password}</span>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <span className="text-gray-400 font-sans text-[11px]">Workspace Login URL:</span>
-                  <div className="p-2.5 bg-black/50 rounded-xl border border-gray-800 text-gray-300 text-[11px] truncate">
+                  <span className="text-slate-400 font-sans text-[11px]">Workspace Login URL:</span>
+                  <div className="p-2.5 bg-black/50 rounded-xl border border-slate-800 text-slate-300 text-[11px] truncate">
                     {window.location.origin}
                   </div>
+                </div>
+                
+                <div className="text-[10px] text-slate-400 italic pt-1 border-t border-slate-800">
+                  💡 Team members can sign in using either their Email Address or their Employee ID.
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-3 pt-1">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 border-t border-slate-100 flex items-center gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button
                   type="button"
                   onClick={copyCredentialsToClipboard}
-                  className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer ${
+                  className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer ${
                     copiedStatus 
                       ? 'bg-emerald-600 text-white' 
-                      : 'bg-gradient-to-r from-teal-700 to-emerald-600 hover:from-teal-800 hover:to-emerald-700 text-white shadow-teal-700/20'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/20'
                   }`}
                 >
                   {copiedStatus ? <Check className="w-4 h-4" /> : <KeyRound className="w-4 h-4" />}
@@ -2165,7 +2641,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                 <button
                   type="button"
                   onClick={() => setCredentialsSuccessModal(null)}
-                  className="py-3 px-5 rounded-xl border border-gray-300 hover:bg-gray-100 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="py-2.5 px-5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Done
                 </button>
@@ -2212,15 +2688,58 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 font-mono mt-0.5 flex items-center gap-1.5 truncate">
-                    <Mail className="w-3 h-3 text-gray-500" />
-                    <span>{selectedMemberForTasks.email}</span>
-                  </p>
+
+                  <div className="flex items-center gap-3 text-xs text-gray-400 mt-1 flex-wrap">
+                    <span className="flex items-center gap-1 font-mono text-gray-300">
+                      <Mail className="w-3.5 h-3.5 text-gray-400" />
+                      <span>{selectedMemberForTasks.email}</span>
+                    </span>
+                    {selectedMemberForTasks.phone && (
+                      <span className="flex items-center gap-1 font-mono text-gray-300">
+                        <Phone className="w-3.5 h-3.5 text-gray-400" />
+                        <span>{selectedMemberForTasks.phone}</span>
+                      </span>
+                    )}
+                    {selectedMemberForTasks.salary && (
+                      <span className="flex items-center gap-1 font-bold text-emerald-400">
+                        <IndianRupee className="w-3.5 h-3.5" />
+                        <span>{selectedMemberForTasks.salary}</span>
+                      </span>
+                    )}
+                    {selectedMemberForTasks.date_of_joining && (
+                      <span className="flex items-center gap-1 text-gray-300 text-[11px]">
+                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                        <span>Joined: {formatDate(selectedMemberForTasks.date_of_joining)}</span>
+                      </span>
+                    )}
+                    {selectedMemberForTasks.pan && (
+                      <span className="flex items-center gap-1 font-mono text-gray-300 text-[11px]">
+                        <FileText className="w-3.5 h-3.5 text-gray-400" />
+                        <span>PAN: {selectedMemberForTasks.pan}</span>
+                      </span>
+                    )}
+                    {selectedMemberForTasks.upi_id && (
+                      <span className="flex items-center gap-1 font-mono text-indigo-300 text-[11px]">
+                        <QrCode className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>UPI: {selectedMemberForTasks.upi_id}</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Action Buttons: Print & Close */}
+              {/* Action Buttons: Edit, Print & Close */}
               <div className="flex items-center gap-2.5 self-end sm:self-center">
+                <button
+                  type="button"
+                  onClick={() => setEditingMember({ ...selectedMemberForTasks })}
+                  className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl border border-white/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                  title="Edit member details"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Edit Profile</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handlePrintMemberReport}
@@ -2552,23 +3071,22 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       {deleteData && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setDeleteData(null); }}
-          className="modal-overlay-backdrop print-hidden"
-          style={{ zIndex: 999 }}
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto print-hidden"
         >
-          <div className="modal-content-box max-w-md p-6 border border-red-200">
-            <div className="flex items-center gap-3.5 mb-4 border-b border-gray-100 pb-3">
-              <div className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center font-bold shadow-xs">
-                <Trash2 className="w-5 h-5" />
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-6 my-auto animate-modal-smooth text-slate-800">
+            <div className="flex items-center gap-3.5 mb-4 border-b border-slate-100 pb-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold shadow-2xs border border-rose-100">
+                <Trash2 className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-black text-gray-900 font-outfit">Permanently Delete Record?</h3>
-                <p className="text-xs text-red-600 font-semibold">
+                <h3 className="text-base font-black text-slate-900 font-outfit">Permanently Delete Record?</h3>
+                <p className="text-xs text-rose-600 font-semibold mt-0.5">
                   {deleteData.name ? `Account: ${deleteData.name}` : 'This action is irreversible'}
                 </p>
               </div>
             </div>
             
-            <p className="text-xs text-gray-600 mb-6 leading-relaxed">
+            <p className="text-xs text-slate-600 mb-6 leading-relaxed">
               Are you sure you want to permanently delete this member from your practice database and records? This will delete all associated login permissions and directory profiles.
             </p>
 
@@ -2576,14 +3094,14 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
               <button
                 type="button"
                 onClick={() => setDeleteData(null)}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 cursor-pointer"
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 cursor-pointer transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={executeDelete}
-                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-700 shadow-md cursor-pointer flex items-center gap-1.5 active:scale-95 transition-transform"
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/20 cursor-pointer flex items-center gap-1.5 active:scale-95 transition-all"
               >
                 <Trash2 className="w-4 h-4" /> Yes, Permanently Delete
               </button>

@@ -61,6 +61,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { logAuditActivity } from '../lib/auditLogger';
+import { formatDate, formatDateWithWeekday } from '../lib/dateUtils';
 
 const MONTHS_LIST = [
   { num: '01', short: 'Jan', name: 'January' },
@@ -412,7 +413,7 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
     if (onShowToast) {
-      onShowToast(`🎉 Subscription for ${firm.name} extended by +1 Year! (Valid till ${newExp.toLocaleDateString()})`, 'success');
+      onShowToast(`🎉 Subscription for ${firm.name} extended by +1 Year! (Valid till ${formatDate(newExp)})`, 'success');
     }
     fetchGlobalStats();
   };
@@ -635,7 +636,7 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
       const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       return {
         expiryDate: expDate.toISOString().slice(0, 10),
-        expiryFormatted: expDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+        expiryFormatted: formatDate(expDate),
         daysLeft: Math.max(0, daysLeft),
         plan: 'Enterprise Cloud Practice (Annual Pro)',
         pctRemaining: Math.min(100, Math.max(5, Math.round((daysLeft / 365) * 100)))
@@ -1199,8 +1200,8 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
 
   // Print Daily Audited Cashflow Statement
   const handlePrintDailyCashflow = () => {
-    const formattedDate = new Date(selectedCalendarDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    const printDate = new Date().toLocaleString('en-IN');
+    const formattedDate = formatDateWithWeekday(selectedCalendarDate);
+    const printDate = formatDateTime(new Date());
     const firmName = localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates';
     const firmGst = localStorage.getItem('taxpro_firm_gst') || '24AAAAA0000A1Z5';
     const firmPan = localStorage.getItem('taxpro_firm_pan') || 'AAATF1234C';
@@ -1411,7 +1412,7 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
         `"${w.email || ''}"`,
         `"${w.phone || ''}"`,
         `"${w.status || 'Active'}"`,
-        `"${w.created_at ? new Date(w.created_at).toLocaleDateString() : '-'}"`
+        `"${w.created_at ? formatDate(w.created_at) : '-'}"`
       ].join(','));
     });
 
@@ -2208,7 +2209,7 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
                                 </td>
 
                                 <td className="px-6 py-4 text-right font-mono text-gray-500 text-[11px]">
-                                  {w.created_at ? new Date(w.created_at).toLocaleDateString() : 'Active'}
+                                  {w.created_at ? formatDate(w.created_at) : 'Active'}
                                 </td>
                               </tr>
                             );
@@ -2407,7 +2408,7 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
                         Audited Daily Cashflow Ledger
                       </div>
                       <h4 className="text-lg font-black text-white font-outfit mt-0.5">
-                        Financial Statement for {new Date(selectedCalendarDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                        Financial Statement for {formatDateWithWeekday(selectedCalendarDate)}
                       </h4>
                     </div>
 
@@ -3140,7 +3141,7 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
                             </td>
 
                             <td className="px-6 py-4 text-right font-mono text-gray-400">
-                              {u.created_at ? new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Verified'}
+                              {u.created_at ? formatDate(u.created_at) : 'Verified'}
                             </td>
                           </tr>
                         );
@@ -3547,7 +3548,7 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
                       <span>Preview: New Subscription Validity</span>
                     </div>
                     <div className="text-sm font-black text-white mt-0.5">
-                      Expires on: <span className="text-emerald-300 font-mono">{new Date(subModalCustomDate || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                      Expires on: <span className="text-emerald-300 font-mono">{formatDate(subModalCustomDate || Date.now())}</span>
                     </div>
                   </div>
                 </div>

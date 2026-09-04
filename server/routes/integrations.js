@@ -50,7 +50,7 @@ router.post('/config', async (req, res) => {
 
 // POST /api/integrations/invite (Dispatch invite and save to SQL)
 router.post('/invite', async (req, res) => {
-  const { smtpConfig, memberName, targetEmail, generatedPassword, role, origin } = req.body;
+  const { smtpConfig, memberName, targetEmail, generatedPassword, role, origin, id, employeeId } = req.body;
 
   try {
     if (!targetEmail) {
@@ -58,22 +58,24 @@ router.post('/invite', async (req, res) => {
     }
 
     // 1. ALWAYS Register the member into the database so they can log in immediately:
-    registerInvitedUser(targetEmail, generatedPassword, memberName, role);
-
-    // 2. Dispatch via Python smtplib engine
-    const mailResult = await runPythonMailer({
-      action: 'invite',
+    const regResult = await registerInvitedUser({
       email: targetEmail,
-      name: memberName,
-      role: role || 'Employee',
       password: generatedPassword,
-      origin: origin || 'http://localhost:3000',
-      smtp_config: smtpConfig || {}
+      name: memberName,
+      id: id || employeeId,
+      role: role || 'Employee',
+      origin: origin || 'https://taxpro-suite.vercel.app',
+      smtpConfig
     });
 
-    console.log(`[TaxPro Integrations] Python smtplib Invitation Result:`, mailResult);
+    console.log(`[TaxPro Integrations] Invitation Result:`, regResult);
     
-    res.json({ success: true, message: `Invitation successfully dispatched via Python smtplib to ${targetEmail}!`, mailResult });
+    res.json({ 
+      success: true, 
+      message: `Invitation successfully dispatched to ${targetEmail}!`, 
+      mailResult: regResult.emailResult || { success: true },
+      credentials: regResult.credentials
+    });
   } catch (error) {
     console.error(`[TaxPro Integrations] Invitation Email Failure:`, error.message);
     res.status(500).json({ success: false, error: `Could not send invite email: ${error.message}` });

@@ -1,3 +1,5 @@
+import { query } from '../../server/db.js';
+
 export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -18,20 +20,37 @@ export default async function handler(req, res) {
   }
 
   const { email, otp } = req.body || {};
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanOtp = String(otp || '').trim();
 
-  if (!email || !otp) {
-    return res.status(400).json({ success: false, error: 'Email and 4-digit OTP are required.' });
+  if (!cleanEmail || !cleanOtp) {
+    return res.status(400).json({ success: false, error: 'Email and verification OTP are required.' });
   }
 
-  const cleanOtp = String(otp).trim();
-  if (cleanOtp.length !== 4) {
-    return res.status(400).json({ success: false, error: 'Please enter all 4 digits.' });
-  }
+  try {
+    const storageRes = await query('SELECT value FROM app_storage WHERE key = $1 LIMIT 1', [`otp_${cleanEmail}`]);
+    if (storageRes.rowCount === 0 || !storageRes.rows[0].value) {
+      return res.status(400).json({ success: false, error: 'No active OTP found for this email. Please request a new verification code.' });
+    }
 
-  // Accept valid 4-digit OTP
-  return res.status(200).json({
-    success: true,
-    verified: true,
-    message: '✓ Authorization Verified Successfully.'
-  });
+    const parsed = typeof storageRes.rows[0].value === 'string' ? JSON.parse(storageRes.rows[0].value) : storageRes.rows[0].value;
+    if (Date.now() > parsed.expiresAt) {
+      await query('DELETE FROM app_storage WHERE key = $1', [`otp_${cleanEmail}`]);
+      return res.status(400).json({ success: false, error: 'This verification code has expired. Please request a new code.' });
+    }
+
+    if (parsed.otp !== cleanOtp) {
+      return res.status(400).json({ success: false, error: 'Invalid verification code. Please check your email inbox and enter the exact code sent to you.' });
+    }
+
+    await query('DELETE FROM app_storage WHERE key = $1', [`otp_${cleanEmail}`]);
+
+    return res.status(200).json({
+      success: true,
+      verified: true,
+      message: '✓ Authorization Verified Successfully.'
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Verification error: ' + err.message });
+  }
 }

@@ -85,12 +85,10 @@ export const logAuditActivity = async (actionOrObj, detailsArg = '', moduleArg =
       created_at: new Date().toISOString()
     };
 
-    // 1. Insert into PostgreSQL audit_logs table
-    try {
-      await supabase.from('audit_logs').insert([logEntry]);
-    } catch (dbErr) {
+    // 1. Insert into PostgreSQL audit_logs table (asynchronous background persistence)
+    supabase.from('audit_logs').insert([logEntry]).catch(dbErr => {
       // console.warn('[Audit DB Insert Notice]:', dbErr.message);
-    }
+    });
 
     // 2. Cache in localStorage for offline access and instant updates
     try {
@@ -99,9 +97,19 @@ export const logAuditActivity = async (actionOrObj, detailsArg = '', moduleArg =
       localStorage.setItem('taxpro_audit_logs', JSON.stringify(updatedLogs));
     } catch (e) {}
 
-    // 3. Dispatch global window event
+    // 3. Dispatch instant cross-tab BroadcastChannel
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        const channel = new BroadcastChannel('taxpro_audit_channel');
+        channel.postMessage({ type: 'NEW_AUDIT_LOG', log: logEntry });
+        channel.close();
+      } catch (e) {}
+    }
+
+    // 4. Dispatch global window events for 0ms instant UI update
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('taxpro_audit_logged', { detail: logEntry }));
+      window.dispatchEvent(new CustomEvent('taxpro_audit_updated', { detail: logEntry }));
     }
 
     return logEntry;

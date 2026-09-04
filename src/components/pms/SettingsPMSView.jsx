@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Save, Shield, Printer, Mail, Phone, Lock, KeyRound, Building, CheckCircle2, Check, User, Globe, Moon, Sun, ArrowRight, Eye, EyeOff, AlertCircle, ShieldAlert, Sparkles, ShieldCheck, Key, ZoomIn, ZoomOut, Maximize2, Sliders, Tag, BadgeCheck, MapPin, RefreshCw, RotateCcw, Loader2, QrCode, IndianRupee, Edit3, Copy } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { printHtml } from '../../lib/printHelper';
+import { formatDate } from '../../lib/dateUtils';
 import FirmProfileModal from './FirmProfileModal';
 
 export default function SettingsPMSView({ userRole: propUserRole, onShowToast }) {
@@ -489,19 +491,7 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
   };
 
   const triggerPrint = () => {
-    if (onShowToast) onShowToast('Generating official Firm Profile Certificate...', 'info');
-
-    const printWin = window.open('', '_blank', 'width=900,height=950');
-    if (!printWin) {
-      window.print();
-      return;
-    }
-
-    const currDate = new Date().toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
-    });
+    const currDate = formatDate(new Date());
     const currTime = new Date().toLocaleTimeString('en-IN', {
       hour: '2-digit',
       minute: '2-digit'
@@ -509,253 +499,60 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
 
     const certId = `TAXPRO-FIRM-${Date.now().toString().slice(-6)}`;
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>${firmName || 'TaxPro Practice'} - Official Firm Legal & Company Profile</title>
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 12mm 15mm;
-            }
-            * { box-sizing: border-box; margin: 0; padding: 0; }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-              color: #0f172a;
-              background: #ffffff;
-              padding: 24px;
-              line-height: 1.5;
-            }
-            .cert-card {
-              border: 2px solid #4f46e5;
-              border-radius: 20px;
-              padding: 32px;
-              position: relative;
-              background: #ffffff;
-            }
-            .cert-header {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              border-bottom: 2px solid #e2e8f0;
-              padding-bottom: 20px;
-              margin-bottom: 24px;
-            }
-            .brand-logo {
-              font-size: 26px;
-              font-weight: 900;
-              color: #4f46e5;
-              letter-spacing: -0.5px;
-            }
-            .brand-sub {
-              font-size: 11px;
-              font-weight: 700;
-              color: #64748b;
-              text-transform: uppercase;
-              letter-spacing: 1px;
-            }
-            .badge-tag {
-              display: inline-block;
-              background: #eff6ff;
-              color: #1d4ed8;
-              border: 1px solid #bfdbfe;
-              font-weight: 800;
-              font-size: 12px;
-              padding: 6px 14px;
-              border-radius: 9999px;
-            }
-            .doc-title-block {
-              text-align: center;
-              margin-bottom: 28px;
-            }
-            .doc-title {
-              font-size: 20px;
-              font-weight: 900;
-              color: #0f172a;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .doc-sub {
-              font-size: 12px;
-              color: #64748b;
-              margin-top: 4px;
-            }
-            .grid-table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 28px;
-            }
-            .grid-table th, .grid-table td {
-              padding: 12px 16px;
-              border: 1px solid #e2e8f0;
-              font-size: 12px;
-            }
-            .grid-table th {
-              background: #f8fafc;
-              color: #475569;
-              font-weight: 700;
-              text-align: left;
-              width: 34%;
-            }
-            .grid-table td {
-              font-weight: 600;
-              color: #0f172a;
-            }
-            .mono {
-              font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-              font-weight: 700;
-              color: #4338ca;
-            }
-            .cert-footer {
-              margin-top: 32px;
-              padding-top: 20px;
-              border-top: 2px dashed #cbd5e1;
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-end;
-            }
-            .seal-box {
-              border: 2px solid #10b981;
-              border-radius: 12px;
-              padding: 10px 16px;
-              display: inline-block;
-              color: #047857;
-              font-weight: 800;
-              font-size: 11px;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              background: #ecfdf5;
-            }
-            .sign-box {
-              text-align: right;
-            }
-            .sign-line {
-              width: 190px;
-              border-bottom: 1px solid #0f172a;
-              margin-bottom: 6px;
-              margin-left: auto;
-            }
-            .sign-title {
-              font-size: 11px;
-              font-weight: 700;
-              color: #475569;
-            }
-            .print-btn-bar {
-              text-align: center;
-              margin-bottom: 20px;
-            }
-            .print-btn {
-              background: #4f46e5;
-              color: white;
-              border: none;
-              padding: 10px 24px;
-              border-radius: 10px;
-              font-weight: 700;
-              font-size: 13px;
-              cursor: pointer;
-              box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
-            }
-            @media print {
-              .print-btn-bar { display: none !important; }
-              body { padding: 0; }
-              .cert-card { border-width: 1.5px; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="print-btn-bar">
-            <button class="print-btn" onclick="window.print()">🖨️ Print Firm Profile Document</button>
-          </div>
+    const bodyHtml = `
+      <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 16px; margin-bottom: 18px;">
+        <div style="font-size: 18px; font-weight: 900; color: #166534;">${firmName || 'TaxPro Advisory & Tax Associates'}</div>
+        <div style="font-size: 11px; color: #15803d; margin-top: 2px;">Official Practice Identity & Compliance Certificate • Ref: ${certId}</div>
+      </div>
 
-          <div class="cert-card">
-            <div class="cert-header">
-              <div>
-                <div class="brand-logo">TAXPRO ENTERPRISE</div>
-                <div class="brand-sub">Practice Management & Corporate Governance System</div>
-              </div>
-              <div>
-                <span class="badge-tag">🏢 Staff Tag: ${firmTag || 'TaxPro'}</span>
-              </div>
-            </div>
-
-            <div class="doc-title-block">
-              <h1 class="doc-title">Firm Legal & Company Identity Profile</h1>
-              <p class="doc-sub">Official Practice Record & Tax Identification Statement • Cert Ref: ${certId}</p>
-            </div>
-
-            <table class="grid-table">
-              <tbody>
-                <tr>
-                  <th>Full Practice / Legal Name</th>
-                  <td><strong>${firmName || 'TaxPro Advisory & Tax Associates'}</strong></td>
-                </tr>
-                <tr>
-                  <th>Staff Badge & Member Tag</th>
-                  <td><span class="mono">🏢 ${firmTag || 'TaxPro'}</span></td>
-                </tr>
-                <tr>
-                  <th>GSTIN / Registration Number</th>
-                  <td><span class="mono">${firmGst || 'N/A (Unregistered)'}</span></td>
-                </tr>
-                <tr>
-                  <th>Permanent Account Number (PAN)</th>
-                  <td><span class="mono">${firmPan || 'N/A'}</span></td>
-                </tr>
-                <tr>
-                  <th>Official Firm Email Address</th>
-                  <td>${firmEmail || 'contact@taxpro.in'}</td>
-                </tr>
-                <tr>
-                  <th>Official Contact Phone</th>
-                  <td>${firmPhone || '+91 98765 43210'}</td>
-                </tr>
-                <tr>
-                  <th>Registered Office Address</th>
-                  <td>${firmAddress || 'Surat, Gujarat, India'}</td>
-                </tr>
-                <tr>
-                  <th>Practice Tagline / Specialization</th>
-                  <td><em>${firmTagline || 'Chartered Accountants & Strategic Tax Advisory'}</em></td>
-                </tr>
-                <tr>
-                  <th>Database Verification State</th>
-                  <td><strong style="color: #059669;">✓ Verified & Synchronized with PostgreSQL Live Database</strong></td>
-                </tr>
-                <tr>
-                  <th>Issued Date & Time</th>
-                  <td>${currDate} at ${currTime}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div class="cert-footer">
-              <div class="seal-box">
-                ✓ TaxPro Verified Firm Seal
-              </div>
-              <div class="sign-box">
-                <div class="sign-line"></div>
-                <div class="sign-title">Authorized Signatory / Administrator</div>
-                <div style="font-size: 10px; color: #94a3b8;">TaxPro PMS Enterprise Governance</div>
-              </div>
-            </div>
-          </div>
-
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 400);
-            };
-          </script>
-        </body>
-      </html>
+      <table>
+        <tbody>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <th style="width: 35%; background: #f8fafc; color: #475569; font-weight: 700;">Full Practice / Legal Name</th>
+            <td><strong style="color: #0f172a;">${firmName || 'TaxPro Advisory & Tax Associates'}</strong></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb; background: #f9fafb;">
+            <th style="background: #f8fafc; color: #475569; font-weight: 700;">Staff Badge & Member Tag</th>
+            <td><span class="badge-blue">🏢 ${firmTag || 'TaxPro'}</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <th style="background: #f8fafc; color: #475569; font-weight: 700;">GSTIN / Registration Number</th>
+            <td style="font-family: monospace; font-weight: 700; color: #0f766e;">${firmGst || 'N/A (Unregistered)'}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb; background: #f9fafb;">
+            <th style="background: #f8fafc; color: #475569; font-weight: 700;">Permanent Account Number (PAN)</th>
+            <td style="font-family: monospace; font-weight: 700; color: #0f766e;">${firmPan || 'N/A'}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <th style="background: #f8fafc; color: #475569; font-weight: 700;">Official Practice Email</th>
+            <td>${firmEmail || 'contact@taxpro.in'}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb; background: #f9fafb;">
+            <th style="background: #f8fafc; color: #475569; font-weight: 700;">Official Contact Phone</th>
+            <td>${firmPhone || '+91 98765 43210'}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <th style="background: #f8fafc; color: #475569; font-weight: 700;">Registered Office Address</th>
+            <td>${firmAddress || 'Surat, Gujarat, India'}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb; background: #f9fafb;">
+            <th style="background: #f8fafc; color: #475569; font-weight: 700;">Practice Tagline / Specialization</th>
+            <td><em>${firmTagline || 'Chartered Accountants & Strategic Tax Advisory'}</em></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <th style="background: #f8fafc; color: #475569; font-weight: 700;">Database Verification State</th>
+            <td><strong style="color: #059669;">✓ Verified & Synchronized with PostgreSQL Database</strong></td>
+          </tr>
+          <tr>
+            <th style="background: #f8fafc; color: #475569; font-weight: 700;">Certificate Generated</th>
+            <td>${currDate} at ${currTime}</td>
+          </tr>
+        </tbody>
+      </table>
     `;
 
-    printWin.document.open();
-    printWin.document.write(html);
-    printWin.document.close();
+    printHtml('Official Firm Profile Certificate', bodyHtml);
+    if (onShowToast) onShowToast('🖨️ Generating printable Firm Profile Certificate...', 'info');
   };
 
   return (
@@ -1326,10 +1123,10 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
       {isResetModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsResetModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className={`modal-content-box max-w-md p-6 sm:p-8 border transition-colors ${
-            theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200 shadow-2xl'
+          <div className={`w-full max-w-md p-6 sm:p-8 rounded-3xl border transition-all my-auto animate-modal-smooth shadow-2xl ${
+            theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200'
           }`}>
             {/* Modal Header */}
             <div className="flex items-center justify-between mb-4">
@@ -1623,10 +1420,10 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
       {isEditAccountModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsEditAccountModalOpen(false); }}
-          className="modal-overlay-backdrop z-[100]"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className={`modal-content-box max-w-lg p-6 sm:p-8 border transition-all ${
-            theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200 shadow-2xl'
+          <div className={`w-full max-w-lg p-6 sm:p-8 rounded-3xl border transition-all my-auto animate-modal-smooth shadow-2xl ${
+            theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200'
           }`}>
             
             {/* Modal Header */}

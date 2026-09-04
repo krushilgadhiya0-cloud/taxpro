@@ -33,6 +33,9 @@ import {
   restoreHolidayNotice,
   getAllMasterAndCustomHolidays 
 } from '../../lib/festivalHolidays';
+import { printHtml } from '../../lib/printHelper';
+import { logAuditActivity } from '../../lib/auditLogger';
+import { formatDate, formatDateWithWeekday } from '../../lib/dateUtils';
 
 export const EXPENSE_CATEGORIES = [
   'Staff Salary & Payroll',
@@ -454,6 +457,14 @@ export default function CalendarPageView({ onShowToast }) {
     const noticeToRemove = notices.find(n => n.id === id);
     const updated = deleteHolidayNotice(id);
     setNotices(updated);
+
+    logAuditActivity({
+      action: 'HOLIDAY_DELETED',
+      module: 'Calendar & Workforce',
+      details: `Removed holiday "${noticeToRemove?.title || id}" from practice calendar`,
+      metadata: { id, title: noticeToRemove?.title }
+    });
+
     if (onShowToast) onShowToast(`✓ Holiday "${noticeToRemove?.title || ''}" removed from calendar. This date is now a regular working day.`, 'info');
   };
 
@@ -461,6 +472,14 @@ export default function CalendarPageView({ onShowToast }) {
   const handleRestoreHolidayNotice = (id, title) => {
     const updated = restoreHolidayNotice(id);
     setNotices(updated);
+
+    logAuditActivity({
+      action: 'HOLIDAY_RESTORED',
+      module: 'Calendar & Workforce',
+      details: `Restored holiday "${title || id}" on practice calendar`,
+      metadata: { id, title }
+    });
+
     if (onShowToast) onShowToast(`✓ Holiday "${title || ''}" restored as an active practice holiday.`, 'success');
   };
 
@@ -505,6 +524,14 @@ export default function CalendarPageView({ onShowToast }) {
     const updated = saveCustomHolidayNotice(newNotice);
     setNotices(updated);
     setIsHolidayModalOpen(false);
+
+    logAuditActivity({
+      action: 'HOLIDAY_DECLARED',
+      module: 'Calendar & Workforce',
+      details: `Declared firm holiday "${newNotice.title}" on ${newNotice.holidayDate}${newNotice.holidayEndDate ? ' to ' + newNotice.holidayEndDate : ''}`,
+      metadata: { title: newNotice.title, date: newNotice.holidayDate }
+    });
+
     setHolidayForm({
       title: '',
       message: '',
@@ -577,6 +604,13 @@ export default function CalendarPageView({ onShowToast }) {
       console.warn('[Transaction Sync]:', err);
     }
 
+    logAuditActivity({
+      action: 'CALENDAR_PAYMENT',
+      module: 'Calendar & Workforce',
+      details: `Recorded ${newTx.type} of ₹${numAmount.toLocaleString('en-IN')} (${newTx.category}) with party "${newTx.party}" on ${newTx.date}`,
+      metadata: { id: newTx.id, type: newTx.type, amount: numAmount, party: newTx.party }
+    });
+
     window.dispatchEvent(new CustomEvent('taxpro_financial_updated'));
     setIsTxModalOpen(false);
     setTxForm({
@@ -594,6 +628,7 @@ export default function CalendarPageView({ onShowToast }) {
 
   // Delete transaction
   const handleDeleteTransaction = (id) => {
+    const targetTx = transactions.find(t => t.id === id);
     const filtered = transactions.filter(t => t.id !== id);
     setTransactions(filtered);
     try {
@@ -603,6 +638,14 @@ export default function CalendarPageView({ onShowToast }) {
         localStorage.setItem('taxpro_calendar_transactions', JSON.stringify(parsed));
       }
     } catch (err) {}
+
+    logAuditActivity({
+      action: 'DELETE_PAYMENT',
+      module: 'Calendar & Workforce',
+      details: `Removed calendar financial record "${targetTx?.party || id}" (${targetTx?.amount ? '₹' + targetTx.amount : ''})`,
+      metadata: { id }
+    });
+
     if (onShowToast) onShowToast('Transaction record removed.', 'info');
   };
 
@@ -633,6 +676,13 @@ export default function CalendarPageView({ onShowToast }) {
       console.warn('[Task Save]:', err);
     }
 
+    logAuditActivity({
+      action: 'ADD_TASK',
+      module: 'Calendar & Workforce',
+      details: `Created calendar scheduled task "${newTask.title}" for client "${newTask.client}" (Due: ${newTask.due_date})`,
+      metadata: { taskId: newTask.id, title: newTask.title, dueDate: newTask.due_date }
+    });
+
     setIsTaskModalOpen(false);
     setTaskForm({
       title: '',
@@ -649,11 +699,19 @@ export default function CalendarPageView({ onShowToast }) {
   // Toggle Task Status
   const handleToggleTaskStatus = async (taskId, currentStatus) => {
     const newStatus = currentStatus === 'Completed' ? 'Pending' : 'Completed';
+    const targetTask = tasks.find(t => t.id === taskId);
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
 
     try {
       await supabase.from('global_tasks').update({ status: newStatus }).eq('id', taskId);
     } catch (err) {}
+
+    logAuditActivity({
+      action: 'UPDATE_TASK',
+      module: 'Calendar & Workforce',
+      details: `Marked calendar task "${targetTask?.title || taskId}" as ${newStatus}`,
+      metadata: { taskId, status: newStatus }
+    });
 
     if (onShowToast) onShowToast(`Task marked as ${newStatus}!`, 'success');
   };
@@ -693,223 +751,95 @@ export default function CalendarPageView({ onShowToast }) {
 
   // Print Specific Day Timesheet & Financial Statement
   const handlePrint = () => {
-    if (onShowToast) onShowToast(`Preparing Official Daily Timesheet for ${selectedDateStr}...`, 'info');
-
-    const firmName = localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates';
-    const firmTag = localStorage.getItem('taxpro_firm_tag') || 'TaxPro';
-    const firmGst = localStorage.getItem('taxpro_firm_gst') || '24AAAAA0000A1Z5';
-    const firmPan = localStorage.getItem('taxpro_firm_pan') || 'AAATF1234C';
-    const firmEmail = localStorage.getItem('taxpro_firm_email') || 'contact@taxpro.in';
-    const firmPhone = localStorage.getItem('taxpro_firm_phone') || '+91 98765 43210';
-    const firmAddress = localStorage.getItem('taxpro_firm_address') || 'Silicon Square, Block 7, Financial District, Surat, Gujarat';
-    const formattedDate = selectedDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    const printDate = new Date().toLocaleString('en-IN');
-
-    const printWindow = window.open('', '_blank', 'width=950,height=850');
-    if (!printWindow) {
-      window.print();
-      return;
-    }
+    const formattedDate = formatDateWithWeekday(selectedDate);
 
     const holidaysHtml = selectedDayHolidays.length > 0 ? `
-      <div style="background: #fffbeb; border: 2px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
-        <div style="font-size: 13px; font-weight: 800; color: #78350f; text-transform: uppercase;">🏖️ Firm Circular / Practice Holiday: ${selectedDayHolidays[0].title}</div>
-        <div style="font-size: 12px; color: #92400e; margin-top: 4px;">${selectedDayHolidays[0].message}</div>
-        <div style="font-size: 11px; color: #b45309; font-family: monospace; margin-top: 4px;">Status: ${selectedDayHolidays[0].practiceStatus || 'Office Closed'} • Target: ${selectedDayHolidays[0].targetDept || 'All Departments'}</div>
+      <div style="background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px;">
+        <div style="font-size: 11px; font-weight: 800; color: #78350f; text-transform: uppercase;">🏖️ Firm Circular / Practice Holiday: ${selectedDayHolidays[0].title}</div>
+        <div style="font-size: 10.5px; color: #92400e; margin-top: 2px;">${selectedDayHolidays[0].message}</div>
       </div>
     ` : '';
 
     const transactionsRowsHtml = selectedDayTransactions.length > 0 
       ? selectedDayTransactions.map((tx, idx) => `
-        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
-          <td style="padding: 8px 10px; font-weight: 700; color: ${tx.type === 'Income' ? '#059669' : '#dc2626'};">${tx.type}</td>
-          <td style="padding: 8px 10px; font-weight: 600; color: #1e293b;">${tx.party || '-'}</td>
-          <td style="padding: 8px 10px; color: #475569;">${tx.category || '-'}</td>
-          <td style="padding: 8px 10px; font-family: monospace; color: #334155;">${tx.mode || 'UPI'}</td>
-          <td style="padding: 8px 10px; text-align: right; font-family: monospace; font-weight: 700; color: ${tx.type === 'Income' ? '#059669' : '#dc2626'};">
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 10.5px;">
+          <td style="padding: 6px 8px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 6px 8px; font-weight: 700; color: ${tx.type === 'Income' ? '#059669' : '#dc2626'};">${tx.type}</td>
+          <td style="padding: 6px 8px; font-weight: 600; color: #1e293b;">${tx.party || '-'}</td>
+          <td style="padding: 6px 8px; color: #475569;">${tx.category || '-'}</td>
+          <td style="padding: 6px 8px; font-family: monospace; color: #334155;">${tx.mode || 'UPI'}</td>
+          <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 700; color: ${tx.type === 'Income' ? '#059669' : '#dc2626'};">
             ${tx.type === 'Income' ? '+' : '-'}₹${Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </td>
         </tr>
       `).join('')
-      : `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #94a3b8; font-style: italic; font-size: 12px;">No financial income or expense transactions recorded on this date.</td></tr>`;
+      : `<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8; font-style: italic;">No financial income or expense transactions on this date.</td></tr>`;
 
     const tasksRowsHtml = selectedDayTasks.length > 0
       ? selectedDayTasks.map((t, idx) => `
-        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
-          <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${t.title}</td>
-          <td style="padding: 8px 10px; color: #334155;">${t.client || 'Enterprise'}</td>
-          <td style="padding: 8px 10px; color: #475569;">${t.assignee || 'Unassigned'}</td>
-          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
-            <span style="background: ${t.priority === 'High' || t.priority === 'Urgent' ? '#fef2f2; color: #991b1b;' : '#f1f5f9; color: #475569;'}; padding: 2px 6px; border-radius: 4px;">${t.priority || 'Normal'}</span>
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 10.5px;">
+          <td style="padding: 6px 8px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 6px 8px; font-weight: 700; color: #0f172a;">${t.title}</td>
+          <td style="padding: 6px 8px; color: #334155;">${t.client || 'Enterprise'}</td>
+          <td style="padding: 6px 8px; color: #475569;">${t.assignee || 'Unassigned'}</td>
+          <td style="padding: 6px 8px; text-align: center;">
+            <span class="badge-blue">${t.priority || 'Normal'}</span>
           </td>
-          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
-            <span style="background: ${t.status === 'Completed' ? '#ecfdf5; color: #065f46;' : '#eff6ff; color: #1e40af;'}; padding: 2px 6px; border-radius: 4px;">${t.status || 'Pending'}</span>
-          </td>
-        </tr>
-      `).join('')
-      : `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #94a3b8; font-style: italic; font-size: 12px;">No deliverable tasks or compliance deadlines scheduled on this date.</td></tr>`;
-
-    const projectsRowsHtml = selectedDayProjects.length > 0
-      ? selectedDayProjects.map((p, idx) => `
-        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
-          <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${p.name || p.title}</td>
-          <td style="padding: 8px 10px; color: #334155;">${p.client || 'Enterprise Account'}</td>
-          <td style="padding: 8px 10px; font-family: monospace; color: #475569;">${p.deadline || selectedDateStr}</td>
-          <td style="padding: 8px 10px; text-align: center; font-family: monospace; font-weight: 700; color: #4338ca;">${p.progress || 0}%</td>
-          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
-            <span style="background: #f0fdf4; color: #166534; padding: 2px 6px; border-radius: 4px;">Active Milestone</span>
+          <td style="padding: 6px 8px; text-align: center;">
+            <span class="status-pill ${t.status === 'Completed' ? 'status-completed' : 'status-pending'}">${t.status || 'Pending'}</span>
           </td>
         </tr>
       `).join('')
-      : '';
+      : `<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8; font-style: italic;">No deliverable tasks or compliance deadlines scheduled on this date.</td></tr>`;
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Daily Timesheet Statement - ${selectedDateStr}</title>
-        <meta charset="utf-8" />
-        <style>
-          @page { size: A4; margin: 12mm 15mm; }
-          body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; background: #fff; line-height: 1.4; }
-          * { box-sizing: border-box; }
-          .header { border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-start; }
-          .firm-title { font-size: 20px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin: 0 0 2px 0; }
-          .doc-sub { font-size: 11px; font-weight: 700; color: #4338ca; text-transform: uppercase; letter-spacing: 0.5px; }
-          .firm-meta { font-size: 10px; color: #64748b; margin-top: 4px; }
-          .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
-          .kpi-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; }
-          .kpi-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; }
-          .kpi-val { font-size: 16px; font-weight: 900; font-family: monospace; margin-top: 2px; }
-          .section-title { font-size: 12px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1.5px solid #cbd5e1; padding-bottom: 4px; margin: 20px 0 10px 0; display: flex; justify-content: space-between; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 1px solid #cbd5e1; }
-          th { background: #f1f5f9; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #334155; padding: 8px 10px; border-bottom: 1px solid #cbd5e1; }
-          .footer { margin-top: 30px; padding-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-end; font-size: 10px; color: #64748b; }
-          .seal-box { border: 1px dashed #94a3b8; border-radius: 6px; padding: 8px 16px; text-align: center; width: 220px; }
-          @media print {
-            body { padding: 0; }
-            .no-print { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <div class="firm-title">${firmName}</div>
-            <div class="doc-sub">Workforce Daily Deliverables & Financial Timesheet</div>
-            <div class="firm-meta">GSTIN: ${firmGst} | PAN: ${firmPan} | Contact: ${firmPhone} | ${firmEmail}</div>
-            <div class="firm-meta">${firmAddress}</div>
-          </div>
-          <div style="text-align: right;">
-            <div style="font-size: 12px; font-weight: 800; color: #0f172a; font-family: monospace;">STATEMENT DATE</div>
-            <div style="font-size: 13px; font-weight: 900; color: #4338ca;">${formattedDate}</div>
-            <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">Generated: ${printDate}</div>
-          </div>
-        </div>
+    const bodyHtml = `
+      <div style="margin-bottom: 14px; font-weight: 800; font-size: 13px; color: #1e293b;">
+        Daily Schedule & Financial Timesheet — ${formattedDate}
+      </div>
 
-        ${holidaysHtml}
+      ${holidaysHtml}
 
-        <div class="kpi-grid">
-          <div class="kpi-box">
-            <div class="kpi-label">Total Day Inflow (Income)</div>
-            <div class="kpi-val" style="color: #059669;">+₹${selectedDayIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Total Day Outflow (Expense)</div>
-            <div class="kpi-val" style="color: #dc2626;">-₹${selectedDayExpense.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Net Daily Cashflow Balance</div>
-            <div class="kpi-val" style="color: ${selectedDayNet >= 0 ? '#0f172a' : '#dc2626'};">₹${selectedDayNet.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-          </div>
-        </div>
+      <div style="font-weight: 800; font-size: 11.5px; color: #334155; margin-bottom: 6px;">
+        1. Financial Cash Flow & Receipts (${selectedDayTransactions.length} Transactions)
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 30px; text-align: center;">#</th>
+            <th>Type</th>
+            <th>Client / Party</th>
+            <th>Category</th>
+            <th>Mode</th>
+            <th style="text-align: right;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${transactionsRowsHtml}
+        </tbody>
+      </table>
 
-        <div class="section-title">
-          <span>1. Daily Income & Expense Ledger (${selectedDayTransactions.length} Entries)</span>
-          <span style="font-size: 10px; font-weight: 700; color: #64748b;">Date: ${selectedDateStr}</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 30px; text-align: center;">#</th>
-              <th style="width: 80px; text-align: left;">Type</th>
-              <th style="text-align: left;">Party / Client</th>
-              <th style="text-align: left;">Category</th>
-              <th style="width: 90px; text-align: left;">Channel</th>
-              <th style="width: 110px; text-align: right;">Amount (INR)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${transactionsRowsHtml}
-          </tbody>
-        </table>
+      <div style="font-weight: 800; font-size: 11.5px; color: #334155; margin-top: 18px; margin-bottom: 6px;">
+        2. Compliance Deadlines & Deliverable Tasks (${selectedDayTasks.length} Tasks)
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 30px; text-align: center;">#</th>
+            <th>Task Description</th>
+            <th>Client Name</th>
+            <th>Assignee</th>
+            <th style="text-align: center;">Priority</th>
+            <th style="text-align: center;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tasksRowsHtml}
+        </tbody>
+      </table>
+    `;
 
-        <div class="section-title">
-          <span>2. Deliverable Tasks & Compliance Milestones (${selectedDayTasks.length} Tasks)</span>
-          <span style="font-size: 10px; font-weight: 700; color: #64748b;">Target Date: ${selectedDateStr}</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 30px; text-align: center;">#</th>
-              <th style="text-align: left;">Task Description</th>
-              <th style="text-align: left;">Associated Client</th>
-              <th style="text-align: left;">Assigned Staff</th>
-              <th style="width: 80px; text-align: center;">Priority</th>
-              <th style="width: 95px; text-align: center;">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tasksRowsHtml}
-          </tbody>
-        </table>
-
-        ${selectedDayProjects.length > 0 ? `
-          <div class="section-title">
-            <span>3. Active Project Milestones (${selectedDayProjects.length} Projects)</span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 30px; text-align: center;">#</th>
-                <th style="text-align: left;">Project Title</th>
-                <th style="text-align: left;">Client Name</th>
-                <th style="width: 100px; text-align: left;">Target Deadline</th>
-                <th style="width: 80px; text-align: center;">Progress</th>
-                <th style="width: 95px; text-align: center;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${projectsRowsHtml}
-            </tbody>
-          </table>
-        ` : ''}
-
-        <div class="footer">
-          <div>
-            <div style="font-weight: 700; color: #0f172a;">TaxPro Practice Management System</div>
-            <div>Confidential daily operational and financial audit statement.</div>
-          </div>
-          <div class="seal-box">
-            <div style="font-size: 9px; text-transform: uppercase; color: #64748b;">Authorized Signatory</div>
-            <div style="font-weight: 800; color: #0f172a; margin-top: 15px;">${firmTag} Practice Seal</div>
-          </div>
-        </div>
-
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 300);
-          };
-        </script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    printHtml(`Daily Agenda - ${formattedDate}`, bodyHtml);
+    if (onShowToast) onShowToast(`🖨️ Generating printable daily timesheet for ${selectedDateStr}...`, 'info');
   };
 
   return (
@@ -927,12 +857,12 @@ export default function CalendarPageView({ onShowToast }) {
               Workforce Daily Financial Ledger & Deliverables Timesheet
             </p>
             <p className="text-[10px] text-gray-500 mt-0.5 font-medium">
-              Statement for: {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+              Statement for: {formatDateWithWeekday(selectedDate)}
             </p>
           </div>
           <div className="text-right">
             <div className="text-xs font-mono font-bold text-gray-900">
-              Generated: {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+              Generated: {formatDate(new Date())}
             </div>
             <div className="text-[10px] font-mono text-gray-500">{new Date().toLocaleTimeString()}</div>
           </div>
@@ -1319,7 +1249,7 @@ export default function CalendarPageView({ onShowToast }) {
                 <div>
                   <div className="text-xs text-gray-500 font-medium">Selected Date</div>
                   <div className="text-sm font-black text-gray-900 font-outfit">
-                    {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
+                    {formatDateWithWeekday(selectedDate)}
                   </div>
                 </div>
               </div>
@@ -1407,7 +1337,7 @@ export default function CalendarPageView({ onShowToast }) {
                       Daily Income & Expenses
                     </h3>
                     <p className="text-[11px] text-gray-500 font-medium">
-                      Cashflow and fee disbursements for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      Cashflow and fee disbursements for {formatDate(selectedDate)}
                     </p>
                   </div>
                 </div>
@@ -1540,7 +1470,7 @@ export default function CalendarPageView({ onShowToast }) {
                       Deliverable Tasks ({filteredTasks.length})
                     </h3>
                     <p className="text-[11px] text-gray-500 font-medium">
-                      Tasks scheduled specifically for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      Tasks scheduled specifically for {formatDate(selectedDate)}
                     </p>
                   </div>
                 </div>
@@ -1574,7 +1504,7 @@ export default function CalendarPageView({ onShowToast }) {
               {/* Task Item List */}
               {filteredTasks.length === 0 ? (
                 <div className="py-8 text-center text-gray-400 text-xs font-medium border border-dashed border-gray-200 rounded-2xl bg-gray-50 flex flex-col items-center justify-center gap-2">
-                  <span>No tasks scheduled for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.</span>
+                  <span>No tasks scheduled for {formatDate(selectedDate)}.</span>
                   <button
                     onClick={() => setIsTaskModalOpen(true)}
                     className="text-amber-600 font-bold hover:underline flex items-center gap-1 text-xs cursor-pointer"
@@ -1649,11 +1579,8 @@ export default function CalendarPageView({ onShowToast }) {
             )}
 
           </div>
-
         </div>
-
       </div>
-
 
       {/* ==============================================================
           RECORD INCOME / EXPENSE MODAL
@@ -1661,72 +1588,76 @@ export default function CalendarPageView({ onShowToast }) {
       {isTxModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsTxModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-2xl">
-            {/* Premium Gradient Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <DollarSign className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                     Record Financial Entry
                   </h3>
-                  <p className="text-xs text-gray-300 mt-0.5">
-                    Log client fee receipt or practice expenditure for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Log client fee receipt or practice expenditure for {formatDate(selectedDate)}
                   </p>
                 </div>
               </div>
 
               <button 
                 onClick={() => setIsTxModalOpen(false)} 
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <form onSubmit={handleSaveTransaction} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+            <form onSubmit={handleSaveTransaction} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               
               {/* Type Switcher */}
               <div>
-                <label className="text-gray-700 block mb-1">Transaction Nature</label>
-                <div className="flex gap-2">
+                <label className="text-slate-700 block mb-1.5">Transaction Nature</label>
+                <div className="flex gap-2.5">
                   <button
                     type="button"
                     onClick={() => setTxForm({ ...txForm, type: 'Income', category: INCOME_CATEGORIES[0] })}
-                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
                       txForm.type === 'Income'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-400 shadow-2xs'
-                        : 'bg-gray-50 text-gray-500 border-gray-200'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-400 shadow-2xs ring-2 ring-emerald-400/20'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    <ArrowUpRight className="w-4 h-4" />
+                    <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${txForm.type === 'Income' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                      <ArrowUpRight className="w-4 h-4" />
+                    </div>
                     <span>Income / Receipt (Inflow)</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setTxForm({ ...txForm, type: 'Expense', category: EXPENSE_CATEGORIES[0] })}
-                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center gap-2 ${
                       txForm.type === 'Expense'
-                        ? 'bg-rose-50 text-rose-700 border-rose-400 shadow-2xs'
-                        : 'bg-gray-50 text-gray-500 border-gray-200'
+                        ? 'bg-rose-50 text-rose-800 border-rose-400 shadow-2xs ring-2 ring-rose-400/20'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    <ArrowDownRight className="w-4 h-4" />
+                    <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${txForm.type === 'Expense' ? 'bg-rose-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                      <ArrowDownRight className="w-4 h-4" />
+                    </div>
                     <span>Expense / Payment (Outflow)</span>
                   </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* Party / Client / Payee */}
                 <div>
-                  <label className="text-gray-700 block mb-1">
-                    {txForm.type === 'Income' ? 'Client / Entity Name' : 'Payee / Vendor / Employee Name'} <span className="text-red-500">*</span>
+                  <label className="text-slate-700 block mb-1">
+                    {txForm.type === 'Income' ? 'Client / Entity Name' : 'Payee / Vendor / Employee Name'} <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1735,7 +1666,7 @@ export default function CalendarPageView({ onShowToast }) {
                     value={txForm.party}
                     onChange={(e) => setTxForm({ ...txForm, party: e.target.value })}
                     list={txForm.type === 'Income' ? 'calendar-client-list' : 'calendar-payee-list'}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs font-semibold shadow-2xs"
                   />
                   {txForm.type === 'Income' ? (
                     <datalist id="calendar-client-list">
@@ -1757,7 +1688,7 @@ export default function CalendarPageView({ onShowToast }) {
 
                 {/* Amount */}
                 <div>
-                  <label className="text-gray-700 block mb-1">Amount (₹) <span className="text-red-500">*</span></label>
+                  <label className="text-slate-700 block mb-1">Amount (₹) <span className="text-rose-500">*</span></label>
                   <input
                     type="number"
                     required
@@ -1765,19 +1696,19 @@ export default function CalendarPageView({ onShowToast }) {
                     placeholder="e.g. 25000"
                     value={txForm.amount}
                     onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 font-mono text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 font-mono text-xs font-bold shadow-2xs"
                   />
                 </div>
               </div>
 
               {/* Category & Payment Mode */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="text-gray-700 block mb-1">Category / Ledger Head</label>
+                  <label className="text-slate-700 block mb-1">Category / Ledger Head</label>
                   <select
                     value={txForm.category}
                     onChange={(e) => setTxForm({ ...txForm, category: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs font-semibold"
                   >
                     {txForm.type === 'Income' ? (
                       INCOME_CATEGORIES.map(cat => (
@@ -1792,11 +1723,11 @@ export default function CalendarPageView({ onShowToast }) {
                 </div>
 
                 <div>
-                  <label className="text-gray-700 block mb-1">Payment Channel</label>
+                  <label className="text-slate-700 block mb-1">Payment Channel</label>
                   <select
                     value={txForm.mode}
                     onChange={(e) => setTxForm({ ...txForm, mode: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs font-semibold"
                   >
                     <option value="UPI">UPI Instant</option>
                     <option value="Bank Transfer">Bank Transfer (NEFT/RTGS/IMPS)</option>
@@ -1808,41 +1739,41 @@ export default function CalendarPageView({ onShowToast }) {
               </div>
 
               {/* Date & Notes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="text-gray-700 block mb-1">Transaction Date</label>
+                  <label className="text-slate-700 block mb-1">Transaction Date</label>
                   <input
                     type="date"
                     value={txForm.date}
                     onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs shadow-2xs font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="text-gray-700 block mb-1">Reference / Note (Optional)</label>
+                  <label className="text-slate-700 block mb-1">Reference / Note (Optional)</label>
                   <input
                     type="text"
                     placeholder="e.g. Invoice #2024-089 or UPI Txn Ref"
                     value={txForm.notes}
                     onChange={(e) => setTxForm({ ...txForm, notes: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs shadow-2xs"
                   />
                 </div>
               </div>
 
               {/* Bottom Sticky Actions */}
-              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button
                   type="button"
                   onClick={() => setIsTxModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
                 >
                   Save Entry
                 </button>
@@ -1860,58 +1791,58 @@ export default function CalendarPageView({ onShowToast }) {
       {isTaskModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsTaskModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-2xl">
-            {/* Premium Gradient Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <CheckSquare className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                     Schedule Deliverable Task
                   </h3>
-                  <p className="text-xs text-gray-300 mt-0.5">
-                    Assign task for {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Assign task for {formatDate(selectedDate)}
                   </p>
                 </div>
               </div>
 
               <button 
                 onClick={() => setIsTaskModalOpen(false)} 
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <form onSubmit={handleSaveTask} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+            <form onSubmit={handleSaveTask} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               
               <div>
-                <label className="text-gray-700 block mb-1">Task Title <span className="text-red-500">*</span></label>
+                <label className="text-slate-700 block mb-1">Task Title <span className="text-rose-500">*</span></label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. File GSTR-3B for August Quarter"
                   value={taskForm.title}
                   onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
-                  className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                  className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs shadow-2xs font-semibold"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="text-gray-700 block mb-1">Associated Client</label>
+                  <label className="text-slate-700 block mb-1">Associated Client</label>
                   <input
                     type="text"
                     placeholder="e.g. Acme Corp Pvt Ltd"
                     value={taskForm.client}
                     onChange={(e) => setTaskForm({ ...taskForm, client: e.target.value })}
                     list="task-client-options"
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs shadow-2xs"
                   />
                   <datalist id="task-client-options">
                     {clients.map((c, i) => (
@@ -1922,7 +1853,7 @@ export default function CalendarPageView({ onShowToast }) {
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-gray-700 block">Assignee</label>
+                    <label className="text-slate-700 block">Assignee</label>
                     <button
                       type="button"
                       onClick={() => setTaskForm({ ...taskForm, assignee: currentUserName })}
@@ -1934,7 +1865,7 @@ export default function CalendarPageView({ onShowToast }) {
                   <select
                     value={taskForm.assignee}
                     onChange={(e) => setTaskForm({ ...taskForm, assignee: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer font-semibold"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs cursor-pointer font-semibold shadow-2xs"
                   >
                     <option value="Unassigned">-- Select Assignee --</option>
                     <option value={currentUserName}>⚡ {currentUserName} (Myself / Admin)</option>
@@ -1946,13 +1877,13 @@ export default function CalendarPageView({ onShowToast }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="text-gray-700 block mb-1">Priority Level</label>
+                  <label className="text-slate-700 block mb-1">Priority Level</label>
                   <select
                     value={taskForm.priority}
                     onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs font-semibold"
                   >
                     <option value="Low">Low</option>
                     <option value="Medium">Medium</option>
@@ -1962,28 +1893,28 @@ export default function CalendarPageView({ onShowToast }) {
                 </div>
 
                 <div>
-                  <label className="text-gray-700 block mb-1">Due Date</label>
+                  <label className="text-slate-700 block mb-1">Due Date</label>
                   <input
                     type="date"
                     value={taskForm.due_date}
                     onChange={(e) => setTaskForm({ ...taskForm, due_date: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-indigo-600 text-xs shadow-2xs font-mono"
                   />
                 </div>
               </div>
 
               {/* Bottom Sticky Actions */}
-              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button
                   type="button"
                   onClick={() => setIsTaskModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
                 >
                   Create Task
                 </button>
@@ -1998,37 +1929,37 @@ export default function CalendarPageView({ onShowToast }) {
       {isHolidayModalOpen && canManageHolidays && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsHolidayModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden text-gray-800">
+          <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-amber-900 via-amber-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-amber-800">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-2xs">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black font-outfit text-white">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900">
                     Declare Festival or Practice Holiday
                   </h3>
-                  <p className="text-xs text-amber-200/80">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Publish official firm holiday on calendar & workforce schedules
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsHolidayModalOpen(false)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleSaveHoliday} className="p-6 space-y-4 text-xs font-semibold">
+            <form onSubmit={handleSaveHoliday} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               <div>
-                <label className="text-gray-700 block mb-1">
-                  Holiday Name / Festival Title <span className="text-red-500">*</span>
+                <label className="text-slate-700 block mb-1">
+                  Holiday Name / Festival Title <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -2036,41 +1967,41 @@ export default function CalendarPageView({ onShowToast }) {
                   placeholder="e.g. 🪔 Diwali Festival Holiday or Pateti Parsi New Year"
                   value={holidayForm.title}
                   onChange={(e) => setHolidayForm({ ...holidayForm, title: e.target.value })}
-                  className="w-full bg-gray-50 rounded-xl px-3.5 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs font-bold text-gray-900"
+                  className="w-full bg-white rounded-xl px-3.5 py-2 border border-slate-300 outline-none focus:border-amber-500 text-xs font-bold text-slate-900 shadow-2xs"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="text-gray-700 block mb-1">
-                    Start Date <span className="text-red-500">*</span>
+                  <label className="text-slate-700 block mb-1">
+                    Start Date <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="date"
                     required
                     value={holidayForm.holidayDate}
                     onChange={(e) => setHolidayForm({ ...holidayForm, holidayDate: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-amber-500 text-xs shadow-2xs font-mono"
                   />
                 </div>
                 <div>
-                  <label className="text-gray-700 block mb-1">End Date (Optional Range)</label>
+                  <label className="text-slate-700 block mb-1">End Date (Optional Range)</label>
                   <input
                     type="date"
                     value={holidayForm.holidayEndDate}
                     onChange={(e) => setHolidayForm({ ...holidayForm, holidayEndDate: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-amber-500 text-xs shadow-2xs font-mono"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="text-gray-700 block mb-1">Office / Workstation Status</label>
+                  <label className="text-slate-700 block mb-1">Office / Workstation Status</label>
                   <select
                     value={holidayForm.practiceStatus}
                     onChange={(e) => setHolidayForm({ ...holidayForm, practiceStatus: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-amber-500 text-xs cursor-pointer shadow-2xs font-semibold"
                   >
                     <option value="Office Closed (Festive Holiday)">Office Closed (Festive Holiday)</option>
                     <option value="Half Day (Morning Shift Only)">Half Day (Morning Shift Only)</option>
@@ -2079,11 +2010,11 @@ export default function CalendarPageView({ onShowToast }) {
                   </select>
                 </div>
                 <div>
-                  <label className="text-gray-700 block mb-1">Target Department</label>
+                  <label className="text-slate-700 block mb-1">Target Department</label>
                   <select
                     value={holidayForm.targetDept}
                     onChange={(e) => setHolidayForm({ ...holidayForm, targetDept: e.target.value })}
-                    className="w-full bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs"
+                    className="w-full bg-white rounded-xl px-3 py-2 border border-slate-300 outline-none focus:border-amber-500 text-xs cursor-pointer shadow-2xs font-semibold"
                   >
                     <option value="All Departments">All Departments</option>
                     <option value="Tax Compliance">Tax Compliance</option>
@@ -2094,28 +2025,28 @@ export default function CalendarPageView({ onShowToast }) {
               </div>
 
               <div>
-                <label className="text-gray-700 block mb-1">Official Circular Note / Description</label>
+                <label className="text-slate-700 block mb-1">Official Circular Note / Description</label>
                 <textarea
                   rows={2}
                   placeholder="Memo to staff regarding practice schedule and client notices..."
                   value={holidayForm.message}
                   onChange={(e) => setHolidayForm({ ...holidayForm, message: e.target.value })}
-                  className="w-full bg-gray-50 rounded-xl px-3.5 py-2.5 border border-gray-300 outline-none focus:bg-white focus:border-amber-500 text-xs resize-none"
+                  className="w-full bg-white rounded-xl px-3.5 py-2 border border-slate-300 outline-none focus:border-amber-500 text-xs resize-none shadow-2xs"
                 />
               </div>
 
               {/* Action Buttons */}
-              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 -mx-6 -mb-6">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button
                   type="button"
                   onClick={() => setIsHolidayModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-amber-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md shadow-amber-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>Publish Holiday</span>
@@ -2130,42 +2061,42 @@ export default function CalendarPageView({ onShowToast }) {
       {isManageHolidaysModalOpen && canManageHolidays && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsManageHolidaysModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-3xl max-h-[90vh] flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden text-gray-800">
+          <div className="w-full max-w-3xl max-h-[92vh] flex flex-col bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto animate-modal-smooth">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-gray-800">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <CalendarIcon className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900">
                     Manage Practice & Festival Holidays
                   </h3>
-                  <p className="text-xs text-gray-300">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Remove festival holidays to keep office open (e.g. Janmashtami) or restore holidays
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsManageHolidaysModalOpen(false)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Search & Year Filters */}
-            <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="p-4 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
               <div className="relative flex-1 w-full">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={holidaySearchQuery}
                   onChange={(e) => setHolidaySearchQuery(e.target.value)}
                   placeholder="Search holiday (e.g. Janmashtami, Diwali, Holi, Eid)..."
-                  className="w-full bg-white border border-gray-300 rounded-xl pl-10 pr-4 py-2 text-xs font-semibold text-gray-800 outline-none focus:border-indigo-500 shadow-2xs"
+                  className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-600 shadow-2xs"
                 />
               </div>
 
@@ -2176,7 +2107,7 @@ export default function CalendarPageView({ onShowToast }) {
                     key={yr}
                     onClick={() => setHolidayYearFilter(yr)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      holidayYearFilter === yr ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                      holidayYearFilter === yr ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
                     {yr}
@@ -2185,7 +2116,7 @@ export default function CalendarPageView({ onShowToast }) {
                 <button
                   onClick={() => setHolidayYearFilter('')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    holidayYearFilter === '' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-100'
+                    holidayYearFilter === '' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
                   All
@@ -2194,29 +2125,29 @@ export default function CalendarPageView({ onShowToast }) {
             </div>
 
             {/* Holiday Items List */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 overscroll-contain chat-custom-scrollbar">
               {allMasterHolidays.length === 0 ? (
-                <div className="py-12 text-center text-gray-400 text-xs">
+                <div className="py-12 text-center text-slate-400 text-xs">
                   No holidays match your search query or filter.
                 </div>
               ) : (
                 allMasterHolidays.map((item) => {
                   const dateStr = item.holidayDate || item.date || '';
-                  const formattedD = dateStr ? new Date(dateStr).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '';
+                  const formattedD = dateStr ? formatDateWithWeekday(dateStr) : '';
                   const isExcluded = item.isRemoved;
 
                   return (
                     <div 
                       key={item.id}
-                      className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                      className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs ${
                         isExcluded 
-                          ? 'bg-gray-50 border-gray-200 opacity-75' 
-                          : 'bg-white border-amber-200/80 shadow-xs hover:border-amber-300'
+                          ? 'bg-slate-50 border-slate-200 opacity-75' 
+                          : 'bg-white border-amber-200/80 hover:border-amber-300'
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${
-                          isExcluded ? 'bg-gray-200 text-gray-500' : 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-100'
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-xl shrink-0 ${
+                          isExcluded ? 'bg-slate-200 text-slate-500' : 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-100'
                         }`}>
                           {item.title?.slice(0, 2) || '🏖️'}
                         </div>
@@ -2226,19 +2157,19 @@ export default function CalendarPageView({ onShowToast }) {
                               {formattedD}
                             </span>
                             {isExcluded ? (
-                              <span className="px-2 py-0.5 rounded-md bg-gray-200 text-gray-700 text-[10px] font-black uppercase">
+                              <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-700 text-[10px] font-black uppercase">
                                 💼 Regular Working Day
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-200 text-[10px] font-black uppercase">
+                              <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-black uppercase">
                                 🏖️ Practice Holiday
                               </span>
                             )}
                           </div>
-                          <h4 className={`text-sm font-black font-outfit ${isExcluded ? 'text-gray-600 line-through' : 'text-gray-900'}`}>
+                          <h4 className={`text-sm font-black font-outfit ${isExcluded ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
                             {item.title}
                           </h4>
-                          <p className="text-xs text-gray-500 mt-0.5 max-w-xl">
+                          <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
                             {item.message}
                           </p>
                         </div>
@@ -2264,10 +2195,10 @@ export default function CalendarPageView({ onShowToast }) {
                                 handleRemoveHolidayNotice(item.id);
                               }
                             }}
-                            className="px-3.5 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
+                            className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs active:scale-95"
                             title="Remove holiday (e.g. keep office open on Janmashtami)"
                           >
-                            <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
                             <span>Remove Holiday</span>
                           </button>
                         )}
@@ -2279,14 +2210,14 @@ export default function CalendarPageView({ onShowToast }) {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-              <span className="text-xs text-gray-500 font-medium">
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-between shrink-0">
+              <span className="text-xs text-slate-500 font-medium">
                 Changes apply instantly across all employee calendars and timesheets.
               </span>
               <button
                 type="button"
                 onClick={() => setIsManageHolidaysModalOpen(false)}
-                className="px-5 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
+                className="px-5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
               >
                 Done
               </button>

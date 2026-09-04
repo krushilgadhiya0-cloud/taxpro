@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
+import { formatDate } from '../../lib/dateUtils';
 
 // ============================================================================
 // 1. HELP CATEGORIES CONFIGURATION
@@ -1961,7 +1962,7 @@ export default function SupportHelpView({ onShowToast }) {
                         </span>
                       </td>
                       <td className="p-4 whitespace-nowrap text-gray-400 text-[11px]">
-                        <div>{new Date(ticket.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>
+                        <div>{formatDate(ticket.createdAt)}</div>
                         <div className="text-[10px] text-gray-400">{ticket.messages.length} messages</div>
                       </td>
                       <td className="p-4 text-right whitespace-nowrap">
@@ -2369,46 +2370,46 @@ export default function SupportHelpView({ onShowToast }) {
       {selectedArticle && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setSelectedArticle(null); }}
-          className="modal-overlay-backdrop z-[999]"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-3xl">
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth text-slate-800">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-gray-800">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-2xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <BookOpen className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="px-2 py-0.5 rounded bg-white/10 text-teal-300 text-[10px] font-bold uppercase tracking-wider">
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-indigo-700 text-[10px] font-bold uppercase tracking-wider border border-slate-200">
                     {selectedArticle.categoryName} • {selectedArticle.readTime}
                   </span>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white mt-0.5">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 mt-0.5">
                     {selectedArticle.title}
                   </h3>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedArticle(null)}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/15 flex items-center justify-center text-gray-400 hover:text-white transition-all cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Article Body */}
-            <div className="p-6 sm:p-8 max-h-[70vh] overflow-y-auto text-xs sm:text-sm text-gray-700 leading-relaxed font-normal space-y-4">
-              <p className="text-sm font-semibold text-gray-900 pb-3 border-b border-gray-100">
+            <div className="flex-1 overflow-y-auto p-6 sm:p-8 text-xs sm:text-sm text-slate-700 leading-relaxed font-normal space-y-4 overscroll-contain chat-custom-scrollbar">
+              <p className="text-sm font-semibold text-slate-900 pb-3 border-b border-slate-100">
                 {selectedArticle.summary}
               </p>
 
-              <div className="prose prose-sm max-w-none text-xs text-gray-700 font-medium space-y-3">
+              <div className="prose prose-sm max-w-none text-xs text-slate-700 font-medium space-y-3">
                 {selectedArticle.content.split('\n\n').map((block, idx) => {
                   if (block.startsWith('### ')) {
-                    return <h4 key={idx} className="text-sm font-black font-outfit text-gray-900 pt-2">{block.replace('### ', '')}</h4>;
+                    return <h4 key={idx} className="text-sm font-black font-outfit text-slate-900 pt-2">{block.replace('### ', '')}</h4>;
                   }
                   if (block.startsWith('> ')) {
                     return (
-                      <div key={idx} className="p-3 bg-teal-50 border-l-4 border-teal-600 rounded-r-xl text-xs text-teal-900 font-bold">
+                      <div key={idx} className="p-3.5 bg-indigo-50/50 border-l-4 border-indigo-600 rounded-r-2xl text-xs text-indigo-950 font-bold shadow-2xs">
                         {block.replace('> ', '')}
                       </div>
                     );
@@ -2418,15 +2419,15 @@ export default function SupportHelpView({ onShowToast }) {
               </div>
 
               {/* Feedback Survey */}
-              <div className="pt-6 mt-6 border-t border-gray-200 bg-gray-50 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                <span className="font-bold text-gray-800">Was this article helpful to your firm?</span>
+              <div className="pt-6 mt-6 border-t border-slate-100 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-2xs">
+                <span className="font-bold text-slate-800">Was this article helpful to your firm?</span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
                       if (onShowToast) onShowToast('✓ Thank you for your feedback!', 'success');
                       setSelectedArticle(null);
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs flex items-center gap-1 shadow-2xs cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
                   >
                     <ThumbsUp className="w-3.5 h-3.5" /> Yes, very helpful
                   </button>
@@ -2436,7 +2437,7 @@ export default function SupportHelpView({ onShowToast }) {
                       setSelectedArticle(null);
                       setIsCreateTicketModalOpen(true);
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1 shadow-2xs cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
                   >
                     <ThumbsDown className="w-3.5 h-3.5" /> No, need more help
                   </button>
@@ -2453,123 +2454,93 @@ export default function SupportHelpView({ onShowToast }) {
       {selectedTicket && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setSelectedTicket(null); }}
-          className="modal-overlay-backdrop z-[999]"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-3xl flex flex-col max-h-[85vh]">
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth text-slate-800">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-gray-800 shrink-0">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-2xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <Ticket className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-teal-300">{selectedTicket.id}</span>
+                    <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">{selectedTicket.id}</span>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                      selectedTicket.status === 'Open' ? 'bg-blue-500/30 text-blue-300' :
-                      selectedTicket.status === 'In Progress' ? 'bg-purple-500/30 text-purple-300' :
-                      'bg-emerald-500/30 text-emerald-300'
+                      selectedTicket.status === 'Open' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                      selectedTicket.status === 'In Progress' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
+                      selectedTicket.status === 'Escalated' ? 'bg-rose-50 text-rose-700 border border-rose-200' :
+                      'bg-emerald-50 text-emerald-700 border border-emerald-200'
                     }`}>
                       {selectedTicket.status}
                     </span>
+                    <span className="text-[10px] text-slate-400 font-semibold">{selectedTicket.category}</span>
                   </div>
-                  <h3 className="text-sm sm:text-base font-black font-outfit text-white mt-0.5">
+                  <h3 className="text-base font-black font-outfit text-slate-900 mt-1">
                     {selectedTicket.subject}
                   </h3>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                {selectedTicket.status !== 'Resolved' && (
-                  <button
-                    onClick={() => handleCloseTicket(selectedTicket.id)}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-                  >
-                    Mark Resolved
-                  </button>
-                )}
-                <button
-                  onClick={() => setSelectedTicket(null)}
-                  className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/15 flex items-center justify-center text-gray-400 hover:text-white transition-all cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                onClick={() => setSelectedTicket(null)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Conversation Feed */}
-            <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4 bg-gray-50/50">
-              {selectedTicket.messages.map(msg => (
-                <div
-                  key={msg.id}
-                  className={`flex gap-3 max-w-xl ${msg.sender === 'user' ? 'ml-auto flex-row-reverse' : ''}`}
-                >
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${
-                    msg.sender === 'user' ? 'bg-indigo-600 text-white' : 'bg-teal-700 text-white'
-                  }`}>
-                    {msg.sender === 'user' ? <User className="w-4 h-4" /> : <Headphones className="w-4 h-4" />}
-                  </div>
+            {/* Conversation Log & Message Flow */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs overscroll-contain chat-custom-scrollbar">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900">{selectedTicket.requester}</span>
+                  <span className="text-[11px] text-slate-400 font-mono">{selectedTicket.createdAt}</span>
+                </div>
+                <p className="text-slate-700 leading-relaxed font-medium">
+                  {selectedTicket.description}
+                </p>
+              </div>
 
-                  <div>
-                    <div className={`p-4 rounded-2xl text-xs leading-relaxed font-medium shadow-2xs ${
-                      msg.sender === 'user'
-                        ? 'bg-[#5b52e0] text-white rounded-tr-none'
-                        : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none'
-                    }`}>
-                      <div className={`text-[10px] font-black uppercase tracking-wider mb-1 ${
-                        msg.sender === 'user' ? 'text-indigo-200' : 'text-teal-700'
-                      }`}>
-                        {msg.name}
-                      </div>
-                      <p>{msg.text}</p>
+              {selectedTicket.replies?.map((rep, rIdx) => (
+                <div
+                  key={rIdx}
+                  className={`p-4 rounded-2xl text-xs space-y-2 shadow-2xs ${
+                    rep.isStaff
+                      ? 'bg-indigo-50/50 border border-indigo-200 text-indigo-950 ml-6'
+                      : 'bg-slate-50 border border-slate-200 text-slate-800 mr-6'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold">{rep.author}</span>
+                      {rep.isStaff && (
+                        <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-white font-bold text-[9px]">TaxPro Support Engineer</span>
+                      )}
                     </div>
-                    <span className={`text-[10px] text-gray-400 font-semibold mt-1 block ${
-                      msg.sender === 'user' ? 'text-right' : 'text-left'
-                    }`}>
-                      {msg.time}
-                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">{rep.timestamp}</span>
                   </div>
+                  <p className="leading-relaxed font-medium">{rep.message}</p>
                 </div>
               ))}
-
-              {/* Resolved Rating Survey Banner */}
-              {selectedTicket.status === 'Resolved' && (
-                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-2">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
-                  <h4 className="text-xs font-black text-emerald-950">This ticket has been marked as Resolved</h4>
-                  <p className="text-[11px] text-gray-600">How satisfied are you with the support you received?</p>
-                  <div className="flex items-center justify-center gap-2 pt-1">
-                    {[1, 2, 3, 4, 5].map(star => (
-                      <button
-                        key={star}
-                        onClick={() => handleRateTicket(selectedTicket.id, star)}
-                        className={`p-1.5 rounded-lg transition-transform active:scale-125 cursor-pointer ${
-                          (selectedTicket.satisfactionRating || 0) >= star ? 'text-amber-500' : 'text-gray-300 hover:text-amber-400'
-                        }`}
-                      >
-                        <Star className="w-5 h-5 fill-current" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Reply Input Box */}
-            <div className="p-4 bg-white border-t border-gray-200 shrink-0">
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 shrink-0">
               <div className="flex items-center gap-2">
                 <input
                   type="text"
-                  placeholder="Type your response to support engineers..."
+                  placeholder="Type a response or attach further details..."
                   value={ticketReplyText}
                   onChange={e => setTicketReplyText(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') handleSendTicketReply(); }}
-                  className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-semibold"
+                  className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-xs outline-none focus:border-indigo-600 shadow-2xs font-semibold"
                 />
                 <button
+                  type="button"
                   onClick={handleSendTicketReply}
                   disabled={!ticketReplyText.trim()}
-                  className="px-5 py-2.5 bg-[#5b52e0] hover:bg-[#4c44cf] text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-98 disabled:opacity-40 cursor-pointer flex items-center gap-1.5"
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-40 cursor-pointer flex items-center gap-1.5"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Reply</span>
@@ -2586,47 +2557,47 @@ export default function SupportHelpView({ onShowToast }) {
       {isCreateTicketModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsCreateTicketModalOpen(false); }}
-          className="modal-overlay-backdrop z-[999]"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-xl">
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth text-slate-800">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-2xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <Ticket className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black font-outfit text-white">Create Support Ticket</h3>
-                  <p className="text-xs text-gray-300">Submit an inquiry with high-priority SLA response</p>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900">Create Support Ticket</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Submit an inquiry with high-priority SLA response</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsCreateTicketModalOpen(false)}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/15 flex items-center justify-center text-gray-400 hover:text-white transition-all cursor-pointer"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateTicket} className="p-6 space-y-4 text-xs font-semibold">
+            <form onSubmit={handleCreateTicket} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               <div>
-                <label className="text-gray-700 block mb-1">Subject / Issue Summary <span className="text-red-500">*</span></label>
+                <label className="text-slate-700 block mb-1">Subject / Issue Summary <span className="text-rose-500">*</span></label>
                 <input
                   type="text"
                   placeholder="e.g. Assistance required with GST reconciliation or cyclic rent..."
                   value={newTicket.subject}
                   onChange={e => setNewTicket({ ...newTicket, subject: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-bold text-gray-900"
+                  className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-bold text-slate-900 shadow-2xs"
                   required
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="text-gray-700 block mb-1">Issue Category</label>
+                  <label className="text-slate-700 block mb-1">Issue Category</label>
                   <select
                     value={newTicket.category}
                     onChange={e => setNewTicket({ ...newTicket, category: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-bold cursor-pointer"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-bold cursor-pointer shadow-2xs"
                   >
                     <option value="Getting Started">Getting Started</option>
                     <option value="Tax & Compliance">Tax & Compliance</option>
@@ -2638,11 +2609,11 @@ export default function SupportHelpView({ onShowToast }) {
                 </div>
 
                 <div>
-                  <label className="text-gray-700 block mb-1">Priority Level</label>
+                  <label className="text-slate-700 block mb-1">Priority Level</label>
                   <select
                     value={newTicket.priority}
                     onChange={e => setNewTicket({ ...newTicket, priority: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-bold cursor-pointer"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-bold cursor-pointer shadow-2xs"
                   >
                     <option value="Low">Low - General Question</option>
                     <option value="Medium">Medium - Normal Support Request</option>
@@ -2653,30 +2624,30 @@ export default function SupportHelpView({ onShowToast }) {
               </div>
 
               <div>
-                <label className="text-gray-700 block mb-1">Detailed Description <span className="text-red-500">*</span></label>
+                <label className="text-slate-700 block mb-1">Detailed Description <span className="text-rose-500">*</span></label>
                 <textarea
                   rows="4"
                   placeholder="Describe your question or issue in detail..."
                   value={newTicket.description}
                   onChange={e => setNewTicket({ ...newTicket, description: e.target.value })}
-                  className="w-full p-3 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-medium resize-none"
+                  className="w-full p-3 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-medium resize-none shadow-2xs"
                   required
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-4">
                 <button
                   type="button"
                   onClick={() => setIsCreateTicketModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-[#5b52e0] hover:bg-[#4c44cf] text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-98 cursor-pointer flex items-center gap-1.5"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 cursor-pointer active:scale-95 transition-all"
                 >
-                  <Send className="w-3.5 h-3.5" /> Submit Ticket
+                  Submit Ticket
                 </button>
               </div>
             </form>

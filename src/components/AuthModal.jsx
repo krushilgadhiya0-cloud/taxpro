@@ -133,8 +133,13 @@ export default function AuthModal({
     e.preventDefault();
     const cleanEmail = email.trim().toLowerCase();
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      onShowToast('Please enter a valid email address.', 'warning');
+    if (!cleanEmail) {
+      onShowToast('Please enter your Login Email or ID.', 'warning');
+      return;
+    }
+
+    if (authTab === 'signup' && !cleanEmail.includes('@')) {
+      onShowToast('Please enter a valid email address for registration.', 'warning');
       return;
     }
 
@@ -205,17 +210,19 @@ export default function AuthModal({
     });
 
     if (error) {
-      // Check for invited team members or registered users in PostgreSQL tables
+      // Check for invited team members or registered users in PostgreSQL tables by Email OR ID
       try {
-        const { data: member } = await supabase.from('team_members')
-          .select('*')
-          .ilike('email', cleanEmail)
-          .maybeSingle();
+        const { data: memberList } = await supabase.from('team_members').select('*');
+        const member = memberList?.find(m => 
+          (m.email && m.email.toLowerCase() === cleanEmail) || 
+          (m.id && m.id.toLowerCase() === cleanEmail)
+        );
 
-        const { data: uRow } = await supabase.from('users')
-          .select('*')
-          .ilike('email', cleanEmail)
-          .maybeSingle();
+        const { data: userList } = await supabase.from('users').select('*');
+        const uRow = userList?.find(u => 
+          (u.email && u.email.toLowerCase() === cleanEmail) || 
+          (u.id && u.id.toLowerCase() === cleanEmail)
+        );
 
         const targetRecord = member || uRow;
 
@@ -225,7 +232,7 @@ export default function AuthModal({
           const isValidPass = (storedPass && storedPass === cleanInputPass) || cleanInputPass === 'Krushil@2007' || cleanInputPass === 'password123';
 
           if (isValidPass) {
-            if (targetRecord.status === 'Access Revoked' || targetRecord.status === 'Past') {
+            if (targetRecord.status === 'Access Revoked' || targetRecord.status === 'Past' || targetRecord.status === 'Suspended') {
               setLoginError('🔒 Access Denied: An Administrator has suspended or revoked your workspace access.');
               setIsSubmitting(false);
               return;
@@ -234,18 +241,22 @@ export default function AuthModal({
             // Determine role automatically
             let resolvedRole = 'Employee';
             const rawRole = (targetRecord.role || '').toLowerCase();
-            if (portalType === 'manager' || rawRole.includes('manager')) {
-              resolvedRole = 'Manager';
-            } else if (portalType === 'admin' || rawRole.includes('admin')) {
+            if (rawRole.includes('admin') || rawRole.includes('owner') || rawRole.includes('principal')) {
               resolvedRole = 'Admin';
+            } else if (rawRole.includes('manager') || rawRole.includes('head') || rawRole.includes('lead')) {
+              resolvedRole = 'Manager';
+            } else {
+              resolvedRole = portalType === 'manager' ? 'Manager' : (portalType === 'admin' ? 'Admin' : 'Employee');
             }
+
+            const effectiveEmail = targetRecord.email || cleanEmail;
 
             // Automatically complete setup for invited members so they enter their workspace immediately
             localStorage.setItem('taxpro_setup_completed', 'true');
             localStorage.setItem('taxpro_profile_completed', 'true');
             localStorage.setItem('taxpro_user_role', resolvedRole);
-            localStorage.setItem('taxpro_user_email', cleanEmail);
-            localStorage.setItem('taxpro_user_name', targetRecord.name || cleanEmail.split('@')[0]);
+            localStorage.setItem('taxpro_user_email', effectiveEmail);
+            localStorage.setItem('taxpro_user_name', targetRecord.name || effectiveEmail.split('@')[0]);
             
             if (member?.permissions) {
               localStorage.setItem('taxpro_user_permissions', typeof member.permissions === 'string' ? member.permissions : JSON.stringify(member.permissions));
@@ -255,16 +266,18 @@ export default function AuthModal({
             if (member?.id) {
               await supabase.from('team_members').update({ status: 'Active', online: true }).eq('id', member.id);
             }
-            await supabase.from('users').update({ status: 'Active' }).ilike('email', cleanEmail);
+            if (effectiveEmail) {
+              await supabase.from('users').update({ status: 'Active' }).ilike('email', effectiveEmail);
+            }
 
             sessionStorage.removeItem('taxpro_superadmin_authenticated');
             localStorage.removeItem('taxpro_secret_superadmin');
             localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
 
-            onShowToast(`✓ Welcome ${targetRecord.name || cleanEmail}! Direct Login authorized as ${resolvedRole}.`, 'success');
+            onShowToast(`✓ Welcome ${targetRecord.name || effectiveEmail}! Direct Login authorized as ${resolvedRole}.`, 'success');
             setTimeout(() => {
               onClose();
-              if (onLoginSuccess) onLoginSuccess(cleanEmail, resolvedRole);
+              if (onLoginSuccess) onLoginSuccess(effectiveEmail, resolvedRole);
             }, 400);
             setIsSubmitting(false);
             return;
@@ -274,50 +287,53 @@ export default function AuthModal({
         console.warn('[Direct Login Auth Check]:', err);
       }
 
-      // If portal is manager or employee and not found in team_members
-      if (portalType === 'manager' || portalType === 'employee') {
-        setLoginError(`✕ No active invitation found for "${cleanEmail}". Managers and Employees must be invited by an Administrator.`);
-      } else {
-        setLoginError('✕ Invalid Email or Password. Please verify your credentials.');
-      }
-      
+      setLoginError(`✕ No active account found for "${cleanEmail}" with that password. Please verify your Login Email / ID and Password or contact your Administrator.`);
       onShowToast('✕ Authentication Failed. Please check your credentials.', 'error');
       setIsSubmitting(false);
       return;
     }
 
-    // Supabase standard auth login succeeded
-    let finalRole = portalType === 'admin' ? 'Admin' : (portalType === 'manager' ? 'Manager' : 'Employee');
-    
-    // Check if team member has a specific role in PostgreSQL
-    try {
-      const { data: member } = await supabase.from('team_members').select('*').ilike('email', cleanEmail).single();
-      if (member) {
-        if (member.status === 'Access Revoked' || member.status === 'Past') {
-          setLoginError('🔒 Access Denied: An Administrator has revoked your workspace access.');
-          setIsSubmitting(false);
-          return;
+    // Direct Login via supabase auth succeeded
+    const user = data?.user;
+    if (user) {
+      let finalRole = user.role || user.user_metadata?.role || (portalType === 'manager' ? 'Manager' : (portalType === 'admin' ? 'Admin' : 'Employee'));
+      
+      try {
+        const { data: memberList } = await supabase.from('team_members').select('*');
+        const member = memberList?.find(m => (m.email && m.email.toLowerCase() === cleanEmail) || (m.id && m.id.toLowerCase() === cleanEmail));
+        if (member) {
+          if (member.status === 'Access Revoked' || member.status === 'Past' || member.status === 'Suspended') {
+            setLoginError('🔒 Access Denied: An Administrator has revoked your workspace access.');
+            setIsSubmitting(false);
+            return;
+          }
+          if (member.role) {
+            const rawR = member.role.toLowerCase();
+            if (rawR.includes('admin')) finalRole = 'Admin';
+            else if (rawR.includes('manager')) finalRole = 'Manager';
+            else finalRole = 'Employee';
+          }
+          if (member.permissions) {
+            localStorage.setItem('taxpro_user_permissions', typeof member.permissions === 'string' ? member.permissions : JSON.stringify(member.permissions));
+          }
         }
-        if (member.role && member.role.toLowerCase().includes('manager')) finalRole = 'Manager';
-        if (member.permissions) {
-          localStorage.setItem('taxpro_user_permissions', typeof member.permissions === 'string' ? member.permissions : JSON.stringify(member.permissions));
-        }
-      }
-    } catch (e) {}
+      } catch (e) {}
 
-    // Ensure normal logins always open Practice PMS and remove superadmin override
-    sessionStorage.removeItem('taxpro_superadmin_authenticated');
-    localStorage.removeItem('taxpro_secret_superadmin');
-    localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
-    localStorage.setItem('taxpro_user_role', finalRole);
-    localStorage.setItem('taxpro_profile_completed', 'true');
+      localStorage.setItem('taxpro_setup_completed', 'true');
+      localStorage.setItem('taxpro_profile_completed', 'true');
+      localStorage.setItem('taxpro_user_role', finalRole);
+      localStorage.setItem('taxpro_user_email', user.email || cleanEmail);
+      localStorage.setItem('taxpro_user_name', user.user_metadata?.name || user.email?.split('@')[0] || 'User');
+      localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+      sessionStorage.removeItem('taxpro_superadmin_authenticated');
+      localStorage.removeItem('taxpro_secret_superadmin');
 
-    onShowToast(`✓ Authenticated successfully as ${finalRole}!`, 'success');
-    setTimeout(() => {
-      onClose();
-      if (onLoginSuccess) onLoginSuccess(cleanEmail, finalRole);
-    }, 500);
-
+      onShowToast(`✓ Authenticated successfully as ${finalRole}!`, 'success');
+      setTimeout(() => {
+        onClose();
+        if (onLoginSuccess) onLoginSuccess(user.email || cleanEmail, finalRole);
+      }, 400);
+    }
     setIsSubmitting(false);
   };
 
@@ -628,15 +644,15 @@ export default function AuthModal({
               {/* Email / Login ID */}
               <div>
                 <label className="text-xs font-semibold text-gray-300 block mb-1">
-                  {portalType === 'admin' ? 'Administrator Email' : (portalType === 'manager' ? 'Invited Manager Email (Login ID)' : 'Invited Employee Email (Login ID)')}
+                  {portalType === 'admin' ? 'Administrator Email or Login ID' : (portalType === 'manager' ? 'Manager Email or Login ID (EMP-ID)' : 'Employee Email or Login ID (EMP-ID)')}
                 </label>
                 <div className="relative">
                   <Mail className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${
                     portalType === 'admin' ? 'text-cyan-400' : (portalType === 'manager' ? 'text-purple-400' : 'text-emerald-400')
                   }`} />
                   <input
-                    type="email"
-                    placeholder={portalType === 'admin' ? 'admin@taxpro.com' : (portalType === 'manager' ? 'manager@taxpro.com' : 'employee@taxpro.com')}
+                    type={authTab === 'signup' ? 'email' : 'text'}
+                    placeholder={portalType === 'admin' ? 'admin@taxpro.com or Login ID' : (portalType === 'manager' ? 'Email or EMP-ID (e.g. manager@taxpro.com)' : 'Email or EMP-ID (e.g. employee@taxpro.com)')}
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);

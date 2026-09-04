@@ -108,18 +108,24 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
         return;
       }
 
-      // 4. Account found: dispatch OTP via Python smtplib
+      // 4. Account found: dispatch real 6-digit OTP to user inbox
       try {
-        await fetch(`${baseUrl}/api/auth/send-otp`, {
+        const otpResp = await fetch(`${baseUrl}/api/auth/send-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail })
+          body: JSON.stringify({ email: cleanEmail, length: 6 })
         });
-      } catch (otpErr) {}
+        const otpJson = await otpResp.json().catch(() => null);
+        if (otpJson && !otpJson.success && otpJson.error) {
+          throw new Error(otpJson.error);
+        }
+      } catch (otpErr) {
+        console.warn('[OTP dispatch error]:', otpErr.message);
+      }
 
       setAccountFoundInfo(matchedAccount);
       setStep(2);
-      if (onShowToast) onShowToast(`✓ Account verified! Reset OTP code dispatched to ${cleanEmail}`, 'success');
+      if (onShowToast) onShowToast(`✓ Account verified! 6-digit security OTP code dispatched to ${cleanEmail}`, 'success');
     } catch(err) {
       if (onShowToast) onShowToast(`Error locating account: ${err.message}`, 'error');
     } finally {
@@ -128,12 +134,12 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
   };
 
   const handleOtpChange = (index, value) => {
-    if (value.length > 1) value = value[value.length - 1];
+    const cleanVal = value.replace(/[^0-9]/g, '');
     const newOtp = [...otp];
-    newOtp[index] = value;
+    newOtp[index] = cleanVal ? cleanVal.slice(-1) : '';
     setOtp(newOtp);
 
-    if (value && index < 5) {
+    if (cleanVal && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -141,8 +147,8 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
   const handleResetPassword = async (e) => {
     if (e) e.preventDefault();
     const enteredCode = otp.join('').trim();
-    if (!enteredCode || enteredCode.length < 4) {
-      if (onShowToast) onShowToast('Please enter the verification OTP code received in your inbox.', 'error');
+    if (!enteredCode || enteredCode.length < 6) {
+      if (onShowToast) onShowToast('Please enter the complete 6-digit verification code received in your email.', 'error');
       return;
     }
 

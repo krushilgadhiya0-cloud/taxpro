@@ -9,6 +9,8 @@ import {
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
 import { requireFirmSetup } from '../../lib/firmGatekeeper';
+import { printHtml } from '../../lib/printHelper';
+import { formatDate } from '../../lib/dateUtils';
 
 export default function ProjectsView({ onShowToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -303,7 +305,7 @@ export default function ProjectsView({ onShowToast }) {
       id: projectTaskId,
       title: taskTitle,
       assignee: assigneeName,
-      createdAt: new Date().toLocaleDateString(),
+      createdAt: formatDate(new Date()),
       completed: false,
       importedToTasks: false
     };
@@ -330,6 +332,13 @@ export default function ProjectsView({ onShowToast }) {
     } catch (err) {
       console.warn('[Project Update Note]:', err.message);
     }
+
+    logAuditActivity({
+      action: 'ADD_PROJECT_TASK',
+      module: 'Projects',
+      details: `Added checklist task "${taskTitle}" to project "${openProject.name}" (Assignee: ${assigneeName})`,
+      metadata: { taskId: projectTaskId, project: openProject.name, assignee: assigneeName }
+    });
 
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
     if (onShowToast) onShowToast(`✓ Added task to checklist. Select checkbox to import when ready.`, 'info');
@@ -377,6 +386,13 @@ export default function ProjectsView({ onShowToast }) {
       await supabase.from('projects').update({ tasks: updatedTasks }).eq('id', String(openProject.id));
     } catch (e) {}
 
+    logAuditActivity({
+      action: 'IMPORT_TASKS',
+      module: 'Projects',
+      details: `Imported project task "${task.title}" from project "${openProject.name}" into global tasks`,
+      metadata: { taskId: globalTaskId, project: openProject.name }
+    });
+
     window.dispatchEvent(new CustomEvent('ai_task_added'));
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
@@ -421,6 +437,13 @@ export default function ProjectsView({ onShowToast }) {
     setProjectsList(prev => prev.map(p => p.id === openProject.id ? { ...p, tasks: updatedTasks } : p));
     setOpenProject(prev => ({ ...prev, tasks: updatedTasks }));
     setSelectedTasksForImport([]);
+
+    logAuditActivity({
+      action: 'IMPORT_TASKS',
+      module: 'Projects',
+      details: `Imported ${globalPayload.length} selected tasks from project "${openProject.name}" into global tasks`,
+      metadata: { project: openProject.name, count: globalPayload.length }
+    });
 
     window.dispatchEvent(new CustomEvent('ai_task_added'));
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
@@ -472,59 +495,145 @@ export default function ProjectsView({ onShowToast }) {
   };
   const filterCounts = getFilterCounts();
 
+  const handlePrintAllProjects = () => {
+    const list = filteredProjects.length > 0 ? filteredProjects : projectsList;
+    if (list.length === 0) {
+      if (onShowToast) onShowToast('No projects available to print.', 'warning');
+      return;
+    }
+
+    const rows = list.map((p, idx) => {
+      const taskCount = Array.isArray(p.tasks) ? p.tasks.length : 0;
+      const completedCount = Array.isArray(p.tasks) ? p.tasks.filter(t => t.completed || t.status === 'Completed').length : 0;
+      const pct = taskCount > 0 ? Math.round((completedCount / taskCount) * 100) : 0;
+
+      return `
+        <tr style="border-bottom: 1px solid #e5e7eb; background: ${idx % 2 === 0 ? '#ffffff' : '#f9fafb'};">
+          <td style="font-family: monospace; color: #64748b; text-align: center;">${idx + 1}</td>
+          <td>
+            <strong style="color: #0f172a; font-size: 11.5px;">${p.name || 'Untitled Project'}</strong>
+            <div style="font-size: 9.5px; color: #64748b; margin-top: 2px;">${p.description || 'No description'}</div>
+          </td>
+          <td>${p.clientName || 'Practice'}</td>
+          <td><strong>${p.projectManager || 'Unassigned'}</strong></td>
+          <td style="font-family: monospace;">${formatDate(p.dueDate)}</td>
+          <td><span class="badge-blue">${p.priority || 'Medium'}</span></td>
+          <td style="text-align: center;">
+            <div style="font-size: 10px; font-weight: 800; color: #0f766e;">${completedCount}/${taskCount} (${pct}%)</div>
+          </td>
+          <td style="text-align: right;">
+            <span class="status-pill ${
+              p.status === 'Active' ? 'status-progress' :
+              p.status === 'Completed' ? 'status-completed' : 'status-pending'
+            }">
+              ${p.status || 'Active'}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    const bodyHtml = `
+      <div style="margin-bottom: 12px; font-weight: 800; font-size: 13px; color: #1e293b;">
+        Projects Master Register & Deliverables Overview (${list.length} Records)
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 35px; text-align: center;">#</th>
+            <th>Project Title & Scope</th>
+            <th>Client Name</th>
+            <th>Manager</th>
+            <th>Due Date</th>
+            <th>Priority</th>
+            <th style="text-align: center;">Progress</th>
+            <th style="text-align: right;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    `;
+
+    printHtml('Projects Master Register', bodyHtml);
+    if (onShowToast) onShowToast('🖨️ Generating printable projects register...', 'info');
+  };
+
+  const handlePrintProjectDossier = (project) => {
+    if (!project) return;
+    const taskList = Array.isArray(project.tasks) ? project.tasks : [];
+
+    const taskRows = taskList.map((t, idx) => `
+      <tr style="border-bottom: 1px solid #e5e7eb; background: ${idx % 2 === 0 ? '#ffffff' : '#f9fafb'};">
+        <td style="width: 30px; text-align: center; color: #64748b; font-family: monospace;">${idx + 1}</td>
+        <td>
+          <span style="font-weight: 700; color: #0f172a; ${t.completed ? 'text-decoration: line-through; color: #94a3b8;' : ''}">
+            ${t.title || 'Untitled Subtask'}
+          </span>
+        </td>
+        <td>${t.assignee || 'Unassigned'}</td>
+        <td style="font-family: monospace;">${formatDate(t.dueDate)}</td>
+        <td style="text-align: right;">
+          <span class="status-pill ${t.completed ? 'status-completed' : 'status-pending'}">
+            ${t.completed ? '✓ Completed' : 'Pending'}
+          </span>
+        </td>
+      </tr>
+    `).join('');
+
+    const bodyHtml = `
+      <div style="background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <div style="font-size: 18px; font-weight: 900; color: #0f766e;">${project.name}</div>
+            <div style="font-size: 11px; color: #334155; margin-top: 4px;">Client: <strong>${project.clientName || 'Internal Practice'}</strong> • Manager: <strong>${project.projectManager || 'Unassigned'}</strong></div>
+          </div>
+          <div style="text-align: right;">
+            <span class="status-pill ${project.status === 'Active' ? 'status-progress' : 'status-completed'}" style="font-size: 11px; padding: 4px 10px;">
+              ${project.status || 'Active'}
+            </span>
+          </div>
+        </div>
+        ${project.description ? `<p style="font-size: 11px; color: #475569; margin-top: 8px; line-height: 1.4;">${project.description}</p>` : ''}
+      </div>
+
+      <div style="margin-bottom: 10px; font-weight: 800; font-size: 12px; color: #1e293b;">
+        Project Deliverables & Work Breakdown (${taskList.length} Items)
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 30px; text-align: center;">#</th>
+            <th>Task Description</th>
+            <th>Assignee</th>
+            <th>Due Date</th>
+            <th style="text-align: right;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${taskList.length > 0 ? taskRows : '<tr><td colspan="5" style="padding: 14px; text-align: center; color: #94a3b8;">No checklist items added.</td></tr>'}
+        </tbody>
+      </table>
+    `;
+
+    printHtml(`Project Dossier - ${project.name}`, bodyHtml);
+    if (onShowToast) onShowToast(`🖨️ Generating printable dossier for "${project.name}"...`, 'info');
+  };
+
   return (
-    <div className="p-4 sm:p-6 lg:p-8 bg-gray-50 min-h-screen text-gray-800 relative pb-24 flex items-center justify-center flex-col">
-      
+    <div className="w-full h-full min-h-screen bg-[#f3f4f6] flex flex-col items-center p-4 sm:p-6 text-gray-800">
       {projectsList.length === 0 ? (
-        <div className="max-w-2xl w-full flex flex-col items-center text-center mt-10">
-          
-          <div className="w-24 h-24 rounded-full bg-indigo-50 border-[6px] border-white shadow-sm flex items-center justify-center mb-6">
-            <FolderKanban className="w-10 h-10 text-indigo-600" />
+        <div className="w-full max-w-4xl h-full flex flex-col items-center justify-center p-8 bg-white/70 backdrop-blur-md rounded-3xl border border-gray-200 shadow-xl my-auto text-center animate-page-fade">
+          <div className="w-20 h-20 rounded-3xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 mb-6 shadow-sm">
+            <FolderKanban className="w-10 h-10" />
           </div>
-
-          <h1 className="text-3xl font-extrabold text-gray-900 font-outfit mb-3">Group your tasks with Projects</h1>
-          <p className="text-base text-gray-500 max-w-lg mb-10 leading-relaxed font-medium">
-            Bundle related tasks, assign designated managers and employees, and optionally import project deliverables into the global Tasks register.
+          <h2 className="text-2xl font-black font-outfit text-gray-900 mb-2">Projects & Deliverables Engine</h2>
+          <p className="text-sm text-gray-500 max-w-md mb-8">
+            Create milestone-driven client projects, track team assignments, and synchronize tasks across the practice.
           </p>
-
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 w-full max-w-md text-left mb-10">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-sm">
-                  1
-                </div>
-                <div className="pt-1">
-                  <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-indigo-500" /> Create project with team & client
-                  </h3>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-sm">
-                  2
-                </div>
-                <div className="pt-1">
-                  <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-indigo-500" /> Add subtasks & Selectively Import
-                  </h3>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-4">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-black text-sm">
-                  3
-                </div>
-                <div className="pt-1">
-                  <h3 className="font-extrabold text-gray-900 text-sm flex items-center gap-2">
-                    <Target className="w-4 h-4 text-indigo-500" /> 2-Way Checkbox Live Sync
-                  </h3>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <button 
+            type="button"
             onClick={() => {
               if (!requireFirmSetup(onShowToast)) return;
               setIsModalOpen(true);
@@ -534,11 +643,9 @@ export default function ProjectsView({ onShowToast }) {
             <Plus className="w-5 h-5" />
             Create your first project
           </button>
-
         </div>
       ) : (
         <div className="w-full max-w-7xl h-full flex flex-col pt-4">
-          
           {/* Top Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-white/50 backdrop-blur-md rounded-t-2xl gap-4">
             <div className="flex items-center gap-3">
@@ -546,7 +653,7 @@ export default function ProjectsView({ onShowToast }) {
               <h1 className="text-xl font-bold text-gray-900 font-outfit">Projects</h1>
               <span className="px-2 py-0.5 rounded-full bg-gray-200 text-xs font-bold text-gray-700">{filterCounts.All}</span>
             </div>
-            <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
               <div className="relative flex-1 md:w-64">
                 <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
                 <input 
@@ -557,7 +664,19 @@ export default function ProjectsView({ onShowToast }) {
                   className="pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm w-full outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                 />
               </div>
+
               <button 
+                type="button"
+                onClick={handlePrintAllProjects}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
+                title="Print Projects Register"
+              >
+                <Printer className="w-4 h-4 text-gray-500" />
+                <span>Print Register</span>
+              </button>
+
+              <button 
+                type="button"
                 onClick={() => {
                   if (!requireFirmSetup(onShowToast)) return;
                   setIsModalOpen(true);
@@ -679,7 +798,7 @@ export default function ProjectsView({ onShowToast }) {
 
                     <div className="flex items-center justify-between text-[10px] text-gray-500 font-semibold pt-2 border-t border-gray-100">
                       <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" /> {p.dueDate || 'No due date'}
+                        <Calendar className="w-3 h-3" /> {formatDate(p.dueDate, 'No due date')}
                       </span>
                       <span className="text-emerald-600 font-bold flex items-center gap-0.5">
                         Open Tasks <ArrowRight className="w-3 h-3" />
@@ -704,21 +823,21 @@ export default function ProjectsView({ onShowToast }) {
       {isModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-3xl">
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
             
             {/* Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <FolderKanban className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                     Create New Project
                   </h3>
-                  <p className="text-xs text-gray-300 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Assign managers, select employees, link clients, and set deliverable milestones
                   </p>
                 </div>
@@ -726,41 +845,41 @@ export default function ProjectsView({ onShowToast }) {
 
               <button 
                 onClick={() => setIsModalOpen(false)} 
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto flex-1 scrollbar-thin max-h-[75vh]">
-              <form id="project-form" onSubmit={handleCreateProject} className="flex flex-col gap-5 text-xs font-semibold">
+            <div className="p-6 overflow-y-auto flex-1 overscroll-contain chat-custom-scrollbar">
+              <form id="project-form" onSubmit={handleCreateProject} className="flex flex-col gap-5 text-xs font-semibold pb-2">
                 
                 {/* 1. Basic Project Identity */}
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex flex-col gap-3">
-                  <h4 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                    <Briefcase className="w-3.5 h-3.5 text-indigo-600" /> Project Core Info
+                <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 sm:p-5 flex flex-col gap-3.5 shadow-2xs">
+                  <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-200/80 pb-2.5">
+                    <Briefcase className="w-4 h-4 text-indigo-600" /> Project Core Info
                   </h4>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                     <div>
-                      <label className="text-gray-700 block mb-1">Project Title <span className="text-red-500">*</span></label>
+                      <label className="text-slate-700 block mb-1">Project Title <span className="text-rose-500">*</span></label>
                       <input 
                         type="text" 
                         required
                         value={formData.name}
                         onChange={e => setFormData({...formData, name: e.target.value})}
                         placeholder="e.g. Q1 Corporate Tax Audit & Filing" 
-                        className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-medium"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-medium shadow-2xs"
                       />
                     </div>
 
                     <div>
-                      <label className="text-gray-700 block mb-1">Client Association (Optional)</label>
+                      <label className="text-slate-700 block mb-1">Client Association (Optional)</label>
                       <select
                         value={formData.clientName}
                         onChange={e => setFormData({...formData, clientName: e.target.value})}
-                        className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs cursor-pointer"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs font-medium text-slate-800"
                       >
                         <option value="">-- No Client (Internal Practice) --</option>
                         {clientsList.map(c => (
@@ -770,11 +889,11 @@ export default function ProjectsView({ onShowToast }) {
                     </div>
 
                     <div>
-                      <label className="text-gray-700 block mb-1">Department / Domain</label>
+                      <label className="text-slate-700 block mb-1">Department / Domain</label>
                       <select
                         value={formData.category}
                         onChange={e => setFormData({...formData, category: e.target.value})}
-                        className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs cursor-pointer"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs font-medium text-slate-800"
                       >
                         <option value="Corporate Audit">Corporate Audit</option>
                         <option value="Taxation & Filing">Taxation & Filing</option>
@@ -786,17 +905,17 @@ export default function ProjectsView({ onShowToast }) {
                     </div>
 
                     <div>
-                      <label className="text-gray-700 block mb-1">Priority Level</label>
+                      <label className="text-slate-700 block mb-1">Priority Level</label>
                       <div className="grid grid-cols-4 gap-1.5">
                         {['Low', 'Medium', 'High', 'Urgent'].map(prio => (
                           <button
                             key={prio}
                             type="button"
                             onClick={() => setFormData({...formData, priority: prio})}
-                            className={`py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                            className={`py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-2xs ${
                               formData.priority === prio 
-                                ? 'bg-indigo-50 text-indigo-700 border-indigo-500 shadow-2xs' 
-                                : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-500 font-extrabold ring-2 ring-indigo-500/20' 
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                             }`}
                           >
                             {prio}
@@ -808,18 +927,18 @@ export default function ProjectsView({ onShowToast }) {
                 </div>
 
                 {/* 2. Manager & Employee Allocation */}
-                <div className="bg-indigo-50/40 border border-indigo-100 rounded-xl p-4 flex flex-col gap-3">
-                  <h4 className="text-xs font-extrabold text-indigo-950 uppercase tracking-wider flex items-center gap-2">
-                    <Users className="w-3.5 h-3.5 text-indigo-600" /> Team & Personnel Allocation (Optional)
+                <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 sm:p-5 flex flex-col gap-3.5 shadow-2xs">
+                  <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-200/80 pb-2.5">
+                    <Users className="w-4 h-4 text-indigo-600" /> Team & Personnel Allocation (Optional)
                   </h4>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                     <div>
-                      <label className="text-gray-700 block mb-1">Designated Project Manager / Lead</label>
+                      <label className="text-slate-700 block mb-1">Designated Project Manager / Lead</label>
                       <select
                         value={formData.projectManager}
                         onChange={e => setFormData({...formData, projectManager: e.target.value})}
-                        className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs cursor-pointer"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs font-medium text-slate-800"
                       >
                         <option value="">-- Select Manager --</option>
                         {allMembersData.map(m => (
@@ -829,22 +948,22 @@ export default function ProjectsView({ onShowToast }) {
                     </div>
 
                     <div>
-                      <label className="text-gray-700 block mb-1">Estimated Budget / Fee</label>
+                      <label className="text-slate-700 block mb-1">Estimated Budget / Fee</label>
                       <input 
                         type="text" 
                         value={formData.budget}
                         onChange={e => setFormData({...formData, budget: e.target.value})}
                         placeholder="e.g. ₹1,50,000" 
-                        className="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-medium"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-medium shadow-2xs font-mono"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-gray-700 block mb-1.5">
+                    <label className="text-slate-700 block mb-1.5">
                       Assign Specific Team Members / Employees: ({formData.assignedEmployees.length} selected)
                     </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-36 overflow-y-auto p-2 bg-white border border-gray-200 rounded-xl scrollbar-thin">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-3 bg-white border border-slate-200 rounded-2xl chat-custom-scrollbar shadow-inner">
                       {allMembersData.map(member => {
                         const isSelected = formData.assignedEmployees.includes(member.name);
                         return (
@@ -852,16 +971,16 @@ export default function ProjectsView({ onShowToast }) {
                             key={member.id}
                             type="button"
                             onClick={() => toggleEmployeeSelection(member.name)}
-                            className={`flex items-center gap-2 p-2 rounded-lg border text-left text-[11px] transition-all cursor-pointer ${
+                            className={`flex items-center gap-2 p-2.5 rounded-xl border text-left text-[11px] transition-all cursor-pointer ${
                               isSelected 
-                                ? 'bg-indigo-50 border-indigo-500 text-indigo-800 font-bold shadow-2xs' 
-                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                ? 'bg-indigo-50 border-indigo-500 text-indigo-800 font-bold shadow-2xs ring-2 ring-indigo-500/20' 
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-2xs'
                             }`}
                           >
-                            <User className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-indigo-600' : 'text-gray-400'}`} />
+                            <User className={`w-4 h-4 shrink-0 ${isSelected ? 'text-indigo-600' : 'text-slate-400'}`} />
                             <div className="truncate">
-                              <span className="block truncate leading-tight">{member.name}</span>
-                              <span className="text-[9px] text-gray-400 font-normal">{member.role || 'Employee'}</span>
+                              <span className="block truncate leading-tight font-bold">{member.name}</span>
+                              <span className="text-[9px] text-slate-400 font-normal">{member.role || 'Employee'}</span>
                             </div>
                           </button>
                         );
@@ -875,35 +994,35 @@ export default function ProjectsView({ onShowToast }) {
                   <div className="flex flex-col gap-3">
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-gray-700 block mb-1">Start Date</label>
+                        <label className="text-slate-700 block mb-1">Start Date</label>
                         <input 
                           type="date" 
                           value={formData.startDate}
                           onChange={e => setFormData({...formData, startDate: e.target.value})}
-                          className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs shadow-2xs font-mono"
                         />
                       </div>
                       <div>
-                        <label className="text-gray-700 block mb-1">Due Date</label>
+                        <label className="text-slate-700 block mb-1">Due Date</label>
                         <input 
                           type="date" 
                           value={formData.dueDate}
                           onChange={e => setFormData({...formData, dueDate: e.target.value})}
-                          className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs shadow-2xs font-mono"
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="text-gray-700 block mb-1">Attach Project Brief / File</label>
-                      <div className="border border-dashed border-gray-300 rounded-xl p-2.5 bg-white hover:bg-gray-50 transition-colors">
+                      <label className="text-slate-700 block mb-1">Attach Project Brief / File</label>
+                      <div className="border border-dashed border-slate-300 rounded-2xl p-2.5 bg-white hover:bg-slate-50 transition-colors shadow-2xs">
                         <input 
                           type="file" 
                           onChange={e => {
                              const file = e.target.files[0];
                              if (file) setFormData({...formData, attachment: file.name});
                           }}
-                          className="block w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" 
+                          className="block w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" 
                         />
                         {formData.attachment && (
                           <p className="text-[10px] text-emerald-700 font-bold mt-1">
@@ -915,13 +1034,13 @@ export default function ProjectsView({ onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-gray-700 block mb-1">Scope & Key Deliverables</label>
+                    <label className="text-slate-700 block mb-1">Scope & Key Deliverables</label>
                     <textarea 
                       rows={4}
                       value={formData.description}
                       onChange={e => setFormData({...formData, description: e.target.value})}
                       placeholder="Enter project milestones, scope of work, and review points..." 
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 min-h-[110px] text-xs resize-none"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 min-h-[110px] text-xs resize-none shadow-2xs"
                     />
                   </div>
                 </div>
@@ -930,18 +1049,18 @@ export default function ProjectsView({ onShowToast }) {
             </div>
 
             {/* Bottom Actions */}
-            <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex justify-end items-center gap-3">
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex justify-end items-center gap-3 shrink-0">
               <button 
                 type="button" 
                 onClick={() => setIsModalOpen(false)} 
-                className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button 
                 form="project-form" 
                 type="submit" 
-                className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
               >
                 Create Project
               </button>
@@ -954,31 +1073,31 @@ export default function ProjectsView({ onShowToast }) {
       {/* OPEN PROJECT TASKS MODAL & SELECTIVE IMPORT DRAWER */}
       {openProject && (
         <div 
-          className="modal-overlay-backdrop" 
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto" 
           onClick={() => {
             setOpenProject(null);
             setSelectedTasksForImport([]);
           }}
         >
           <div 
-            className="modal-content-box max-w-2xl max-h-[92vh]"
+            className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth"
             onClick={e => e.stopPropagation()}
           >
-            {/* Drawer Header */}
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-emerald-50/60 shrink-0">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div>
-                <h2 className="text-xl font-bold text-gray-900 font-outfit">{openProject.name}</h2>
+                <h2 className="text-xl font-bold text-slate-900 font-outfit">{openProject.name}</h2>
                 <div className="flex items-center gap-2 mt-1 flex-wrap text-xs">
-                  <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest bg-emerald-100 px-2 py-0.5 rounded">
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                     {openProject.status} PROJECT
                   </span>
                   {openProject.projectManager && (
-                    <span className="text-[10px] font-semibold text-gray-600 bg-white border border-gray-200 px-2 py-0.5 rounded">
+                    <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
                       👔 Lead: <b>{openProject.projectManager}</b>
                     </span>
                   )}
                   {openProject.clientName && (
-                    <span className="text-[10px] font-semibold text-gray-600 bg-white border border-gray-200 px-2 py-0.5 rounded">
+                    <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
                       🏢 Client: <b>{openProject.clientName}</b>
                     </span>
                   )}
@@ -988,13 +1107,15 @@ export default function ProjectsView({ onShowToast }) {
               <div className="flex items-center gap-2">
                 <button 
                   onClick={handleDownloadTasks}
-                  className="p-1.5 text-gray-600 hover:text-emerald-700 hover:bg-emerald-100 rounded-xl transition-colors bg-white border border-gray-200 flex items-center gap-1 px-2.5 text-xs font-bold cursor-pointer"
+                  className="p-1.5 text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 rounded-xl transition-colors bg-white border border-slate-200 flex items-center gap-1 px-2.5 text-xs font-bold cursor-pointer shadow-2xs"
                 >
                   <Download className="w-3.5 h-3.5" /> CSV
                 </button>
                 <button 
-                  onClick={() => window.print()}
-                  className="p-1.5 text-gray-600 hover:text-emerald-700 hover:bg-emerald-100 rounded-xl transition-colors bg-white border border-gray-200 flex items-center gap-1 px-2.5 text-xs font-bold cursor-pointer"
+                  type="button"
+                  onClick={() => handlePrintProjectDossier(openProject)}
+                  className="p-1.5 text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 rounded-xl transition-colors bg-white border border-slate-200 flex items-center gap-1 px-2.5 text-xs font-bold cursor-pointer active:scale-95 shadow-2xs"
+                  title="Print Project Dossier & Checklist"
                 >
                   <Printer className="w-3.5 h-3.5" /> Print
                 </button>
@@ -1003,21 +1124,21 @@ export default function ProjectsView({ onShowToast }) {
                     setOpenProject(null);
                     setSelectedTasksForImport([]);
                   }} 
-                  className="p-2 text-gray-400 hover:text-gray-900 hover:bg-white rounded-xl transition-colors cursor-pointer"
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            {/* Drawer Body */}
-            <div className="flex-1 overflow-y-auto p-6 bg-gray-50 flex flex-col gap-6 scrollbar-thin">
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 flex flex-col gap-6 overscroll-contain chat-custom-scrollbar">
               
               {/* To-Do Section Header with Granular Selection Controls */}
               <div>
-                <div className="flex items-center justify-between mb-3 bg-white p-3 rounded-xl border border-gray-200 shadow-2xs">
+                <div className="flex items-center justify-between mb-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-extrabold text-gray-800 uppercase tracking-wider">
+                    <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
                       To Do Tasks ({openProject.tasks.filter(t => !t.completed).length})
                     </span>
                     {openProject.tasks.filter(t => !t.completed && !t.importedToTasks).length > 0 && (
@@ -1031,7 +1152,7 @@ export default function ProjectsView({ onShowToast }) {
                             setSelectedTasksForImport(unimported);
                           }
                         }}
-                        className="text-teal-700 hover:text-teal-800 text-[11px] font-bold ml-2 underline cursor-pointer"
+                        className="text-indigo-700 hover:text-indigo-800 text-[11px] font-bold ml-2 underline cursor-pointer"
                       >
                         {selectedTasksForImport.length === openProject.tasks.filter(t => !t.completed && !t.importedToTasks).length ? 'Deselect All' : 'Select All to Import'}
                       </button>
@@ -1042,7 +1163,7 @@ export default function ProjectsView({ onShowToast }) {
                     <button
                       type="button"
                       onClick={handleImportSelectedTasks}
-                      className="px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer animate-pulse"
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
                     >
                       <ArrowDownToLine className="w-3.5 h-3.5" />
                       Import Selected ({selectedTasksForImport.length})
@@ -1056,8 +1177,8 @@ export default function ProjectsView({ onShowToast }) {
                     return (
                       <div 
                         key={task.id} 
-                        className={`flex items-center justify-between gap-3 p-3.5 bg-white border rounded-xl hover:shadow-xs transition-all ${
-                          isSelected ? 'border-teal-500 bg-teal-50/30' : 'border-gray-200'
+                        className={`flex items-center justify-between gap-3 p-3.5 bg-white border rounded-2xl hover:shadow-xs transition-all ${
+                          isSelected ? 'border-indigo-500 bg-indigo-50/40 ring-2 ring-indigo-500/20' : 'border-slate-200'
                         }`}
                       >
                         {/* Task checkbox & title */}
@@ -1066,24 +1187,24 @@ export default function ProjectsView({ onShowToast }) {
                             type="checkbox" 
                             checked={false} 
                             onChange={() => toggleTaskStatus(openProject.id, task.id)}
-                            className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
                             title="Mark task completed"
                           />
                           <div className="flex flex-col min-w-0">
-                            <span className="text-xs font-bold text-gray-800 truncate">{task.title}</span>
-                            <span className="text-[10px] text-gray-400 font-medium">Assignee: {task.assignee}</span>
+                            <span className="text-xs font-bold text-slate-800 truncate">{task.title}</span>
+                            <span className="text-[10px] text-slate-400 font-medium">Assignee: {task.assignee}</span>
                           </div>
                         </label>
 
                         {/* Import selection option or badge */}
                         <div className="flex items-center gap-2 shrink-0">
                           {task.importedToTasks ? (
-                            <span className="px-2 py-1 rounded bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold flex items-center gap-1">
+                            <span className="px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold flex items-center gap-1">
                               <CheckCheck className="w-3 h-3" /> In Tasks
                             </span>
                           ) : (
                             <div className="flex items-center gap-2">
-                              <label className="flex items-center gap-1 text-[11px] text-gray-600 font-medium cursor-pointer bg-gray-50 hover:bg-gray-100 px-2 py-1 rounded-md border border-gray-200">
+                              <label className="flex items-center gap-1 text-[11px] text-slate-600 font-medium cursor-pointer bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
@@ -1092,7 +1213,7 @@ export default function ProjectsView({ onShowToast }) {
                                       prev.includes(task.id) ? prev.filter(id => id !== task.id) : [...prev, task.id]
                                     );
                                   }}
-                                  className="w-3.5 h-3.5 rounded text-teal-600 border-gray-300 focus:ring-teal-500 cursor-pointer"
+                                  className="w-3.5 h-3.5 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
                                 />
                                 <span className="text-[10px]">Select</span>
                               </label>
@@ -1100,7 +1221,7 @@ export default function ProjectsView({ onShowToast }) {
                               <button
                                 type="button"
                                 onClick={() => handleImportSingleTask(task)}
-                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                                 title="Import this single task into the Tasks register"
                               >
                                 <ArrowDownToLine className="w-3 h-3" /> Import
@@ -1113,25 +1234,25 @@ export default function ProjectsView({ onShowToast }) {
                   })}
 
                   {openProject.tasks.filter(t => !t.completed).length === 0 && (
-                    <div className="p-6 text-center flex flex-col justify-center items-center h-28 border-2 border-dashed border-gray-200 rounded-xl bg-white/60">
-                      <p className="text-xs font-bold text-gray-400">All tasks completed! No pending items.</p>
+                    <div className="p-6 text-center flex flex-col justify-center items-center h-28 border-2 border-dashed border-slate-200 rounded-2xl bg-white/60">
+                      <p className="text-xs font-bold text-slate-400">All tasks completed! No pending items.</p>
                     </div>
                   )}
                 </div>
                 
                 {/* Dynamically Add Task inline form */}
-                <form onSubmit={handleCreateProjectTask} className="mt-3 flex gap-2 w-full bg-white p-2 rounded-xl border border-gray-200 shadow-2xs">
+                <form onSubmit={handleCreateProjectTask} className="mt-3 flex gap-2 w-full bg-white p-2.5 rounded-2xl border border-slate-200 shadow-2xs">
                   <input 
                     type="text" 
                     value={newTaskTitle}
                     onChange={e => setNewTaskTitle(e.target.value)}
                     placeholder="Add task to project checklist..."
-                    className="flex-1 px-3 py-2 text-xs outline-none bg-transparent font-semibold text-gray-800"
+                    className="flex-1 px-3 py-1.5 text-xs outline-none bg-transparent font-semibold text-slate-800"
                   />
                   <select 
                     value={newTaskAssignee}
                     onChange={e => setNewTaskAssignee(e.target.value)}
-                    className="px-2 py-1.5 text-xs border border-gray-200 rounded-lg outline-none bg-gray-50 text-gray-700 font-bold max-w-[150px] truncate cursor-pointer"
+                    className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 text-slate-700 font-bold max-w-[150px] truncate cursor-pointer"
                   >
                     <option value="Unassigned">-- Assignee --</option>
                     <option value={localStorage.getItem('taxpro_user_name') || 'Administrator'}>
@@ -1144,7 +1265,7 @@ export default function ProjectsView({ onShowToast }) {
                   <button 
                     type="submit" 
                     disabled={!newTaskTitle.trim()} 
-                    className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors cursor-pointer"
+                    className="px-4 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors cursor-pointer shadow-2xs"
                   >
                     Add
                   </button>
@@ -1153,9 +1274,9 @@ export default function ProjectsView({ onShowToast }) {
 
               {/* Completed Tasks */}
               <div>
-                <h3 className="text-xs font-extrabold text-gray-600 uppercase tracking-widest mb-3 flex items-center justify-between">
+                <h3 className="text-xs font-extrabold text-slate-600 uppercase tracking-widest mb-3 flex items-center justify-between">
                   <span>Completed Tasks</span>
-                  <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                  <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
                     {openProject.tasks.filter(t => t.completed).length}
                   </span>
                 </h3>
@@ -1164,23 +1285,23 @@ export default function ProjectsView({ onShowToast }) {
                   {openProject.tasks.filter(t => t.completed).map(task => (
                     <div 
                       key={task.id} 
-                      className="flex items-center justify-between gap-3 p-3 bg-white/70 border border-gray-100 rounded-xl opacity-75 hover:opacity-100 transition-opacity"
+                      className="flex items-center justify-between gap-3 p-3 bg-white/70 border border-slate-200 rounded-2xl opacity-75 hover:opacity-100 transition-opacity"
                     >
                       <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
                         <input 
                           type="checkbox" 
-                          checked={true}
+                          checked={true} 
                           onChange={() => toggleTaskStatus(openProject.id, task.id)}
-                          className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                         />
                         <div className="flex flex-col min-w-0">
-                          <span className="text-xs font-medium text-gray-500 line-through truncate">{task.title}</span>
-                          <span className="text-[10px] text-gray-400">{task.assignee}</span>
+                          <span className="text-xs font-medium text-slate-500 line-through truncate">{task.title}</span>
+                          <span className="text-[10px] text-slate-400">{task.assignee}</span>
                         </div>
                       </label>
 
                       {task.importedToTasks && (
-                        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-[9px] font-bold shrink-0">
+                        <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold shrink-0">
                           Synced
                         </span>
                       )}
@@ -1188,7 +1309,7 @@ export default function ProjectsView({ onShowToast }) {
                   ))}
 
                   {openProject.tasks.filter(t => t.completed).length === 0 && (
-                    <div className="p-4 text-center text-xs font-bold text-gray-400 border border-dashed border-gray-200 rounded-xl h-20 flex items-center justify-center bg-white/40">
+                    <div className="p-4 text-center text-xs font-bold text-slate-400 border border-dashed border-slate-200 rounded-2xl h-20 flex items-center justify-center bg-white/40">
                       No tasks completed yet.
                     </div>
                   )}
@@ -1207,7 +1328,7 @@ export default function ProjectsView({ onShowToast }) {
             <div className="border-b-2 border-black pb-4 mb-6">
               <h1 className="text-3xl font-black">{openProject.name} (Project Dossier)</h1>
               <p className="text-sm font-bold mt-2">
-                Status: {openProject.status.toUpperCase()} | Manager: {openProject.projectManager || 'N/A'} | Client: {openProject.clientName || 'N/A'} | Due: {openProject.dueDate || 'Indefinite'}
+                Status: {openProject.status.toUpperCase()} | Manager: {openProject.projectManager || 'N/A'} | Client: {openProject.clientName || 'N/A'} | Due: {formatDate(openProject.dueDate, 'Indefinite')}
               </p>
             </div>
             

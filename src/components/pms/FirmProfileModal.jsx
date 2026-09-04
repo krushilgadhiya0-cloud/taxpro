@@ -39,48 +39,55 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
   const [isOtpSending, setIsOtpSending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // Original Initial Firm Data (for Before/After comparison)
-  const [originalFirm, setOriginalFirm] = useState({
-    name: localStorage.getItem('taxpro_firm_name') || '',
-    tag: localStorage.getItem('taxpro_firm_tag') || 'TaxPro',
-    gst: localStorage.getItem('taxpro_firm_gst') || '',
-    pan: localStorage.getItem('taxpro_firm_pan') || '',
-    email: localStorage.getItem('taxpro_firm_email') || '',
-    phone: localStorage.getItem('taxpro_firm_phone') || '',
-    address: localStorage.getItem('taxpro_firm_address') || '',
-    tagline: localStorage.getItem('taxpro_firm_tagline') || 'Tax & Compliance Advisory Practice'
+  // Helper to cleanly unwrap and sanitize any storage value
+  const cleanFirmValue = (val, defaultVal = '') => {
+    if (val === null || val === undefined) return defaultVal;
+    if (typeof val === 'object') {
+      if ('value' in val) return cleanFirmValue(val.value, defaultVal);
+      if ('VALUE' in val) return cleanFirmValue(val.VALUE, defaultVal);
+      return defaultVal;
+    }
+    const str = String(val).trim();
+    if (!str) return defaultVal;
+    if ((str.startsWith('{"value"') || str.startsWith('{"VALUE"') || str.startsWith('{"value":') || str.startsWith('{"VALUE":')) && str.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(str);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          if ('value' in parsed) return cleanFirmValue(parsed.value, defaultVal);
+          if ('VALUE' in parsed) return cleanFirmValue(parsed.VALUE, defaultVal);
+        }
+      } catch (e) {}
+    }
+    if (str === '[]' || str === '{}' || str === '""' || str === 'null' || str === 'undefined') return defaultVal;
+    return str;
+  };
+
+  const getCleanFirmData = () => ({
+    name: cleanFirmValue(localStorage.getItem('taxpro_firm_name'), ''),
+    tag: cleanFirmValue(localStorage.getItem('taxpro_firm_tag'), 'TaxPro'),
+    gst: cleanFirmValue(localStorage.getItem('taxpro_firm_gst'), ''),
+    pan: cleanFirmValue(localStorage.getItem('taxpro_firm_pan'), ''),
+    email: cleanFirmValue(localStorage.getItem('taxpro_firm_email'), ''),
+    phone: cleanFirmValue(localStorage.getItem('taxpro_firm_phone'), ''),
+    address: cleanFirmValue(localStorage.getItem('taxpro_firm_address'), ''),
+    tagline: cleanFirmValue(localStorage.getItem('taxpro_firm_tagline'), 'Tax & Compliance Advisory Practice')
   });
 
+  // Original Initial Firm Data (for Before/After comparison)
+  const [originalFirm, setOriginalFirm] = useState(getCleanFirmData);
+
   // Editable Form Data
-  const [formData, setFormData] = useState({
-    name: localStorage.getItem('taxpro_firm_name') || '',
-    tag: localStorage.getItem('taxpro_firm_tag') || 'TaxPro',
-    gst: localStorage.getItem('taxpro_firm_gst') || '',
-    pan: localStorage.getItem('taxpro_firm_pan') || '',
-    email: localStorage.getItem('taxpro_firm_email') || '',
-    phone: localStorage.getItem('taxpro_firm_phone') || '',
-    address: localStorage.getItem('taxpro_firm_address') || '',
-    tagline: localStorage.getItem('taxpro_firm_tagline') || 'Tax & Compliance Advisory Practice'
-  });
+  const [formData, setFormData] = useState(getCleanFirmData);
 
   const [isSaving, setIsSaving] = useState(false);
   const [authAgreement, setAuthAgreement] = useState(true);
 
   useEffect(() => {
     if (isOpen) {
-      const email = localStorage.getItem('taxpro_user_email') || localStorage.getItem('taxpro_secret_superadmin') || 'admin@taxpro.com';
+      const email = cleanFirmValue(localStorage.getItem('taxpro_user_email') || localStorage.getItem('taxpro_secret_superadmin'), 'admin@taxpro.com');
       setAdminEmail(email);
       
-      const currentData = {
-        name: localStorage.getItem('taxpro_firm_name') || '',
-        tag: localStorage.getItem('taxpro_firm_tag') || 'TaxPro',
-        gst: localStorage.getItem('taxpro_firm_gst') || '',
-        pan: localStorage.getItem('taxpro_firm_pan') || '',
-        email: localStorage.getItem('taxpro_firm_email') || '',
-        phone: localStorage.getItem('taxpro_firm_phone') || '',
-        address: localStorage.getItem('taxpro_firm_address') || '',
-        tagline: localStorage.getItem('taxpro_firm_tagline') || 'Tax & Compliance Advisory Practice'
-      };
+      const currentData = getCleanFirmData();
       setOriginalFirm(currentData);
       setFormData(currentData);
       setCurrentStep(3);
@@ -192,14 +199,14 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
   const handleCommitFirmSave = async () => {
     setIsSaving(true);
     try {
-      const cleanName = formData.name.trim();
-      const cleanTag = formData.tag.trim();
-      const cleanGst = formData.gst.trim();
-      const cleanPan = formData.pan.trim();
-      const cleanEmail = formData.email.trim();
-      const cleanPhone = formData.phone.trim();
-      const cleanAddress = formData.address.trim();
-      const cleanTagline = formData.tagline.trim();
+      const cleanName = cleanFirmValue(formData.name).trim();
+      const cleanTag = cleanFirmValue(formData.tag, 'TaxPro').trim();
+      const cleanGst = cleanFirmValue(formData.gst).trim().toUpperCase();
+      const cleanPan = cleanFirmValue(formData.pan).trim().toUpperCase();
+      const cleanEmail = cleanFirmValue(formData.email).trim();
+      const cleanPhone = cleanFirmValue(formData.phone).trim();
+      const cleanAddress = cleanFirmValue(formData.address).trim();
+      const cleanTagline = cleanFirmValue(formData.tagline, 'Tax & Compliance Advisory Practice').trim();
 
       // 1. Save locally
       localStorage.setItem('taxpro_firm_name', cleanName);
@@ -344,10 +351,12 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                 <div className="flex items-center justify-between relative max-w-lg mx-auto">
                   
                   {/* Connecting Bar */}
-                  <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 h-1 bg-gray-200 z-0">
+                  <div className="absolute top-[18px] left-[18px] right-[18px] -translate-y-1/2 h-1 bg-gray-200 z-0 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-[#5b52e0] transition-all duration-300" 
-                      style={{ width: `${((currentStep - 1) / 3) * 100}%` }} 
+                      className="h-full bg-[#5b52e0] transition-all duration-300 rounded-full" 
+                      style={{ 
+                        width: `${stepTitles.length > 1 ? Math.min(100, Math.max(0, ((currentStep - 1) / (stepTitles.length - 1)) * 100)) : 100}%` 
+                      }} 
                     />
                   </div>
 
@@ -550,7 +559,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                   <input
                     type="text"
                     required
-                    value={formData.name}
+                    value={cleanFirmValue(formData.name)}
                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                     placeholder="e.g. Apex Tax & Financial Advisory LLP"
                     className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-indigo-500 focus:bg-white text-gray-800"
@@ -566,7 +575,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                   <input
                     type="text"
                     required
-                    value={formData.tag}
+                    value={cleanFirmValue(formData.tag, 'TaxPro')}
                     onChange={(e) => setFormData(prev => ({ ...prev, tag: e.target.value }))}
                     placeholder="e.g. Apex Advisory"
                     className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500 focus:bg-white text-indigo-900 font-mono"
@@ -581,7 +590,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                   </label>
                   <input
                     type="text"
-                    value={formData.gst}
+                    value={cleanFirmValue(formData.gst)}
                     onChange={(e) => setFormData(prev => ({ ...prev, gst: e.target.value.toUpperCase() }))}
                     placeholder="e.g. 24AAAAA0000A1Z5 (Optional)"
                     className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:border-indigo-500 focus:bg-white text-gray-800"
@@ -596,7 +605,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                   </label>
                   <input
                     type="text"
-                    value={formData.pan}
+                    value={cleanFirmValue(formData.pan)}
                     onChange={(e) => setFormData(prev => ({ ...prev, pan: e.target.value.toUpperCase() }))}
                     placeholder="e.g. AAATF1234C"
                     className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:border-indigo-500 focus:bg-white text-gray-800"
@@ -611,7 +620,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                   </label>
                   <input
                     type="email"
-                    value={formData.email}
+                    value={cleanFirmValue(formData.email)}
                     onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                     placeholder="e.g. contact@taxpro.in"
                     className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold focus:outline-none focus:border-indigo-500 focus:bg-white text-gray-800"
@@ -626,7 +635,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                   </label>
                   <input
                     type="text"
-                    value={formData.phone}
+                    value={cleanFirmValue(formData.phone)}
                     onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                     placeholder="e.g. +91 98765 43210"
                     className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:border-indigo-500 focus:bg-white text-gray-800"
@@ -641,7 +650,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                   </label>
                   <textarea
                     rows={2}
-                    value={formData.address}
+                    value={cleanFirmValue(formData.address)}
                     onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
                     placeholder="Complete office address, floor, district, state & pin code"
                     className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-indigo-500 focus:bg-white text-gray-800 resize-none"

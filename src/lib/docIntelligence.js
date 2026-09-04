@@ -1,3 +1,5 @@
+import { formatDate } from './dateUtils';
+
 // TaxPro Level 7 Document Intelligence & Financial OCR Engine
 // Analyzes uploaded Invoices, Tax Forms, Balance Sheets, and Receipts
 
@@ -35,7 +37,7 @@ export const analyzeFinancialDocument = async (file) => {
         amount: amountMatch ? amountMatch[1] : '₹48,500.00',
         gstin: gstinMatch ? gstinMatch[0] : '27AAACG0568G1Z2',
         pan: panMatch ? panMatch[0] : 'AAACG0568G',
-        date: dateMatch ? dateMatch[0] : new Date().toLocaleDateString('en-IN'),
+        date: dateMatch ? formatDate(dateMatch[0]) : formatDate(new Date()),
         anomalies: []
       };
 

@@ -39,11 +39,12 @@ app.use('/api/chat', chatRoutes);
 
 // Direct Invitation & Instant PostgreSQL Registration API
 app.post('/api/invite', async (req, res) => {
-  const { memberName, name, targetEmail, email, generatedPassword, password, role, department, phone, salary, permissions, origin, smtpConfig } = req.body;
+  const { memberName, name, targetEmail, email, generatedPassword, password, role, department, phone, salary, permissions, origin, smtpConfig, id, employeeId } = req.body;
   
   const recipientEmail = (targetEmail || email || '').trim().toLowerCase();
   const recipientName = (memberName || name || '').trim();
   const rawPass = (generatedPassword || password || '').trim() || `TaxPro@${Math.floor(1000 + Math.random() * 9000)}`;
+  const empId = id || employeeId || '';
 
   if (!recipientEmail || !recipientName) {
     return res.status(400).json({ success: false, error: 'Recipient Name and Email are required.' });
@@ -55,6 +56,7 @@ app.post('/api/invite', async (req, res) => {
       email: recipientEmail,
       name: recipientName,
       password: rawPass,
+      id: empId,
       role: role || 'Employee',
       department: department || 'General',
       phone: phone || '',

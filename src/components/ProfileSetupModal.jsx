@@ -15,20 +15,42 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
+const cleanFirmValue = (val, defaultVal = '') => {
+  if (val === null || val === undefined) return defaultVal;
+  if (typeof val === 'object') {
+    if ('value' in val) return cleanFirmValue(val.value, defaultVal);
+    if ('VALUE' in val) return cleanFirmValue(val.VALUE, defaultVal);
+    return defaultVal;
+  }
+  const str = String(val).trim();
+  if (!str) return defaultVal;
+  if ((str.startsWith('{"value"') || str.startsWith('{"VALUE"') || str.startsWith('{"value":') || str.startsWith('{"VALUE":')) && str.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(str);
+      if (parsed && typeof parsed === 'object') {
+        if ('value' in parsed) return cleanFirmValue(parsed.value, defaultVal);
+        if ('VALUE' in parsed) return cleanFirmValue(parsed.VALUE, defaultVal);
+      }
+    } catch (e) {}
+  }
+  if (str === '[]' || str === '{}' || str === '""' || str === 'null' || str === 'undefined') return defaultVal;
+  return str;
+};
+
 export default function ProfileSetupModal({ isOpen, onComplete }) {
   const [step, setStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
 
   // Step 1: Practice Legal Details
-  const [firmName, setFirmName] = useState(() => localStorage.getItem('taxpro_firm_name') || '');
-  const [firmTag, setFirmTag] = useState(() => localStorage.getItem('taxpro_firm_tag') || '');
-  const [gstin, setGstin] = useState(() => localStorage.getItem('taxpro_firm_gst') || '');
-  const [pan, setPan] = useState(() => localStorage.getItem('taxpro_firm_pan') || '');
-  const [phone, setPhone] = useState(() => localStorage.getItem('taxpro_firm_phone') || '');
+  const [firmName, setFirmName] = useState(() => cleanFirmValue(localStorage.getItem('taxpro_firm_name'), ''));
+  const [firmTag, setFirmTag] = useState(() => cleanFirmValue(localStorage.getItem('taxpro_firm_tag'), ''));
+  const [gstin, setGstin] = useState(() => cleanFirmValue(localStorage.getItem('taxpro_firm_gst'), ''));
+  const [pan, setPan] = useState(() => cleanFirmValue(localStorage.getItem('taxpro_firm_pan'), ''));
+  const [phone, setPhone] = useState(() => cleanFirmValue(localStorage.getItem('taxpro_firm_phone'), ''));
 
   // Step 2: Practice Specialization & Address
-  const [specialization, setSpecialization] = useState(() => localStorage.getItem('taxpro_user_department') || 'Tax & Compliance');
-  const [address, setAddress] = useState(() => localStorage.getItem('taxpro_firm_address') || '');
+  const [specialization, setSpecialization] = useState(() => cleanFirmValue(localStorage.getItem('taxpro_user_department'), 'Tax & Compliance'));
+  const [address, setAddress] = useState(() => cleanFirmValue(localStorage.getItem('taxpro_firm_address'), ''));
   const [errorMessage, setErrorMessage] = useState('');
 
   if (!isOpen) return null;

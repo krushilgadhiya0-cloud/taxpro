@@ -47,6 +47,16 @@ const validateTable = (req, res, next) => {
   next();
 };
 
+const unwrapStorageData = (data) => {
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const keys = Object.keys(data);
+    if (keys.length === 1 && (keys[0] === 'value' || keys[0] === 'VALUE')) {
+      return data[keys[0]];
+    }
+  }
+  return data;
+};
+
 // ==========================================
 // 1. APP STORAGE KEY-VALUE SYNC (/api/db/storage-all & /api/db/storage/:key)
 // (Must precede /:table to prevent route collision)
@@ -56,7 +66,7 @@ router.get('/storage-all', async (req, res) => {
     const result = await query('SELECT key, data FROM app_storage');
     const map = {};
     for (const row of result.rows) {
-      map[row.key] = row.data;
+      map[row.key] = unwrapStorageData(row.data);
     }
     res.json({ success: true, data: map });
   } catch (err) {
@@ -71,7 +81,7 @@ router.get('/storage/:key', async (req, res) => {
     if (result.rowCount === 0) {
       return res.json({ success: true, exists: false, data: null });
     }
-    res.json({ success: true, exists: true, data: result.rows[0].data });
+    res.json({ success: true, exists: true, data: unwrapStorageData(result.rows[0].data) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -179,6 +189,29 @@ router.get('/:table', validateTable, async (req, res) => {
   }
 });
 
+const TABLE_COLUMNS_CACHE = new Map();
+
+async function getTableColumns(table) {
+  if (TABLE_COLUMNS_CACHE.has(table)) {
+    return TABLE_COLUMNS_CACHE.get(table);
+  }
+  try {
+    const res = await query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = $1
+    `, [table]);
+    if (res.rows && res.rows.length > 0) {
+      const cols = new Set(res.rows.map(r => r.column_name));
+      TABLE_COLUMNS_CACHE.set(table, cols);
+      return cols;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // ==========================================
 // 2. GENERIC POST /api/db/:table (Insert)
 // ==========================================
@@ -194,6 +227,7 @@ router.post('/:table', validateTable, async (req, res) => {
 
   try {
     const insertedRows = [];
+    const validCols = await getTableColumns(table);
 
     for (const item of items) {
       const cleanItem = { ...item };
@@ -202,6 +236,23 @@ router.post('/:table', validateTable, async (req, res) => {
       if (!cleanItem.id && !['departments', 'team_members'].includes(table)) {
         const prefix = table.slice(0, 3).toUpperCase();
         cleanItem.id = `${prefix}-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+      }
+
+      // Map aliases and sanitize against schema
+      if (validCols) {
+        if (!cleanItem.due_date && cleanItem.dueDate) cleanItem.due_date = cleanItem.dueDate;
+        if (!cleanItem.created_at && cleanItem.createdAt) cleanItem.created_at = cleanItem.createdAt;
+        if (!cleanItem.updated_at && cleanItem.updatedAt) cleanItem.updated_at = cleanItem.updatedAt;
+        if (!cleanItem.client_id && cleanItem.clientId) cleanItem.client_id = cleanItem.clientId;
+        if (!cleanItem.project_id && cleanItem.projectId) cleanItem.project_id = cleanItem.projectId;
+        if (cleanItem.notes && !cleanItem.description && validCols.has('description')) cleanItem.description = cleanItem.notes;
+        if (cleanItem.description && !cleanItem.notes && validCols.has('notes')) cleanItem.notes = cleanItem.description;
+
+        for (const k of Object.keys(cleanItem)) {
+          if (!validCols.has(k)) {
+            delete cleanItem[k];
+          }
+        }
       }
 
       // Convert objects/arrays to JSON string for jsonb columns if needed
@@ -256,11 +307,33 @@ const handleUpdate = async (req, res) => {
   }
 
   try {
+    const cleanUpdates = { ...updates };
+    const validCols = await getTableColumns(table);
+    if (validCols) {
+      if (!cleanUpdates.due_date && cleanUpdates.dueDate) cleanUpdates.due_date = cleanUpdates.dueDate;
+      if (!cleanUpdates.created_at && cleanUpdates.createdAt) cleanUpdates.created_at = cleanUpdates.createdAt;
+      if (!cleanUpdates.updated_at && cleanUpdates.updatedAt) cleanUpdates.updated_at = cleanUpdates.updatedAt;
+      if (!cleanUpdates.client_id && cleanUpdates.clientId) cleanUpdates.client_id = cleanUpdates.clientId;
+      if (!cleanUpdates.project_id && cleanUpdates.projectId) cleanUpdates.project_id = cleanUpdates.projectId;
+      if (cleanUpdates.notes && !cleanUpdates.description && validCols.has('description')) cleanUpdates.description = cleanUpdates.notes;
+      if (cleanUpdates.description && !cleanUpdates.notes && validCols.has('notes')) cleanUpdates.notes = cleanUpdates.description;
+
+      for (const k of Object.keys(cleanUpdates)) {
+        if (!validCols.has(k)) {
+          delete cleanUpdates[k];
+        }
+      }
+    }
+
+    if (Object.keys(cleanUpdates).length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid update columns provided.' });
+    }
+
     const setClauses = [];
     const values = [];
     let paramIndex = 1;
 
-    for (const [k, v] of Object.entries(updates)) {
+    for (const [k, v] of Object.entries(cleanUpdates)) {
       setClauses.push(`"${k}" = $${paramIndex++}`);
       values.push(v !== null && typeof v === 'object' ? JSON.stringify(v) : v);
     }

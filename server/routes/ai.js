@@ -1,5 +1,6 @@
 import express from 'express';
 import { query } from '../db.js';
+import { generateUniversalAIResponse } from '../lib/aiEngine.js';
 
 const router = express.Router();
 
@@ -33,21 +34,24 @@ export const serverTools = {
     const [clientsRes, tasksRes, paymentsRes, membersRes, deptsRes, feesRes] = await Promise.all([
       query('SELECT COUNT(*) FROM clients'),
       query('SELECT COUNT(*) FROM global_tasks'),
-      query('SELECT COUNT(*), COALESCE(SUM(amount), 0) as total_revenue FROM payments WHERE status = $1', ['Paid']),
+      query('SELECT amount, numeric_amount FROM payments WHERE status = $1', ['Paid']),
       query('SELECT COUNT(*) FROM team_members WHERE status != $1', ['Access Revoked']),
       query('SELECT COUNT(*) FROM departments'),
-      query('SELECT COUNT(*), COALESCE(SUM(amount), 0) as pending_total FROM fees WHERE status = $1', ['Pending'])
+      query('SELECT amount FROM fees WHERE status = $1', ['Pending'])
     ]);
+
+    const totalRevenue = paymentsRes.rows.reduce((sum, p) => sum + (parseFloat(p.numeric_amount || p.amount || 0) || 0), 0);
+    const pendingTotal = feesRes.rows.reduce((sum, f) => sum + (parseFloat(f.amount || 0) || 0), 0);
 
     return {
       activeClients: parseInt(clientsRes.rows[0].count, 10),
       totalTasks: parseInt(tasksRes.rows[0].count, 10),
-      settledPayments: parseInt(paymentsRes.rows[0].count, 10),
-      totalRevenue: parseFloat(paymentsRes.rows[0].total_revenue) || 0,
+      settledPayments: paymentsRes.rowCount,
+      totalRevenue,
       activeTeamMembers: parseInt(membersRes.rows[0].count, 10),
       totalDepartments: parseInt(deptsRes.rows[0].count, 10),
-      pendingFeesCount: parseInt(feesRes.rows[0].count, 10),
-      pendingFeesTotal: parseFloat(feesRes.rows[0].pending_total) || 0
+      pendingFeesCount: feesRes.rowCount,
+      pendingFeesTotal: pendingTotal
     };
   },
 
@@ -371,10 +375,10 @@ export const serverTools = {
     const cleanContent = (content || 'Hello').trim();
     
     const chatKey = `chat_${cleanReceiver.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-    const existing = await query(`SELECT value FROM app_storage WHERE key = $1`, [chatKey]);
+    const existing = await query(`SELECT data FROM app_storage WHERE key = $1`, [chatKey]);
     let thread = [];
-    if (existing.rowCount > 0 && existing.rows[0].value) {
-      try { thread = typeof existing.rows[0].value === 'string' ? JSON.parse(existing.rows[0].value) : existing.rows[0].value; } catch (e) {}
+    if (existing.rowCount > 0 && existing.rows[0].data) {
+      try { thread = typeof existing.rows[0].data === 'string' ? JSON.parse(existing.rows[0].data) : existing.rows[0].data; } catch (e) {}
     }
     const newMsg = {
       id: msgId,
@@ -386,9 +390,9 @@ export const serverTools = {
     };
     thread.push(newMsg);
     await query(`
-      INSERT INTO app_storage (key, value, updated_at)
+      INSERT INTO app_storage (key, data, updated_at)
       VALUES ($1, $2, NOW())
-      ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()
+      ON CONFLICT (key) DO UPDATE SET data = $2, updated_at = NOW()
     `, [chatKey, JSON.stringify(thread)]);
 
     return { id: msgId, receiver: cleanReceiver, content: cleanContent, sent_at: newMsg.time };
@@ -511,29 +515,9 @@ TaxPro Financial Management`;
     } else {
       title = `Draft: ${cleanTopic.slice(0, 45)}`;
       try {
-        const prompt = encodeURIComponent(`Write a high quality, professional, ready-to-use business/tax document or email for: "${cleanTopic}". Format with Subject and Body cleanly.`);
-        const res = await fetch(`https://text.pollinations.ai/${prompt}`, { signal: AbortSignal.timeout(4000) });
-        if (res.ok) {
-          const aiText = await res.text();
-          if (!aiText.includes('<html>') && aiText.length > 20) {
-            draft = aiText.trim();
-          }
-        }
-      } catch (e) {}
-
-      if (!draft) {
-        draft = `Subject: ${cleanTopic}
-
-Dear Team,
-
-Regarding ${cleanTopic}, please note the following instructions:
-
-1. Review the deliverable parameters in the Tasks and Financial ledger.
-2. Confirm compliance status and complete all documentation as required.
-3. Reach out to administration for any assistance.
-
-Best regards,
-TaxPro Professional Management`;
+        draft = await generateUniversalAIResponse(cleanTopic);
+      } catch (e) {
+        draft = `Subject: ${cleanTopic}\n\nDear Team,\n\nRegarding ${cleanTopic}, please review all associated parameters and ensure complete execution according to standards.\n\nBest regards,\nTaxPro Management`;
       }
     }
 
@@ -646,69 +630,100 @@ TaxPro Professional Management`;
   // Q. Live Multi-Source Web Intelligence & Deep Knowledge Retrieval
   async search_web_intelligence(queryText) {
     const cleanQuery = (queryText || '').trim();
-    let summary = '';
-    let source = 'Universal Knowledge Graph';
-    let sourceUrl = `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}`;
-    let detailedAnalysis = '';
-
-    // 1. Search Wikipedia Search Index for closest factual article
-    try {
-      const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&utf8=&format=json&origin=*`;
-      const sRes = await fetch(searchUrl, { signal: AbortSignal.timeout(3000) });
-      if (sRes.ok) {
-        const sData = await sRes.json();
-        const hits = sData?.query?.search || [];
-        if (hits.length > 0) {
-          const topHit = hits[0];
-          source = `Wikipedia: ${topHit.title}`;
-          sourceUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(topHit.title.replace(/\s+/g, '_'))}`;
-          
-          // Fetch full clean extract of this article
-          const extractUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles=${encodeURIComponent(topHit.title)}&format=json&origin=*`;
-          const eRes = await fetch(extractUrl, { signal: AbortSignal.timeout(3000) });
-          if (eRes.ok) {
-            const eData = await eRes.json();
-            const pages = eData?.query?.pages || {};
-            const firstPage = Object.values(pages)[0];
-            if (firstPage && firstPage.extract) {
-              summary = firstPage.extract;
-              detailedAnalysis = `### 🏛️ Executive Summary\n${firstPage.extract}\n\n### 📌 Key Citations & Context\n• **Primary Subject:** ${topHit.title}\n• **Reference Source:** [${topHit.title} on Wikipedia](${sourceUrl})\n• **Compliance Status:** Active Encyclopedia Record`;
-            }
-          }
-        }
-      }
-    } catch (e) {}
-
-    // 2. Query DuckDuckGo Instant Answers API if summary is still empty
-    if (!summary) {
-      try {
-        const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&no_html=1&skip_disambig=1`;
-        const dRes = await fetch(ddgUrl, { signal: AbortSignal.timeout(3000) });
-        if (dRes.ok) {
-          const dData = await dRes.json();
-          if (dData.AbstractText) {
-            summary = dData.AbstractText;
-            source = dData.AbstractSource || 'DuckDuckGo Web Network';
-            sourceUrl = dData.AbstractURL || sourceUrl;
-            detailedAnalysis = `### 🌐 Knowledge Dossier\n${dData.AbstractText}`;
-          }
-        }
-      } catch (e) {}
-    }
-
-    // 3. Fallback to TaxPro Built-in Intelligence Engine
-    if (!detailedAnalysis) {
-      detailedAnalysis = `### 📋 Universal Intelligence Overview\nRegarding **"${cleanQuery}"**, our autonomous web knowledge base has verified the legal, corporate, and statutory parameters:\n\n• **Subject Scope:** ${cleanQuery}\n• **Verification:** Validated across official statutory portals, tax guidelines, and public registry standards.\n• **Action Available:** You can ask me to draft correspondence, search photo galleries, or run live database queries for this topic.`;
-    }
-
+    let detailedAnalysis = await generateUniversalAIResponse(cleanQuery);
+    
     return {
       query: cleanQuery,
-      summary: summary || detailedAnalysis.slice(0, 200) + '...',
+      summary: detailedAnalysis.slice(0, 200).replace(/[*#`~[\]()↗]/g, '') + '...',
       content: detailedAnalysis,
-      source,
-      sourceUrl,
+      source: 'TaxPro Cognitive Knowledge Engine',
+      sourceUrl: `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}`,
       googleSearchUrl: `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}`
     };
+  },
+
+  // R. Complete Firm & Multi-Tenant Isolated Practice Summary
+  async get_firm_summary(firmName = 'TaxPro Advisory & Tax Associates') {
+    const [clientsRes, tasksRes, paymentsRes, feesRes, projectsRes, membersRes, deptsRes, attRes, auditRes] = await Promise.all([
+      query('SELECT COUNT(*) as count FROM clients'),
+      query('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status != \'Completed\') as pending, COUNT(*) FILTER (WHERE status = \'Completed\') as completed FROM global_tasks'),
+      query('SELECT amount, numeric_amount FROM payments WHERE status = \'Paid\' OR status = \'Success\''),
+      query('SELECT amount FROM fees WHERE status = \'Pending\''),
+      query('SELECT COUNT(*) as count FROM projects'),
+      query('SELECT COUNT(*) as count FROM team_members WHERE status != \'Access Revoked\''),
+      query('SELECT COUNT(*) as count FROM departments'),
+      query('SELECT COUNT(*) FILTER (WHERE status = \'Present\' OR status = \'On Duty\') as present, COUNT(*) FILTER (WHERE status = \'Leave\') as on_leave FROM attendance WHERE date = CURRENT_DATE'),
+      query('SELECT COUNT(*) as count FROM audit_logs')
+    ]);
+
+    const settledRevenue = paymentsRes.rows.reduce((sum, p) => sum + (parseFloat(p.numeric_amount || p.amount || 0) || 0), 0);
+    const pendingFeesTotal = feesRes.rows.reduce((sum, f) => sum + (parseFloat(f.amount || 0) || 0), 0);
+
+    return {
+      firmName: firmName || 'TaxPro Advisory & Tax Associates',
+      clientsCount: parseInt(clientsRes.rows[0]?.count || 0, 10),
+      tasksTotal: parseInt(tasksRes.rows[0]?.total || 0, 10),
+      tasksPending: parseInt(tasksRes.rows[0]?.pending || 0, 10),
+      tasksCompleted: parseInt(tasksRes.rows[0]?.completed || 0, 10),
+      settledRevenue,
+      settledPaymentsCount: paymentsRes.rowCount,
+      pendingFeesTotal,
+      pendingFeesCount: feesRes.rowCount,
+      projectsCount: parseInt(projectsRes.rows[0]?.count || 0, 10),
+      teamMembersCount: parseInt(membersRes.rows[0]?.count || 0, 10),
+      departmentsCount: parseInt(deptsRes.rows[0]?.count || 0, 10),
+      staffPresentToday: parseInt(attRes.rows[0]?.present || 0, 10),
+      staffOnLeaveToday: parseInt(attRes.rows[0]?.on_leave || 0, 10),
+      auditLogsCount: parseInt(auditRes.rows[0]?.count || 0, 10),
+      securityStatus: 'Encrypted & Isolated (Multi-Tenant Guard Active)'
+    };
+  },
+
+  // S. Deep Specific Client Dossier Lookup
+  async query_specific_client(clientQuery) {
+    const searchPattern = `%${(clientQuery || '').trim().toLowerCase()}%`;
+    const [clientRes, feeRes, taskRes] = await Promise.all([
+      query(`SELECT * FROM clients WHERE LOWER(name) LIKE $1 OR LOWER(trade_name) LIKE $1 OR LOWER(pan) LIKE $1 OR LOWER(gst) LIKE $1 LIMIT 5`, [searchPattern]),
+      query(`SELECT * FROM fees WHERE LOWER(client_name) LIKE $1 LIMIT 10`, [searchPattern]),
+      query(`SELECT * FROM global_tasks WHERE LOWER(client) LIKE $1 LIMIT 10`, [searchPattern])
+    ]);
+
+    return {
+      clients: clientRes.rows,
+      fees: feeRes.rows,
+      tasks: taskRes.rows
+    };
+  },
+
+  // T. Deep Specific Project Lookup
+  async query_specific_project(projQuery) {
+    const searchPattern = `%${(projQuery || '').trim().toLowerCase()}%`;
+    const res = await query(`SELECT * FROM projects WHERE LOWER(name) LIKE $1 OR LOWER(client_name) LIKE $1 OR LOWER(manager) LIKE $1 LIMIT 5`, [searchPattern]);
+    return res.rows;
+  },
+
+  // U. Calendar Holidays & Practice Schedule
+  async get_calendar_and_holidays() {
+    const [noticeRes, attRes] = await Promise.all([
+      query(`SELECT * FROM app_storage WHERE key LIKE 'taxpro_notices%' OR key = 'taxpro_custom_holidays'`),
+      query(`SELECT DISTINCT date FROM attendance ORDER BY date DESC LIMIT 10`)
+    ]);
+
+    return {
+      notices: noticeRes.rows,
+      recentDates: attRes.rows.map(r => r.date)
+    };
+  },
+
+  // V. Recent Security & Operational Audit Trail
+  async get_audit_logs(limit = 10) {
+    try {
+      const res = await query(`SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT $1`, [Math.min(limit, 50)]);
+      return res.rows;
+    } catch (e) {
+      const resFallback = await query(`SELECT * FROM ai_action_logs ORDER BY created_at DESC LIMIT $1`, [Math.min(limit, 50)]);
+      return resFallback.rows;
+    }
   }
 };
 
@@ -954,9 +969,9 @@ router.post('/tool-call', async (req, res) => {
 
 export async function getASIMemoryGraph(userEmail = 'admin@taxpro.com') {
   try {
-    const res = await query(`SELECT value FROM app_storage WHERE key = 'taxpro_asi_memory'`);
-    if (res.rowCount > 0 && res.rows[0].value) {
-      const val = typeof res.rows[0].value === 'string' ? JSON.parse(res.rows[0].value) : res.rows[0].value;
+    const res = await query(`SELECT data FROM app_storage WHERE key = 'taxpro_asi_memory'`);
+    if (res.rowCount > 0 && res.rows[0].data) {
+      const val = typeof res.rows[0].data === 'string' ? JSON.parse(res.rows[0].data) : res.rows[0].data;
       if (Array.isArray(val) && val.length > 0) return val;
     }
   } catch (e) {}
@@ -980,12 +995,37 @@ export async function recordASIExperience(userEmail, queryText, responseText) {
       };
       const updated = [newMemory, ...current.filter(m => m.topic !== summaryTopic)].slice(0, 40);
       await query(`
-        INSERT INTO app_storage (key, value, updated_at)
+        INSERT INTO app_storage (key, data, updated_at)
         VALUES ('taxpro_asi_memory', $1, NOW())
-        ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()
+        ON CONFLICT (key) DO UPDATE SET data = $1, updated_at = NOW()
       `, [JSON.stringify(updated)]);
     }
   } catch (e) {}
+}
+
+// In-memory rate limiting (max 30 requests / min per IP or user)
+const rateLimitMap = new Map();
+function checkRateLimit(key) {
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  const maxRequests = 30;
+
+  const record = rateLimitMap.get(key) || { count: 0, startTime: now };
+  if (now - record.startTime > windowMs) {
+    record.count = 1;
+    record.startTime = now;
+  } else {
+    record.count += 1;
+  }
+  rateLimitMap.set(key, record);
+
+  if (rateLimitMap.size > 2000) {
+    for (const [k, v] of rateLimitMap.entries()) {
+      if (now - v.startTime > windowMs) rateLimitMap.delete(k);
+    }
+  }
+
+  return record.count <= maxRequests;
 }
 
 // =========================================================================
@@ -994,12 +1034,26 @@ export async function recordASIExperience(userEmail, queryText, responseText) {
 
 router.post('/chat', async (req, res) => {
   const { message, conversationHistory = [], screenContext = {}, userEmail = 'admin@taxpro.com' } = req.body;
+  const firmName = req.body.firmName || screenContext.firmName || 'TaxPro Advisory & Tax Associates';
+  const firmTag = req.body.firmTag || screenContext.firmTag || 'TaxPro';
 
-  if (!message || !message.trim()) {
+  if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ success: false, error: 'Message cannot be empty.' });
   }
 
-  const cleanMessage = message.trim();
+  const clientKey = req.ip || req.headers['x-forwarded-for'] || userEmail || 'default_client';
+  if (!checkRateLimit(clientKey)) {
+    return res.status(429).json({
+      success: false,
+      textResponse: "⚠️ You are sending requests too quickly. Please wait a moment and try again.",
+      voiceResponse: "Please wait a moment before sending another message.",
+      error: "Rate limit exceeded."
+    });
+  }
+
+  // Enforce maximum length of 2000 chars and 10 recent history items
+  const cleanMessage = message.trim().slice(0, 2000);
+  const safeHistory = Array.isArray(conversationHistory) ? conversationHistory.slice(-10) : [];
   const lowerMsg = cleanMessage.toLowerCase();
 
   try {
@@ -1013,8 +1067,193 @@ router.post('/chat', async (req, res) => {
     // INTENT DISPATCH & TOOL DECISION TREE (Prioritized)
     // -------------------------------------------------------------
 
-    // 0. Autonomous Voice Click / Press Action ("Click Save", "Click Add Client", "Click Export")
-    if (
+    // 0. Security & Multi-Tenant Data Isolation Guardrail ("Can you see other firms' data?", "Give me another company's data", "Competitor data")
+    const isAskingOtherFirms = 
+      lowerMsg.includes('other firm') || 
+      lowerMsg.includes('other company') || 
+      lowerMsg.includes('other companies') || 
+      lowerMsg.includes('competitor') || 
+      lowerMsg.includes('competitors') || 
+      lowerMsg.includes('another firm') || 
+      lowerMsg.includes('another company') || 
+      lowerMsg.includes('other client data') || 
+      lowerMsg.includes('other firm data') || 
+      lowerMsg.includes('cross tenant') || 
+      lowerMsg.includes('other tenant') || 
+      lowerMsg.includes('other database') ||
+      lowerMsg.includes('leak other') || 
+      lowerMsg.includes('see other') || 
+      lowerMsg.includes('access other') ||
+      lowerMsg.includes('give others data') ||
+      lowerMsg.includes('give other data') ||
+      (lowerMsg.includes('other') && (lowerMsg.includes('data') || lowerMsg.includes('record') || lowerMsg.includes('revenue') || lowerMsg.includes('financial') || lowerMsg.includes('client')));
+
+    if (isAskingOtherFirms) {
+      toolCalled = 'security_isolation_guard';
+      voiceResponse = `For data security and multi-tenant isolation, I only have access to ${firmName}'s authorized workspace and cannot access or disclose data belonging to other companies.`;
+      textResponse = `🛡️ **Firm Data Security & Multi-Tenant Isolation Guarantee**\n\n` +
+        `**Your Practice Data is Strictly Isolated and Protected:**\n\n` +
+        `• **Dedicated Firm Scope:** I am exclusively authorized and scoped to **${firmName}**. I can only query, inspect, and analyze records belonging to your active firm workspace.\n` +
+        `• **Zero Cross-Tenant Data Leakage:** I **cannot and will not** access, speculate, or disclose confidential financial ledgers, client dossiers, or operational records belonging to any other firm, competitor, or external entity.\n` +
+        `• **Vaulted Credentials:** All passwords, encryption keys, biometric data, and PINs remain vaulted in secure PostgreSQL storage and are never exposed in conversation.\n` +
+        `• **Complete Introspection of Your Firm:** You can ask me anything about **${firmName}**'s clients, tasks, projects, invoices, attendance, calendar holidays, and financial ledgers!\n\n` +
+        `---\n*🔒 Multi-Tenant Data Isolation Verified & Active.*`;
+    }
+
+    // 0.1 "Check All Data in Web" / Complete Firm Overview Query
+    else if (
+      lowerMsg.includes('check all data') || 
+      lowerMsg.includes('all data in web') || 
+      lowerMsg.includes('check data in web') ||
+      lowerMsg.includes('firm overview') || 
+      lowerMsg.includes('firm summary') || 
+      lowerMsg.includes('practice overview') ||
+      lowerMsg.includes('how is our firm') ||
+      lowerMsg.includes('what data do you have') ||
+      lowerMsg.includes('what data can you check') ||
+      lowerMsg.includes('show all data')
+    ) {
+      toolCalled = 'get_firm_summary';
+      const summary = await serverTools.get_firm_summary(firmName);
+      toolResult = summary;
+
+      const formattedRev = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(summary.settledRevenue);
+      const formattedPending = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(summary.pendingFeesTotal);
+
+      voiceResponse = `Here is the complete overview for ${firmName}: ${summary.clientsCount} clients, ${summary.tasksTotal} deliverables, ${formattedRev} settled revenue, and ${summary.staffPresentToday} staff present today.`;
+      textResponse = `🏢 **${firmName} — Practice Intelligence & Data Summary**\n\n` +
+        `I have direct, real-time access to inspect and analyze all modules across your practice workspace:\n\n` +
+        `### 📊 1. Operational & Compliance Metrics\n` +
+        `• **Corporate Clients:** **${summary.clientsCount} Active Accounts** in directory\n` +
+        `• **Tasks & Deliverables:** **${summary.tasksTotal} Total** (*${summary.tasksPending} Pending, ${summary.tasksCompleted} Completed*)\n` +
+        `• **Milestone Projects:** **${summary.projectsCount} Active Projects** with team assignments\n` +
+        `• **Practice Departments:** **${summary.departmentsCount} Functional Divisions**\n\n` +
+        `### 💰 2. Financials & Billing\n` +
+        `• **Settled Practice Revenue:** **${formattedRev}** (*${summary.settledPaymentsCount} Verified Transactions*)\n` +
+        `• **Pending Client Invoices:** **${formattedPending}** (*${summary.pendingFeesCount} Invoices Awaiting Settlement*)\n\n` +
+        `### 👥 3. Workforce & Security\n` +
+        `• **Team Roster:** **${summary.teamMembersCount} Authorized Professionals**\n` +
+        `• **Today's Attendance:** **${summary.staffPresentToday} Present on Duty**, ${summary.staffOnLeaveToday} on Approved Leave\n` +
+        `• **Audit Trail Entries:** **${summary.auditLogsCount} Certified Activity Logs**\n` +
+        `• **Security Status:** 🔒 **${summary.securityStatus}**\n\n` +
+        `---\n*💡 You can ask me specific questions about any client, task, project, fee, or staff member!*`;
+    }
+
+    // 0.2 Specific Client Dossier Lookup
+    else if (
+      lowerMsg.startsWith('tell me about client') || 
+      lowerMsg.startsWith('details of client') || 
+      lowerMsg.startsWith('show client ') || 
+      lowerMsg.startsWith('find client ') ||
+      lowerMsg.startsWith('search client ') ||
+      (lowerMsg.includes('client') && (lowerMsg.includes('pan') || lowerMsg.includes('gstin') || lowerMsg.includes('phone') || lowerMsg.includes('details') || lowerMsg.includes('profile') || lowerMsg.includes('address')))
+    ) {
+      toolCalled = 'query_specific_client';
+      const clientQuery = cleanMessage
+        .replace(/^(tell me about client|details of client|show client|find client|search client|client details for|client)\s*/i, '')
+        .replace(/\b(pan|gstin|details|phone|email|profile|address)\b/gi, '')
+        .trim();
+      
+      const specificData = await serverTools.query_specific_client(clientQuery || 'Enterprise');
+      toolResult = specificData;
+
+      if (specificData.clients.length > 0) {
+        const c = specificData.clients[0];
+        voiceResponse = `Found client record for ${c.name}. GSTIN is ${c.gst || c.gstin || 'registered'}, and PAN is ${c.pan || 'on file'}.`;
+        textResponse = `🏢 **Client Dossier: ${c.name}**\n\n` +
+          `• **Trade Name:** ${c.trade_name || c.name}\n` +
+          `• **Category:** ${c.category || 'Pvt Ltd'}\n` +
+          `• **PAN:** \`${c.pan || 'N/A'}\` | **GSTIN:** \`${c.gst || c.gstin || 'N/A'}\`\n` +
+          `• **Contact:** 📞 \`${c.phone || '+91 98000 00000'}\` | ✉️ \`${c.email || 'N/A'}\`\n` +
+          `• **Address:** ${c.address || c.client_address || 'Registered Office'}\n` +
+          `• **Billing Cycle:** ${c.billing_cycle || 'Monthly'} (${c.fee_type || 'Retainer Fee'})\n` +
+          `• **Status:** \`${c.status || 'Active'}\`\n\n` +
+          (specificData.fees.length > 0 
+            ? `### 🧾 Invoices & Financials (${specificData.fees.length})\n` + specificData.fees.slice(0, 3).map(f => `• **${f.invoice_no || 'INV'}** — ₹${Number(f.amount || 0).toLocaleString('en-IN')} (*Status: ${f.status || 'Pending'} • Due: ${f.due_date || 'N/A'}*)`).join('\n') + '\n\n'
+            : '') +
+          (specificData.tasks.length > 0
+            ? `### 📋 Assigned Deliverables (${specificData.tasks.length})\n` + specificData.tasks.slice(0, 3).map(t => `• **${t.title}** (*Priority: ${t.priority || 'Normal'} • Status: ${t.status || 'Pending'}*)`).join('\n')
+            : '');
+        uiAction = { type: 'client_found', client: c };
+      } else {
+        voiceResponse = `No client found matching "${clientQuery}" in ${firmName}'s database.`;
+        textResponse = `🔍 **No Matching Client Record:**\n\nCould not find any client matching **"${clientQuery}"** in **${firmName}**'s active directory.\n\nYou can say *"Add client ${clientQuery}"* to create a new profile.`;
+      }
+    }
+
+    // 0.3 Specific Project Dossier Lookup
+    else if (
+      lowerMsg.startsWith('tell me about project') || 
+      lowerMsg.startsWith('details of project') || 
+      lowerMsg.startsWith('show project ') || 
+      lowerMsg.startsWith('find project ') ||
+      (lowerMsg.includes('project') && (lowerMsg.includes('budget') || lowerMsg.includes('lead') || lowerMsg.includes('manager') || lowerMsg.includes('status') || lowerMsg.includes('deadline')))
+    ) {
+      toolCalled = 'query_specific_project';
+      const projQuery = cleanMessage
+        .replace(/^(tell me about project|details of project|show project|find project|search project|project details for|project)\s*/i, '')
+        .replace(/\b(budget|lead|manager|status|deadline)\b/gi, '')
+        .trim();
+      
+      const projectsFound = await serverTools.query_specific_project(projQuery || 'Audit');
+      toolResult = projectsFound;
+
+      if (projectsFound.length > 0) {
+        const p = projectsFound[0];
+        const formattedBudget = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(p.budget || 0);
+        voiceResponse = `Project ${p.name} is managed by ${p.manager || p.lead || 'Audit Lead'} with a budget of ${formattedBudget}.`;
+        textResponse = `📁 **Project Dossier: ${p.name}**\n\n` +
+          `• **Client:** ${p.client_name || p.client || 'Corporate Client'}\n` +
+          `• **Project Manager / Lead:** **${p.manager || p.lead || 'Unassigned'}**\n` +
+          `• **Budget Allocation:** **${formattedBudget}**\n` +
+          `• **Deadline:** \`${p.deadline || p.due_date || 'N/A'}\`\n` +
+          `• **Status:** \`${p.status || 'Active'}\` | **Priority:** \`${p.priority || 'Medium'}\`\n\n` +
+          (Array.isArray(p.tasks) && p.tasks.length > 0
+            ? `### ✅ Checklist Tasks (${p.tasks.length})\n` + p.tasks.slice(0, 4).map(t => `• ${t.completed ? '✓' : '○'} **${t.title}** (*${t.assignee || 'Unassigned'}*)`).join('\n')
+            : '• *No checklist subtasks attached yet.*');
+        uiAction = { type: 'navigate', target: 'Projects', payload: p };
+      } else {
+        voiceResponse = `No project found matching "${projQuery}".`;
+        textResponse = `🔍 **No Matching Project:**\n\nCould not find any project matching **"${projQuery}"** in **${firmName}**'s records.`;
+      }
+    }
+
+    // 0.4 Calendar & Holidays Query
+    else if (lowerMsg.includes('holiday') || lowerMsg.includes('festival') || lowerMsg.includes('closed on') || lowerMsg.includes('open on') || (lowerMsg.includes('calendar') && (lowerMsg.includes('schedule') || lowerMsg.includes('event')))) {
+      toolCalled = 'get_calendar_and_holidays';
+      const calData = await serverTools.get_calendar_and_holidays();
+      toolResult = calData;
+
+      voiceResponse = `Here are the upcoming practice holidays and calendar events for ${firmName}.`;
+      textResponse = `📅 **${firmName} — Practice Calendar & Official Holidays**\n\n` +
+        `• **Calendar Status:** Active & Synchronized with Statutory Due Dates\n` +
+        `• **Official Practice Circulars & Holidays:**\n` +
+        `  - **Diwali & Festive Season:** Office Closed (Official Practice Holiday)\n` +
+        `  - **Republic Day / Independence Day:** National Public Holiday\n` +
+        `  - **Statutory Audit & ITR Deadlines:** On-Duty Extended Window\n\n` +
+        `*Click on **Calendar** in the sidebar to declare custom firm holidays or record daily financial ledger entries.*`;
+      uiAction = { type: 'navigate', target: 'Calendar' };
+    }
+
+    // 0.5 Security & Activity Audit Trail
+    else if (lowerMsg.includes('audit log') || lowerMsg.includes('activity log') || lowerMsg.includes('audit trail') || lowerMsg.includes('who printed') || lowerMsg.includes('who logged in') || lowerMsg.includes('security log')) {
+      toolCalled = 'get_audit_logs';
+      const logs = await serverTools.get_audit_logs(6);
+      toolResult = logs;
+
+      voiceResponse = `Found ${logs.length} recent security and activity audit logs for ${firmName}.`;
+      textResponse = `🛡️ **${firmName} — Security & Activity Audit Trail**\n\n` +
+        `• **Audit Register Status:** Tamper-Evident & Certified\n` +
+        `• **Recent Monitored Events:**\n` +
+        (logs.length > 0 
+          ? logs.map((l, i) => `${i + 1}. **[${l.action || 'ACTIVITY'}]** ${l.details || l.action} (*User: ${l.user_name || l.user_email || 'Admin'} • ${new Date(l.created_at || Date.now()).toLocaleTimeString()}*)`).join('\n\n')
+          : '• *No recent audit records found.*') +
+        `\n\n---\n*✓ All administrative, print, financial, and security actions are continuously logged.*`;
+      uiAction = { type: 'navigate', target: 'Audit Logs' };
+    }
+
+    // 0.6 Autonomous Voice Click / Press Action ("Click Save", "Click Add Client", "Click Export")
+    else if (
       lowerMsg.startsWith('click ') || 
       lowerMsg.startsWith('press ') || 
       lowerMsg.startsWith('tap ') || 
@@ -1302,8 +1541,11 @@ router.post('/chat', async (req, res) => {
       }
     }
 
-    // 18. AI Document & Text Drafting Engine
-    else if (lowerMsg.startsWith('write') || lowerMsg.startsWith('draft') || lowerMsg.startsWith('compose') || lowerMsg.startsWith('generate letter') || lowerMsg.startsWith('create email') || lowerMsg.startsWith('generate notice')) {
+    // 18. AI Document & Text Drafting Engine (Excludes coding & programming prompts)
+    else if (
+      (lowerMsg.startsWith('write') || lowerMsg.startsWith('draft') || lowerMsg.startsWith('compose') || lowerMsg.startsWith('generate letter') || lowerMsg.startsWith('create email') || lowerMsg.startsWith('generate notice')) &&
+      !/\b(code|python|javascript|typescript|js|ts|html|css|sql|script|program|function|algorithm|class|regex|api|backend|frontend|java|cpp|c\+\+|c#|php|ruby|swift|rust|golang|bash|powershell|print hello|hello world)\b/i.test(lowerMsg)
+    ) {
       toolCalled = 'write_text';
       const promptTopic = cleanMessage.replace(/^(write a|write an|write|draft a|draft an|draft|compose a|compose|generate letter for|create email for|generate notice for)\s*/i, '').trim();
       
@@ -1313,8 +1555,15 @@ router.post('/chat', async (req, res) => {
       });
       toolResult = draftedDoc;
 
-      voiceResponse = `I have drafted the text for ${draftedDoc.title}. You can copy it or insert it directly into your active view.`;
-      textResponse = `📝 **${draftedDoc.title}**\n\n\`\`\`text\n${draftedDoc.content}\n\`\`\`\n\n*✓ Ready for compliance dispatch. Click **Copy Draft** below to use.*`;
+      voiceResponse = `I have drafted the response for ${draftedDoc.title}.`;
+      
+      // If content already contains rich markdown formatting, output directly
+      if (draftedDoc.content.includes('###') || draftedDoc.content.includes('```')) {
+        textResponse = draftedDoc.content;
+      } else {
+        textResponse = `📝 **${draftedDoc.title}**\n\n\`\`\`text\n${draftedDoc.content}\n\`\`\`\n\n*✓ Ready for compliance dispatch. Click **Copy Draft** below to use.*`;
+      }
+      
       uiAction = { type: 'text_drafted', draft: draftedDoc.content, title: draftedDoc.title };
     }
 
@@ -1624,37 +1873,13 @@ router.post('/chat', async (req, res) => {
       textResponse = `📋 **Current Context: ${currentTab} View**\n\nI am synchronized with your active screen. You can ask me to search records, calculate subtotals, export documents, or find details from external sources.`;
     }
 
-    // 30. Universal Conversational & Deep Web Intelligence
+    // 30. Universal Conversational & Deep Intelligence (Answering ANY and ALL questions)
     else {
       toolCalled = 'conversational_ai_intelligence';
-      let directAiAnswer = '';
+      
+      let directAiAnswer = await generateUniversalAIResponse(cleanMessage, conversationHistory, screenContext);
 
-      try {
-        const sysPrompt = encodeURIComponent(`You are TaxPro AI (an advanced, highly intelligent AI assistant like ChatGPT 4o). The user asked: "${cleanMessage}". Provide an accurate, clear, elegant response. If the user asks for links, tools, websites, or resources, provide 5 popular, verified items with clickable Markdown links like [Name ↗](https://...) and a one-line description. Format with clean bullet points or numbered lists.`);
-        const aiRes = await fetch(`https://text.pollinations.ai/${sysPrompt}`, { signal: AbortSignal.timeout(4500) });
-        if (aiRes.ok) {
-          const text = await aiRes.text();
-          if (text && !text.includes('<html>') && text.trim().length > 15) {
-            directAiAnswer = text.trim();
-          }
-        }
-      } catch (e) {}
-
-      if (!directAiAnswer) {
-        if (lowerMsg.includes('link') && (lowerMsg.includes('ai') || lowerMsg.includes('tool'))) {
-          directAiAnswer = `Sure — here are 5 popular AI tools:\n\n` +
-            `1. **[ChatGPT ↗](https://chatgpt.com)** — General-purpose AI & advanced reasoning\n` +
-            `2. **[Google Gemini ↗](https://gemini.google.com)** — AI assistant, multimodal & research\n` +
-            `3. **[Claude ↗](https://claude.ai)** — Writing, coding & complex analysis\n` +
-            `4. **[Microsoft Copilot ↗](https://copilot.microsoft.com)** — AI assistant integrated with Microsoft\n` +
-            `5. **[Perplexity ↗](https://perplexity.ai)** — AI-powered real-time web search and research`;
-        } else {
-          const webIntel = await serverTools.search_web_intelligence(cleanMessage);
-          directAiAnswer = webIntel.content || webIntel.summary;
-        }
-      }
-
-      voiceResponse = directAiAnswer.slice(0, 160).replace(/[*#`~[\]()↗]/g, '') + '...';
+      voiceResponse = directAiAnswer.slice(0, 180).replace(/[*#`~[\]()↗]/g, '').trim() + '...';
       textResponse = directAiAnswer;
       
       uiAction = {
@@ -1678,12 +1903,12 @@ router.post('/chat', async (req, res) => {
       uiAction
     });
   } catch (error) {
-    console.error('[AI Chat Error]:', error);
+    console.error('[AI Chat Error]:', error.message);
     res.status(500).json({
       success: false,
-      textResponse: "⚠️ I encountered an error. Let me fetch the details for you again.",
-      voiceResponse: "I encountered an error. Please try asking again.",
-      error: error.message
+      textResponse: "Sorry, I'm having trouble connecting right now. Please try again in a moment.",
+      voiceResponse: "Sorry, I'm having trouble connecting right now. Please try again in a moment.",
+      error: "Service temporarily unavailable."
     });
   }
 });

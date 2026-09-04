@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Pause, RotateCcw, Timer } from 'lucide-react';
+import { formatDate } from '../../lib/dateUtils';
 
 export default function TimeTrackingView({ onShowToast }) {
   const [seconds, setSeconds] = useState(0);
@@ -30,7 +31,7 @@ export default function TimeTrackingView({ onShowToast }) {
   const handleStopAndSave = () => {
     if (seconds === 0) return;
     
-    const formattedDate = new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+    const formattedDate = formatDate(new Date());
     const formattedDuration = formatTime(seconds);
     
     setHistory(prev => [

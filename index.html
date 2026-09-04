@@ -62,42 +62,45 @@
   }
   </script>
 
-  <!-- Google Web Fonts with DNS Prefetch -->
+  <!-- Google Web Fonts with DNS Prefetch and Preload -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <!-- Tailwind CSS Engine & External SDKs -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Instant Pre-paint Initializer (Eliminates post-mount zoom snapping & dark/light theme flash) -->
   <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            dark: '#090909',
-            graphite: '#121212',
-            brand: '#5b52e0'
-          },
-          fontFamily: {
-            sans: ['Plus Jakarta Sans', 'Inter', 'sans-serif'],
-            outfit: ['Outfit', 'sans-serif']
-          }
+    (function() {
+      try {
+        var savedZoom = localStorage.getItem('taxpro_global_zoom') || '90';
+        document.documentElement.style.zoom = savedZoom + '%';
+        var savedTheme = localStorage.getItem('taxpro_theme');
+        if (savedTheme === 'dark') {
+          document.documentElement.classList.add('dark-mode-global', 'dark');
         }
-      }
-    }
+      } catch (e) {}
+    })();
   </script>
+
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script defer src="https://checkout.razorpay.com/v1/checkout.js"></script>
   
   <style>
+    /* Prevent FOUC (Flash of Unstyled Content) & Font Jitter */
+    html, body {
+      background-color: #090909 !important;
+      color: #ffffff;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
     /* Hide Google Translate top banner & toolbar */
     .goog-te-banner-frame.skiptranslate, .goog-te-gadget-icon { display: none !important; }
     body { top: 0px !important; }
     #google_translate_element { display: none !important; }
   </style>
 </head>
-<body class="bg-[#090909] text-white font-sans antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-black">
+<body style="background-color: #090909; color: #ffffff;" class="bg-[#090909] text-white font-sans antialiased overflow-x-hidden selection:bg-cyan-500 selection:text-black">
   <div id="google_translate_element"></div>
   <script type="text/javascript">
     window.googleTranslateElementInit = function() {

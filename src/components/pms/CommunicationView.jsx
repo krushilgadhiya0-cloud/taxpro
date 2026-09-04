@@ -599,6 +599,13 @@ export default function CommunicationView({ onShowToast }) {
     } catch (e) {
       console.warn('Broadcast call recording post error:', e);
     }
+
+    logAuditActivity({
+      action: 'CALL_RECORDING',
+      module: 'Communication & Calls',
+      details: `${callSummary.callType === 'video' ? 'Recorded Video Conference' : 'Encrypted Voice Call'} (${callSummary.durationFormatted || '03:15'}). Audio recording archived.`,
+      metadata: callSummary
+    });
   };
 
   // Start Voice Group Call

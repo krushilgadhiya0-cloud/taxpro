@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
+import { printHtml } from '../../lib/printHelper';
+import { formatDate } from '../../lib/dateUtils';
 import { 
   CalendarCheck, 
   CheckCircle, 
@@ -201,6 +203,13 @@ export default function AttendancePMSView({ onShowToast }) {
     } catch (e) {
       console.error('Direct attendance background sync error:', e);
     }
+
+    logAuditActivity({
+      action: 'ATTENDANCE_LOGGED',
+      module: 'Attendance & Leave',
+      details: `Updated attendance status for ${member.name} to "${newStatus}" for date ${targetDate} (Shift: ${member.shift || 'General'})`,
+      metadata: { member: member.name, date: targetDate, status: newStatus }
+    });
   };
 
   // Mark All Staff as Present for the active selected day
@@ -234,6 +243,13 @@ export default function AttendancePMSView({ onShowToast }) {
     } catch (e) {
       console.error('Batch attendance save error:', e);
     }
+
+    logAuditActivity({
+      action: 'ATTENDANCE_LOGGED',
+      module: 'Attendance & Leave',
+      details: `Batch marked all ${teamMembers.length} active team members as "Present" for ${targetDate}`,
+      metadata: { totalMembers: teamMembers.length, date: targetDate, mode: 'Batch Present All' }
+    });
   };
 
   // Daily list mapping for selectedDate
@@ -495,15 +511,52 @@ export default function AttendancePMSView({ onShowToast }) {
       metadata: { doc: title }
     });
 
-    document.body.classList.add('printing-member-record');
-    if (onShowToast) onShowToast(`Preparing ${title}...`, 'info');
+    const rows = filteredDailyList.map((s, idx) => `
+      <tr style="border-bottom: 1px solid #e5e7eb; background: ${idx % 2 === 0 ? '#ffffff' : '#f9fafb'};">
+        <td style="font-family: monospace; color: #64748b; text-align: center;">${idx + 1}</td>
+        <td><strong style="color: #0f172a; font-size: 11.5px;">${s.name}</strong></td>
+        <td>${s.role || 'Staff Member'}</td>
+        <td>${s.department || 'Tax & Compliance'}</td>
+        <td style="font-family: monospace;">${selectedDate}</td>
+        <td style="font-family: monospace; color: #0f766e;">${s.inTime || '--:--'}</td>
+        <td style="font-family: monospace; color: #475569;">${s.outTime || '--:--'}</td>
+        <td style="text-align: right;">
+          <span class="status-pill ${
+            s.status === 'Present' ? 'status-completed' :
+            s.status === 'Half Day' ? 'status-pending' :
+            s.status === 'Leave' ? 'status-progress' : 'status-overdue'
+          }">
+            ${s.status || 'Absent'}
+          </span>
+        </td>
+      </tr>
+    `).join('');
 
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
-        document.body.classList.remove('printing-member-record');
-      }, 1200);
-    }, 350);
+    const bodyHtml = `
+      <div style="margin-bottom: 12px; font-weight: 800; font-size: 13px; color: #1e293b;">
+        Biometric & Staff Attendance Register — Date: ${selectedDate} (${filteredDailyList.length} Personnel)
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 35px; text-align: center;">#</th>
+            <th>Employee Name</th>
+            <th>Designated Role</th>
+            <th>Department</th>
+            <th>Date</th>
+            <th>Punch-In</th>
+            <th>Punch-Out</th>
+            <th style="text-align: right;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    `;
+
+    printHtml(title || 'Daily Attendance Register', bodyHtml);
+    if (onShowToast) onShowToast(`🖨️ Generating printable ${title}...`, 'info');
   };
 
   // CSV Export
@@ -1169,7 +1222,7 @@ export default function AttendancePMSView({ onShowToast }) {
               </h1>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-700 mt-0.5">
                 {printDocType === 'daily_sheet'
-                  ? `Official Staff Daily Attendance Register — ${selectedDate}`
+                  ? `Official Staff Daily Attendance Register — ${formatDate(selectedDate)}`
                   : printDocType === 'monthly_cuts_register'
                   ? `Monthly Staff Attendance & Leave Salary Cut Audit — ${currentMonthObj?.name} ${selectedYear}`
                   : `Employee Attendance & Leave Deduction Voucher`}
@@ -1181,7 +1234,7 @@ export default function AttendancePMSView({ onShowToast }) {
 
             <div className="text-right">
               <div className="text-xs font-mono font-black text-slate-900">
-                {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                {formatDate(new Date())}
               </div>
               <div className="text-[10px] font-mono text-slate-600 mt-0.5">
                 Certified System Register
@@ -1387,29 +1440,29 @@ export default function AttendancePMSView({ onShowToast }) {
       {isCutModalOpen && cutTargetMember && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsCutModalOpen(false); }}
-          className="modal-overlay-backdrop print:hidden"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:hidden"
         >
-          <div className="modal-content-box max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden text-slate-800 animate-page-fade">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth text-slate-800">
             
-            <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white p-5 flex items-center justify-between border-b border-rose-900">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-400/30 flex items-center justify-center text-rose-300">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shadow-2xs">
                   <Scissors className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black font-outfit text-white">Adjust Leave Salary Cut</h3>
-                  <p className="text-xs text-rose-200">For {cutTargetMember.name} ({currentMonthObj?.name} {selectedYear})</p>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900">Adjust Leave Salary Cut</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">For {cutTargetMember.name} ({currentMonthObj?.name} {selectedYear})</p>
                 </div>
               </div>
-              <button onClick={() => setIsCutModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button onClick={() => setIsCutModalOpen(false)} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveCustomCut} className="p-6 space-y-4 text-xs font-semibold">
+            <form onSubmit={handleSaveCustomCut} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               <div>
                 <label className="text-slate-700 block mb-1">
-                  Custom Deduction Amount (₹) <span className="text-red-500">*</span>
+                  Custom Deduction Amount (₹) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-400 text-sm">₹</span>
@@ -1420,11 +1473,11 @@ export default function AttendancePMSView({ onShowToast }) {
                     placeholder="Enter custom cut amount (e.g. 1500 or 0)"
                     value={customCutInput}
                     onChange={e => setCustomCutInput(e.target.value)}
-                    className="w-full pl-8 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-mono font-black text-sm text-slate-900 outline-none focus:border-rose-600 focus:bg-white"
+                    className="w-full pl-8 pr-3.5 py-2 bg-white border border-slate-300 rounded-xl font-mono font-black text-sm text-slate-900 outline-none focus:border-rose-600 shadow-2xs"
                     autoFocus
                   />
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
+                <p className="text-[11px] text-slate-400 mt-1 font-medium">
                   Set ₹0 if you want to waive leave deductions completely for this employee.
                 </p>
               </div>
@@ -1436,11 +1489,11 @@ export default function AttendancePMSView({ onShowToast }) {
                   placeholder="e.g. Approved medical leave adjustment or manual compensatory off..."
                   value={cutNotesInput}
                   onChange={e => setCutNotesInput(e.target.value)}
-                  className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs outline-none focus:border-rose-600 focus:bg-white resize-none"
+                  className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs outline-none focus:border-rose-600 resize-none shadow-2xs"
                 />
               </div>
 
-              <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button
                   type="button"
                   onClick={() => handleResetToAutoCut(cutTargetMember)}
@@ -1449,17 +1502,17 @@ export default function AttendancePMSView({ onShowToast }) {
                   Reset to Auto Formula
                 </button>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <button
                     type="button"
                     onClick={() => setIsCutModalOpen(false)}
-                    className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer"
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-md cursor-pointer active:scale-95 transition-all"
+                    className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-md shadow-rose-600/20 cursor-pointer active:scale-95 transition-all"
                   >
                     Save Cut
                   </button>

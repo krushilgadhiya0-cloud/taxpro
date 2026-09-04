@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { getUnifiedHolidayNotices, deleteHolidayNotice } from '../../lib/festivalHolidays';
+import { printHtml } from '../../lib/printHelper';
+import { formatDate, formatDateWithWeekday } from '../../lib/dateUtils';
 
 export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) {
   if (!isOpen) return null;
@@ -365,240 +367,88 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
     if (onShowToast) onShowToast(`Timesheet for ${selectedDateStr} downloaded successfully!`, 'success');
   };
 
-  // Print Specific Day Timesheet & Activity Statement
+  // Print Specific Day Timesheet & Financial Statement
   const handlePrint = () => {
-    if (onShowToast) onShowToast(`Preparing Official Daily Timesheet for ${selectedDateStr}...`, 'info');
-
-    const firmName = localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates';
-    const firmTag = localStorage.getItem('taxpro_firm_tag') || 'TaxPro';
-    const firmGst = localStorage.getItem('taxpro_firm_gst') || '24AAAAA0000A1Z5';
-    const firmPan = localStorage.getItem('taxpro_firm_pan') || 'AAATF1234C';
-    const firmEmail = localStorage.getItem('taxpro_firm_email') || 'contact@taxpro.in';
-    const firmPhone = localStorage.getItem('taxpro_firm_phone') || '+91 98765 43210';
-    const firmAddress = localStorage.getItem('taxpro_firm_address') || 'Silicon Square, Block 7, Financial District, Surat, Gujarat';
-    const formattedDate = selectedDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-    const printDate = new Date().toLocaleString('en-IN');
-
-    const printWindow = window.open('', '_blank', 'width=950,height=850');
-    if (!printWindow) {
-      window.print();
-      return;
-    }
+    const formattedDate = formatDateWithWeekday(selectedDate);
 
     const holidaysHtml = selectedDayHolidays.length > 0 ? `
-      <div style="background: #fffbeb; border: 2px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
-        <div style="font-size: 13px; font-weight: 800; color: #78350f; text-transform: uppercase;">🏖️ Official Practice Holiday: ${selectedDayHolidays[0].title}</div>
-        <div style="font-size: 12px; color: #92400e; margin-top: 4px;">${selectedDayHolidays[0].message}</div>
-        <div style="font-size: 11px; color: #b45309; font-family: monospace; margin-top: 4px;">Status: ${selectedDayHolidays[0].practiceStatus || 'Office Closed'}</div>
+      <div style="background: #fffbeb; border: 1px solid #f59e0b; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px;">
+        <div style="font-size: 11px; font-weight: 800; color: #78350f; text-transform: uppercase;">🏖️ Official Practice Holiday: ${selectedDayHolidays[0].title}</div>
+        <div style="font-size: 10.5px; color: #92400e; margin-top: 2px;">${selectedDayHolidays[0].message}</div>
       </div>
     ` : '';
 
     const tasksRowsHtml = selectedDayTasks.length > 0
       ? selectedDayTasks.map((t, idx) => `
-        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
-          <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${t.title}</td>
-          <td style="padding: 8px 10px; color: #334155;">${t.client || 'Enterprise'}</td>
-          <td style="padding: 8px 10px; color: #475569;">${t.assignee || 'Unassigned'}</td>
-          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
-            <span style="background: ${t.priority === 'High' || t.priority === 'Urgent' ? '#fef2f2; color: #991b1b;' : '#f1f5f9; color: #475569;'}; padding: 2px 6px; border-radius: 4px;">${t.priority || 'Normal'}</span>
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 10.5px;">
+          <td style="padding: 6px 8px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 6px 8px; font-weight: 700; color: #0f172a;">${t.title}</td>
+          <td style="padding: 6px 8px; color: #334155;">${t.client || 'Enterprise'}</td>
+          <td style="padding: 6px 8px; color: #475569;">${t.assignee || 'Unassigned'}</td>
+          <td style="padding: 6px 8px; text-align: center;">
+            <span class="badge-blue">${t.priority || 'Normal'}</span>
           </td>
-          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
-            <span style="background: ${t.status === 'Completed' ? '#ecfdf5; color: #065f46;' : '#eff6ff; color: #1e40af;'}; padding: 2px 6px; border-radius: 4px;">${t.status || 'Pending'}</span>
-          </td>
-        </tr>
-      `).join('')
-      : `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #94a3b8; font-style: italic; font-size: 12px;">No deliverable tasks or compliance deadlines scheduled on this date.</td></tr>`;
-
-    const projectsRowsHtml = selectedDayProjects.length > 0
-      ? selectedDayProjects.map((p, idx) => `
-        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
-          <td style="padding: 8px 10px; text-align: center; font-family: monospace; color: #64748b;">${idx + 1}</td>
-          <td style="padding: 8px 10px; font-weight: 700; color: #0f172a;">${p.name || p.title}</td>
-          <td style="padding: 8px 10px; color: #334155;">${p.client || 'Enterprise Account'}</td>
-          <td style="padding: 8px 10px; font-family: monospace; color: #475569;">${p.deadline || selectedDateStr}</td>
-          <td style="padding: 8px 10px; text-align: center; font-family: monospace; font-weight: 700; color: #4338ca;">${p.progress || 0}%</td>
-          <td style="padding: 8px 10px; text-align: center; font-weight: 700; font-size: 10px; text-transform: uppercase;">
-            <span style="background: #f0fdf4; color: #166534; padding: 2px 6px; border-radius: 4px;">Active</span>
+          <td style="padding: 6px 8px; text-align: center;">
+            <span class="status-pill ${t.status === 'Completed' ? 'status-completed' : 'status-pending'}">${t.status || 'Pending'}</span>
           </td>
         </tr>
       `).join('')
-      : '';
+      : `<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8; font-style: italic;">No deliverable tasks scheduled on this date.</td></tr>`;
 
-    const timelineRowsHtml = selectedDayTimeline.length > 0
-      ? selectedDayTimeline.map((item, idx) => `
-        <div style="display: flex; gap: 12px; margin-bottom: 10px; font-size: 11px; align-items: flex-start;">
-          <div style="font-family: monospace; font-weight: 700; color: #4338ca; width: 85px; shrink: 0;">${item.time}</div>
-          <div>
-            <div style="font-weight: 700; color: #0f172a;">${item.title}</div>
-            <div style="color: #64748b; font-size: 10px;">${item.desc}</div>
-          </div>
-        </div>
-      `).join('')
-      : '';
+    const bodyHtml = `
+      <div style="margin-bottom: 14px; font-weight: 800; font-size: 13px; color: #1e293b;">
+        Daily Workforce Agenda & Deliverables Timesheet — ${formattedDate}
+      </div>
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Daily Timesheet Statement - ${selectedDateStr}</title>
-        <meta charset="utf-8" />
-        <style>
-          @page { size: A4; margin: 12mm 15mm; }
-          body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; background: #fff; line-height: 1.4; }
-          * { box-sizing: border-box; }
-          .header { border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: flex-start; }
-          .firm-title { font-size: 20px; font-weight: 900; color: #0f172a; text-transform: uppercase; margin: 0 0 2px 0; }
-          .doc-sub { font-size: 11px; font-weight: 700; color: #4338ca; text-transform: uppercase; letter-spacing: 0.5px; }
-          .firm-meta { font-size: 10px; color: #64748b; margin-top: 4px; }
-          .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-          .kpi-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; }
-          .kpi-label { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; }
-          .kpi-val { font-size: 14px; font-weight: 900; font-family: monospace; margin-top: 2px; color: #0f172a; }
-          .section-title { font-size: 12px; font-weight: 900; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1.5px solid #cbd5e1; padding-bottom: 4px; margin: 18px 0 10px 0; display: flex; justify-content: space-between; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 1px solid #cbd5e1; }
-          th { background: #f1f5f9; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #334155; padding: 8px 10px; border-bottom: 1px solid #cbd5e1; }
-          .footer { margin-top: 25px; padding-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: flex-end; font-size: 10px; color: #64748b; }
-          .seal-box { border: 1px dashed #94a3b8; border-radius: 6px; padding: 8px 16px; text-align: center; width: 200px; }
-          @media print {
-            body { padding: 0; }
-            .no-print { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <div class="firm-title">${firmName}</div>
-            <div class="doc-sub">Workforce Daily Deliverables & Attendance Timesheet</div>
-            <div class="firm-meta">GSTIN: ${firmGst} | PAN: ${firmPan} | Contact: ${firmPhone} | ${firmEmail}</div>
-            <div class="firm-meta">${firmAddress}</div>
-          </div>
-          <div style="text-align: right;">
-            <div style="font-size: 12px; font-weight: 800; color: #0f172a; font-family: monospace;">STATEMENT DATE</div>
-            <div style="font-size: 13px; font-weight: 900; color: #4338ca;">${formattedDate}</div>
-            <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">Generated: ${printDate}</div>
-          </div>
-        </div>
+      ${holidaysHtml}
 
-        ${holidaysHtml}
+      <div style="font-weight: 800; font-size: 11.5px; color: #334155; margin-bottom: 6px;">
+        Scheduled Tasks & Deliverables (${selectedDayTasks.length} Tasks)
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 30px; text-align: center;">#</th>
+            <th>Task Description</th>
+            <th>Client Name</th>
+            <th>Assigned Staff</th>
+            <th style="text-align: center;">Priority</th>
+            <th style="text-align: center;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tasksRowsHtml}
+        </tbody>
+      </table>
+    `;
 
-        <div class="kpi-grid">
-          <div class="kpi-box">
-            <div class="kpi-label">Attendance Status</div>
-            <div class="kpi-val" style="color: ${selectedDayAttendance.isPresent ? '#059669' : '#d97706'};">${selectedDayAttendance.status}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Punch In Time</div>
-            <div class="kpi-val">${selectedDayAttendance.inTime || 'N/A'}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Punch Out Time</div>
-            <div class="kpi-val">${selectedDayAttendance.outTime || 'N/A'}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Effective Hours</div>
-            <div class="kpi-val" style="color: #4338ca;">${selectedDayAttendance.hours || '0 hrs'}</div>
-          </div>
-        </div>
-
-        <div class="section-title">
-          <span>1. Deliverable Tasks & Compliance Deadlines (${selectedDayTasks.length})</span>
-          <span style="font-size: 10px; font-weight: 700; color: #64748b;">Target Date: ${selectedDateStr}</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width: 30px; text-align: center;">#</th>
-              <th style="text-align: left;">Task Description</th>
-              <th style="text-align: left;">Associated Client</th>
-              <th style="text-align: left;">Assigned Staff</th>
-              <th style="width: 80px; text-align: center;">Priority</th>
-              <th style="width: 95px; text-align: center;">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tasksRowsHtml}
-          </tbody>
-        </table>
-
-        ${selectedDayProjects.length > 0 ? `
-          <div class="section-title">
-            <span>2. Project Milestones (${selectedDayProjects.length})</span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 30px; text-align: center;">#</th>
-                <th style="text-align: left;">Project Name</th>
-                <th style="text-align: left;">Client</th>
-                <th style="width: 100px; text-align: left;">Deadline</th>
-                <th style="width: 80px; text-align: center;">Progress</th>
-                <th style="width: 95px; text-align: center;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${projectsRowsHtml}
-            </tbody>
-          </table>
-        ` : ''}
-
-        ${timelineRowsHtml ? `
-          <div class="section-title">
-            <span>3. Daily Activity & Punch Timeline</span>
-          </div>
-          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 15px;">
-            ${timelineRowsHtml}
-          </div>
-        ` : ''}
-
-        <div class="footer">
-          <div>
-            <div style="font-weight: 700; color: #0f172a;">TaxPro Practice Management System</div>
-            <div>Confidential daily operational and workforce timesheet record.</div>
-          </div>
-          <div class="seal-box">
-            <div style="font-size: 9px; text-transform: uppercase; color: #64748b;">Authorized Signatory</div>
-            <div style="font-weight: 800; color: #0f172a; margin-top: 15px;">${firmTag} Seal</div>
-          </div>
-        </div>
-
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 300);
-          };
-        </script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    printHtml(`Daily Agenda - ${formattedDate}`, bodyHtml);
+    if (onShowToast) onShowToast(`🖨️ Generating printable timesheet for ${selectedDateStr}...`, 'info');
   };
 
   return (
     <div 
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      className="modal-overlay-backdrop"
+      className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
     >
-      <div className="modal-content-box max-w-4xl max-h-[92vh] flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden text-gray-800">
+      <div className="w-full max-w-4xl max-h-[92vh] flex flex-col bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden text-slate-800 my-auto animate-modal-smooth">
         
         {/* MODAL HEADER */}
-        <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-4 sm:p-5 flex items-center justify-between border-b border-gray-800">
+        <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
               <CalendarIcon className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                   Workforce Calendar & Daily Activity Hub
                 </h3>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 hidden sm:inline">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 hidden sm:inline">
                   Live Timesheet
                 </span>
               </div>
-              <p className="text-xs text-gray-300 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Inspect punch in/out timestamps, hours, tasks, project deliverables, and print statements
               </p>
             </div>
@@ -607,15 +457,14 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
           <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white transition-all cursor-pointer"
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               title="Print Daily Timesheet Statement"
             >
               <Printer className="w-4 h-4" />
             </button>
-
             <button
               onClick={handleDownloadCSV}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-emerald-300 hover:text-white transition-all cursor-pointer"
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               title="Download Timesheet CSV"
             >
               <Download className="w-4 h-4" />
@@ -752,7 +601,7 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-[#5b52e0]" />
                 <span className="text-xs font-bold text-gray-800 font-outfit">
-                  {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
+                  {formatDateWithWeekday(selectedDate)}
                 </span>
               </div>
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
@@ -988,16 +837,16 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
         </div>
 
         {/* MODAL FOOTER */}
-        <div className="bg-gray-50 border-t border-gray-200 p-3 sm:p-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
-            <Sparkles className="w-3.5 h-3.5 text-[#5b52e0]" />
+        <div className="sticky bottom-0 bg-white/95 backdrop-blur-md border-t border-slate-100 p-4 sm:p-5 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
             <span className="hidden sm:inline">Click any date to inspect in-out punches, tasks, and deliverables</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <button
               onClick={handlePrint}
-              className="px-3 py-1.5 rounded-xl bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Print Sheet</span>
@@ -1005,7 +854,7 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
 
             <button
               onClick={handleDownloadCSV}
-              className="px-3.5 py-1.5 rounded-xl bg-[#0f766e] hover:bg-teal-800 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-indigo-600/20 active:scale-95"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Download CSV</span>
@@ -1013,7 +862,7 @@ export default function CalendarActivityModal({ isOpen, onClose, onShowToast }) 
 
             <button
               onClick={onClose}
-              className="px-3 py-1.5 rounded-xl bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-bold transition-all cursor-pointer"
+              className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all cursor-pointer"
             >
               Close
             </button>

@@ -571,6 +571,7 @@ export async function initDatabase() {
         ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS client_id TEXT;
         ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS project_id TEXT;
         ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS description TEXT;
+        ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS notes TEXT;
         ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS subtasks JSONB DEFAULT '[]'::jsonb;
         ALTER TABLE global_tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;

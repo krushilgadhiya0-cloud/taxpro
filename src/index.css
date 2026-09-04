@@ -18,14 +18,8 @@
   --border-glow: rgba(0, 240, 255, 0.3);
 }
 
-* {
-  margin: 0;
-  padding: 0;
+*, ::before, ::after {
   box-sizing: border-box;
-  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
 }
 
 html {
@@ -33,12 +27,17 @@ html {
   width: 100%;
   min-height: 100%;
   height: 100%;
-  background-color: #181c32;
+  background-color: #090909;
+  color-scheme: dark;
 }
 
 body {
-  background-color: #f3f4f6;
-  color: #1e1e2d;
+  background-color: #090909;
+  color: #f3f4f6;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   overflow-x: hidden;
   position: relative;
   width: 100%;
@@ -57,6 +56,13 @@ body {
 }
 
 /* ChatGPT Style Custom Dark Scrollbar */
+.chat-custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scroll-behavior: smooth;
+  overscroll-behavior-y: contain;
+}
+
 .chat-custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -65,11 +71,11 @@ body {
   background: transparent;
 }
 .chat-custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 9999px;
 }
 .chat-custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.35);
 }
 
 /* App-wide Smooth Transitions */
@@ -100,16 +106,14 @@ button, a, input, select, textarea {
 @keyframes pageFadeSlideIn {
   0% {
     opacity: 0;
-    transform: translateY(4px);
   }
   100% {
     opacity: 1;
-    transform: none;
   }
 }
 
 .animate-page-fade {
-  animation: pageFadeSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: pageFadeSlideIn 0.15s ease-out;
 }
 
 /* Modal Smooth Spring Animation */
@@ -693,14 +697,13 @@ body.dark-theme ::-webkit-scrollbar-thumb:hover {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  padding: 1.5rem 1rem !important;
+  padding: 1.25rem 1rem !important;
   background-color: rgba(15, 23, 42, 0.82) !important;
   backdrop-filter: blur(8px) !important;
   -webkit-backdrop-filter: blur(8px) !important;
   overflow-y: auto !important;
   margin: 0 !important;
   box-sizing: border-box !important;
-  transform: translateZ(0) !important;
   animation: modalBackdropFadeIn 0.12s ease-out forwards !important;
 }
 
@@ -708,21 +711,57 @@ body.dark-theme ::-webkit-scrollbar-thumb:hover {
   position: relative !important;
   margin: auto !important;
   width: 100% !important;
-  height: auto !important;
-  max-width: 52rem;
-  max-height: 90vh !important;
+  max-width: 44rem;
+  max-height: calc(100vh - 2.5rem) !important;
   display: flex !important;
   flex-direction: column !important;
   background-color: #ffffff !important;
   border-radius: 1.25rem !important;
-  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+  border: 1px solid rgba(226, 232, 240, 0.8) !important;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.06) !important;
   overflow: hidden !important;
   box-sizing: border-box !important;
   flex-shrink: 0 !important;
-  transform: translateZ(0) !important;
   animation: modalBoxSmoothPop 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }
 
+/* Ensure modal forms and scrollable bodies flex naturally with clean bottom clearance */
+.modal-content-box > form,
+.modal-content-box > div.overflow-y-auto {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  scrollbar-width: thin;
+}
+
+/* Global Form Input Box & Outline Standardization */
+.modal-content-box input[type="text"],
+.modal-content-box input[type="email"],
+.modal-content-box input[type="password"],
+.modal-content-box input[type="number"],
+.modal-content-box input[type="date"],
+.modal-content-box select,
+.modal-content-box textarea {
+  box-sizing: border-box !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.25rem !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 0.75rem !important;
+  padding: 0.5rem 0.75rem !important;
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+.modal-content-box input:focus,
+.modal-content-box select:focus,
+.modal-content-box textarea:focus {
+  outline: none !important;
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18) !important;
+}
+
+.modal-content-box.max-w-xs { max-width: 20rem !important; }
 .modal-content-box.max-w-sm { max-width: 24rem !important; }
 .modal-content-box.max-w-md { max-width: 32rem !important; }
 .modal-content-box.max-w-lg { max-width: 38rem !important; }

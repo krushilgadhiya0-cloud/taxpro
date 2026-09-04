@@ -20,6 +20,7 @@ import MainPMSShell from './components/MainPMSShell';
 import SuperAdminShell from './components/SuperAdminShell';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
 import SuperAdminAuthModal from './components/pms/SuperAdminAuthModal';
+import TaxProChatbot from './components/TaxProChatbot';
 import { supabase } from './lib/supabaseClient';
 import soundFX from './lib/audioFX';
 
@@ -107,13 +108,20 @@ export default function App() {
 
   const [loading, setLoading] = useState(() => {
     try {
+      const alreadyLoaded = sessionStorage.getItem('taxpro_session_initialized');
+      if (alreadyLoaded) return false;
+
       const session = localStorage.getItem('taxpro_pg_session');
       const superadmin = localStorage.getItem('taxpro_secret_superadmin');
       const profile = localStorage.getItem('taxpro_profile_completed');
       const email = localStorage.getItem('taxpro_user_email');
-      return !(session || superadmin || (profile && email));
-    } catch (e) {
+      if (session || superadmin || (profile && email)) {
+        sessionStorage.setItem('taxpro_session_initialized', 'true');
+        return false;
+      }
       return true;
+    } catch (e) {
+      return false;
     }
   });
 
@@ -213,15 +221,12 @@ export default function App() {
     };
   }, []);
 
-  // GLOBAL DARK MODE INJECTOR ON BOOTUP
+  // GLOBAL DARK MODE & ZOOM SYNCHRONIZATION LISTENER
   useEffect(() => {
-    if (localStorage.getItem('taxpro_theme') === 'dark') {
-      document.documentElement.classList.add('dark-mode-global');
+    const currentTheme = localStorage.getItem('taxpro_theme');
+    if (currentTheme === 'dark' && !document.documentElement.classList.contains('dark-mode-global')) {
+      document.documentElement.classList.add('dark-mode-global', 'dark');
     }
-
-    // Initialize Global Zoom from LocalStorage
-    const savedZoom = localStorage.getItem('taxpro_global_zoom') || '90';
-    document.documentElement.style.zoom = `${savedZoom}%`;
 
     const handleZoomChange = (e) => {
       const zoom = e.detail || 90;
@@ -492,7 +497,14 @@ export default function App() {
   };
 
   if (loading) {
-    return <LoadingScreen onFinished={() => setLoading(false)} />;
+    return (
+      <LoadingScreen
+        onFinished={() => {
+          sessionStorage.setItem('taxpro_session_initialized', 'true');
+          setLoading(false);
+        }}
+      />
+    );
   }
 
   // When Authenticated: Render Full 1:1 Main PMS Application Suite
@@ -565,6 +577,9 @@ export default function App() {
           }}
           onShowToast={showToast}
         />
+
+        {/* Global Production AI Chatbot Widget */}
+        <TaxProChatbot onShowToast={showToast} />
       </div>
     );
   }
@@ -856,6 +871,9 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Global Production AI Chatbot Widget */}
+      <TaxProChatbot onShowToast={showToast} />
 
     </div>
   );

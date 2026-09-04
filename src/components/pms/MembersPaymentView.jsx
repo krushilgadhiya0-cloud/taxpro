@@ -41,6 +41,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
+import { printHtml } from '../../lib/printHelper';
+import { formatDate } from '../../lib/dateUtils';
 import MemberAttendanceDossierModal from './MemberAttendanceDossierModal';
 
 export default function MembersPaymentView({ onShowToast }) {
@@ -984,7 +986,7 @@ export default function MembersPaymentView({ onShowToast }) {
                         <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-950 mb-3 space-y-0.5">
                           <div className="font-bold flex items-center justify-between">
                             <span>Paid via: {paidRec.method || 'UPI'}</span>
-                            <span className="font-mono text-[10px] text-emerald-700">{new Date(paidRec.date).toLocaleDateString('en-IN')}</span>
+                            <span className="font-mono text-[10px] text-emerald-700">{formatDate(paidRec.date)}</span>
                           </div>
                           {paidRec.reference && (
                             <div className="font-mono text-[10px] text-emerald-800 truncate">
@@ -1215,7 +1217,7 @@ export default function MembersPaymentView({ onShowToast }) {
                           )}
                         </td>
                         <td className="p-4 font-mono text-gray-600">
-                          <div>{new Date(rec.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                          <div>{formatDate(rec.date)}</div>
                           <div className="text-[10px] text-gray-400">{new Date(rec.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                         </td>
                         <td className="p-4">
@@ -1291,7 +1293,7 @@ export default function MembersPaymentView({ onShowToast }) {
 
             <div className="text-right">
               <div className="text-xs font-mono font-black text-gray-900">
-                {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                {formatDate(new Date())}
               </div>
               <div className="text-[10px] font-mono text-gray-600 mt-0.5">
                 Verified System Slip
@@ -1318,7 +1320,7 @@ export default function MembersPaymentView({ onShowToast }) {
               </div>
               <div>
                 <span className="text-[10px] text-gray-500 uppercase font-bold block">Disbursement Date & Time</span>
-                <span className="font-mono text-gray-800">{new Date(singleVoucherData.date).toLocaleString('en-IN')}</span>
+                <span className="font-mono text-gray-800">{formatDateTime(singleVoucherData.date)}</span>
               </div>
               <div>
                 <span className="text-[10px] text-gray-500 uppercase font-bold block">Payment Mode & Ref</span>
@@ -1382,7 +1384,7 @@ export default function MembersPaymentView({ onShowToast }) {
                 ).map((r, i) => (
                   <tr key={r.id || i}>
                     <td className="p-2 border border-gray-300 font-mono text-[10px]">{r.reference || r.id}</td>
-                    <td className="p-2 border border-gray-300 font-mono">{new Date(r.date).toLocaleDateString('en-IN')}</td>
+                    <td className="p-2 border border-gray-300 font-mono">{formatDate(r.date)}</td>
                     <td className="p-2 border border-gray-300 font-bold">{r.memberName}</td>
                     <td className="p-2 border border-gray-300 font-mono text-[10px]">{r.cycleName || r.cycle}</td>
                     <td className="p-2 border border-gray-300 font-mono">{r.method}</td>
@@ -1427,38 +1429,38 @@ export default function MembersPaymentView({ onShowToast }) {
       {isPayModalOpen && payTargetMember && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsPayModalOpen(false); }}
-          className="modal-overlay-backdrop print:hidden"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:hidden"
         >
-          <div className="modal-content-box max-w-lg bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden text-gray-800 animate-page-fade">
+          <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
             
             {/* Header */}
-            <div className="bg-gradient-to-r from-emerald-900 via-teal-950 to-emerald-900 text-white p-5 flex items-center justify-between border-b border-emerald-800">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-white shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shadow-2xs">
                   <CheckCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black font-outfit text-white">Disburse Monthly Salary</h3>
-                  <p className="text-xs text-emerald-200">
-                    Recipient: <strong>{payTargetMember.name}</strong> ({currentMonthObj?.name} {selectedYear})
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900">Disburse Monthly Salary</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Recipient: <strong className="text-slate-800">{payTargetMember.name}</strong> ({currentMonthObj?.name} {selectedYear})
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsPayModalOpen(false)}
-                className="text-gray-300 hover:text-white cursor-pointer p-1.5 rounded-xl hover:bg-white/10 transition-colors"
+                className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer p-2 rounded-xl transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Form */}
-            <div className="p-6 flex flex-col gap-4 text-xs font-semibold max-h-[80vh] overflow-y-auto">
+            <div className="p-6 flex flex-col gap-4 text-xs font-semibold overflow-y-auto overscroll-contain chat-custom-scrollbar flex-1">
               
               {/* Detailed Salary Breakdown Card */}
               {payTargetItem && (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 shadow-2xs">
                   <div className="flex justify-between text-slate-600 font-bold">
                     <span>Base Monthly Salary:</span>
                     <span className="font-mono text-slate-900 font-black">₹{payTargetItem.baseSalary.toLocaleString('en-IN')}</span>
@@ -1482,15 +1484,15 @@ export default function MembersPaymentView({ onShowToast }) {
               )}
 
               <div>
-                <label className="text-gray-700 block mb-1">Disbursement Amount (₹) <span className="text-red-500">*</span></label>
+                <label className="text-slate-700 block mb-1">Disbursement Amount (₹) <span className="text-rose-500">*</span></label>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-gray-500 text-sm">₹</span>
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">₹</span>
                   <input
                     type="number"
                     required
                     value={payAmount}
                     onChange={e => setPayAmount(e.target.value)}
-                    className="w-full pl-8 pr-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-emerald-600 font-mono font-black text-base text-gray-900"
+                    className="w-full pl-8 pr-3.5 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-emerald-600 font-mono font-black text-sm text-slate-900 shadow-2xs"
                     placeholder="Enter amount"
                     autoFocus
                   />
@@ -1499,7 +1501,7 @@ export default function MembersPaymentView({ onShowToast }) {
 
               {/* Payment Method Selector */}
               <div>
-                <label className="text-gray-700 block mb-1.5">Payment Method</label>
+                <label className="text-slate-700 block mb-1.5">Payment Method</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   {[
                     { id: 'UPI', label: '⚡ UPI Instant QR' },
@@ -1511,10 +1513,10 @@ export default function MembersPaymentView({ onShowToast }) {
                       key={m.id}
                       type="button"
                       onClick={() => setPayMethod(m.id)}
-                      className={`py-2 px-2 rounded-xl text-center font-bold text-xs border transition-all cursor-pointer flex flex-col items-center justify-center ${
+                      className={`py-2 px-2 rounded-xl text-center font-bold text-xs border transition-all cursor-pointer flex flex-col items-center justify-center shadow-2xs ${
                         payMethod === m.id
-                          ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-black shadow-xs'
-                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                          ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-black ring-2 ring-emerald-500/20'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
                       <span>{m.label}</span>
@@ -1525,7 +1527,7 @@ export default function MembersPaymentView({ onShowToast }) {
 
               {/* DYNAMIC UPI QR SECTION */}
               {payMethod === 'UPI' && (
-                <div className="bg-slate-900 text-white rounded-2xl p-4 border border-emerald-500/30 flex flex-col sm:flex-row items-center gap-4">
+                <div className="bg-slate-900 text-white rounded-2xl p-4 border border-emerald-500/30 flex flex-col sm:flex-row items-center gap-4 shadow-md">
                   {(getMemberUpi(payTargetMember) || inlineUpiInput) ? (
                     <div className="bg-white p-2 rounded-xl shadow-lg shrink-0 flex flex-col items-center">
                       <img 
@@ -1533,20 +1535,20 @@ export default function MembersPaymentView({ onShowToast }) {
                         alt="UPI QR Code"
                         className="w-36 h-36 object-contain rounded-lg"
                       />
-                      <span className="text-[9px] font-black text-gray-800 uppercase tracking-widest mt-1 font-mono">
+                      <span className="text-[9px] font-black text-slate-800 uppercase tracking-widest mt-1 font-mono">
                         Scan via Any UPI App
                       </span>
                     </div>
                   ) : (
                     <div className="w-36 h-36 bg-slate-800 rounded-xl border border-dashed border-slate-700 flex flex-col items-center justify-center text-center p-2 shrink-0">
-                      <QrCode className="w-8 h-8 text-gray-500 mb-1" />
-                      <span className="text-[10px] text-gray-400">Enter UPI ID below to auto-generate QR</span>
+                      <QrCode className="w-8 h-8 text-slate-500 mb-1" />
+                      <span className="text-[10px] text-slate-400">Enter UPI ID below to auto-generate QR</span>
                     </div>
                   )}
 
                   <div className="flex-1 w-full space-y-2.5">
                     <div>
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Recipient UPI Address</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Recipient UPI Address</span>
                       {getMemberUpi(payTargetMember) ? (
                         <div className="flex items-center gap-2 mt-0.5">
                           <span className="font-mono font-bold text-emerald-400 text-xs bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700 break-all">
@@ -1560,7 +1562,7 @@ export default function MembersPaymentView({ onShowToast }) {
                               setTimeout(() => setCopiedUpi(false), 2000);
                               if (onShowToast) onShowToast('✓ Staff UPI ID copied!', 'info');
                             }}
-                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 cursor-pointer"
+                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 cursor-pointer"
                             title="Copy UPI"
                           >
                             {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -1580,7 +1582,7 @@ export default function MembersPaymentView({ onShowToast }) {
                     </div>
 
                     <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                         Bank / UPI Transaction Ref / UTR # (Optional)
                       </label>
                       <input 
@@ -1595,74 +1597,75 @@ export default function MembersPaymentView({ onShowToast }) {
                 </div>
               )}
 
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-[11px] text-emerald-900 flex items-center gap-2">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-[11px] text-emerald-900 flex items-center gap-2 shadow-2xs">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>
                   ⚡ <b>Auto-Sync:</b> Once confirmed, {payTargetMember.name} will be removed from <b>Pending Due</b> and saved to <b>All Payment Records</b>.
                 </span>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setIsPayModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isSubmittingPay}
-                  onClick={handleConfirmPayout}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-2 active:scale-95 transition-all cursor-pointer"
-                >
-                  <CheckCheck className="w-4 h-4" />
-                  <span>{isSubmittingPay ? 'Processing...' : 'Confirm & Mark as Paid'}</span>
-                </button>
-              </div>
-
             </div>
+
+            {/* Action Buttons */}
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsPayModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingPay}
+                onClick={handleConfirmPayout}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center gap-2 active:scale-95 transition-all cursor-pointer"
+              >
+                <CheckCheck className="w-4 h-4" />
+                <span>{isSubmittingPay ? 'Processing...' : 'Confirm & Mark as Paid'}</span>
+              </button>
+            </div>
+
           </div>
         </div>
       )}
 
-      {/* STAFF UPI CONFIG MODAL */}
+      {/* STAFF UPI CONFIG MODAL (Add Salary UPI) */}
       {isUpiModalOpen && upiTargetMember && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsUpiModalOpen(false); }}
-          className="modal-overlay-backdrop print:hidden"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:hidden"
         >
-          <div className="modal-content-box max-w-md bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden text-gray-800 animate-page-fade">
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <QrCode className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black font-outfit text-white">Staff UPI Payout VPA</h3>
-                  <p className="text-xs text-gray-300">For {upiTargetMember.name}</p>
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900">Add Staff Salary UPI</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Configure VPA for {upiTargetMember.name}</p>
                 </div>
               </div>
-              <button onClick={() => setIsUpiModalOpen(false)} className="text-gray-400 hover:text-white cursor-pointer">
+              <button onClick={() => setIsUpiModalOpen(false)} className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 p-2 rounded-xl transition-colors cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveMemberUpi} className="p-6 space-y-4 text-xs font-semibold">
+            <form onSubmit={handleSaveMemberUpi} className="p-6 space-y-4 text-xs font-semibold overflow-y-auto overscroll-contain chat-custom-scrollbar flex-1">
               <div>
-                <label className="text-gray-700 block mb-1">
-                  Virtual Payment Address (UPI ID) <span className="text-red-500">*</span>
+                <label className="text-slate-700 block mb-1">
+                  Virtual Payment Address (UPI ID) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">@</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">@</span>
                   <input
                     type="text"
                     required
                     placeholder="e.g. employee@okaxis or 9876543210@paytm"
                     value={memberUpiInput}
                     onChange={e => setMemberUpiInput(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-8 pr-3.5 py-2.5 text-xs font-mono font-bold text-gray-900 outline-none focus:border-indigo-600"
+                    className="w-full bg-white border border-slate-300 rounded-xl pl-8 pr-3.5 py-2 text-xs font-mono font-bold text-slate-900 outline-none focus:border-indigo-600 shadow-2xs"
                     autoFocus
                   />
                 </div>
@@ -1670,7 +1673,7 @@ export default function MembersPaymentView({ onShowToast }) {
 
               {/* Quick Handle Chips */}
               <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
-                <span className="text-gray-500 font-medium">Quick handles:</span>
+                <span className="text-slate-500 font-medium">Quick handles:</span>
                 {['@okaxis', '@ybl', '@oksbi', '@paytm', '@ibl', '@icici'].map((handle) => (
                   <button
                     key={handle}
@@ -1679,7 +1682,7 @@ export default function MembersPaymentView({ onShowToast }) {
                       const prefix = memberUpiInput.split('@')[0] || (upiTargetMember?.email ? upiTargetMember.email.split('@')[0] : 'employee');
                       setMemberUpiInput(`${prefix}${handle}`);
                     }}
-                    className="px-2 py-0.5 rounded-lg bg-gray-100 border border-gray-200 text-indigo-700 hover:bg-indigo-50 font-mono font-bold cursor-pointer transition-colors"
+                    className="px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-200 text-indigo-700 hover:bg-indigo-50 font-mono font-bold cursor-pointer transition-colors shadow-2xs"
                   >
                     {handle}
                   </button>
@@ -1688,34 +1691,34 @@ export default function MembersPaymentView({ onShowToast }) {
 
               {/* QR Preview */}
               {memberUpiInput.trim() && memberUpiInput.includes('@') && (
-                <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200 flex flex-col items-center justify-center text-center">
-                  <span className="text-[10px] font-black text-indigo-800 uppercase tracking-wider mb-2">
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center text-center shadow-2xs">
+                  <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider mb-2">
                     ⚡ Auto-Generated Salary Payment QR
                   </span>
-                  <div className="bg-white p-2 rounded-xl shadow-md border border-indigo-100">
+                  <div className="bg-white p-2 rounded-xl shadow-md border border-slate-200">
                     <img 
                       src={getUpiQrUrl(memberUpiInput, upiTargetMember.name, payrollConfigs[upiTargetMember.id]?.salary || upiTargetMember.salary || 0)} 
                       alt="UPI QR" 
                       className="w-28 h-28 object-contain"
                     />
                   </div>
-                  <span className="text-[11px] font-mono font-black text-indigo-950 mt-2 break-all">
+                  <span className="text-[11px] font-mono font-black text-slate-900 mt-2 break-all">
                     {memberUpiInput.trim()}
                   </span>
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-4">
                 <button
                   type="button"
                   onClick={() => setIsUpiModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 cursor-pointer transition-all active:scale-95"
                 >
                   Save UPI ID
                 </button>
@@ -1729,45 +1732,45 @@ export default function MembersPaymentView({ onShowToast }) {
       {isConfigModalOpen && configTargetMember && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsConfigModalOpen(false); }}
-          className="modal-overlay-backdrop print:hidden"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:hidden"
         >
-          <div className="modal-content-box max-w-sm bg-white rounded-3xl shadow-2xl border border-gray-200 overflow-hidden text-gray-800 p-6">
-            <h3 className="text-base font-black text-gray-900 mb-1">Configure Base Salary</h3>
-            <p className="text-xs text-gray-500 mb-4">For {configTargetMember.name}</p>
+          <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden text-slate-800 p-6 my-auto animate-modal-smooth">
+            <h3 className="text-base font-black text-slate-900 mb-0.5 font-outfit">Configure Base Salary</h3>
+            <p className="text-xs text-slate-500 mb-4">For {configTargetMember.name}</p>
 
             <div className="space-y-3 text-xs font-semibold">
               <div>
-                <label className="text-gray-700 block mb-1">Monthly Base Salary (₹)</label>
+                <label className="text-slate-700 block mb-1">Monthly Base Salary (₹)</label>
                 <input
                   type="number"
                   value={configForm.salary}
                   placeholder="e.g. 25000"
                   onChange={e => setConfigForm({...configForm, salary: e.target.value})}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 font-mono font-bold"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 font-mono font-bold text-slate-900 shadow-2xs"
                 />
               </div>
               <div>
-                <label className="text-gray-700 block mb-1">Fixed Monthly Bonus (₹)</label>
+                <label className="text-slate-700 block mb-1">Fixed Monthly Bonus (₹)</label>
                 <input
                   type="number"
                   value={configForm.bonus}
                   placeholder="e.g. 5000"
                   onChange={e => setConfigForm({...configForm, bonus: e.target.value})}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-indigo-500 font-mono font-bold"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 font-mono font-bold text-slate-900 shadow-2xs"
                 />
               </div>
             </div>
 
-            <div className="flex gap-2 mt-6">
+            <div className="flex gap-2.5 mt-5">
               <button 
                 onClick={() => setIsConfigModalOpen(false)} 
-                className="flex-1 py-2 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 cursor-pointer"
+                className="flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 cursor-pointer"
               >
                 Cancel
               </button>
               <button 
                 onClick={() => saveConfig(configTargetMember.id, configForm)} 
-                className="flex-1 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md cursor-pointer"
+                className="flex-1 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md shadow-indigo-600/20 cursor-pointer transition-all active:scale-95"
               >
                 Save Settings
               </button>
@@ -1780,45 +1783,45 @@ export default function MembersPaymentView({ onShowToast }) {
       {isBonusModalOpen && bonusTargetMember && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsBonusModalOpen(false); }}
-          className="modal-overlay-backdrop print:hidden"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:hidden"
         >
-          <div className="modal-content-box max-w-sm bg-white rounded-3xl shadow-2xl border border-amber-200 overflow-hidden text-gray-800 p-6">
-            <h3 className="text-base font-black text-gray-900 mb-1">Queue Performance Bonus</h3>
-            <p className="text-xs text-gray-500 mb-4">For {bonusTargetMember.name}</p>
+          <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden text-slate-800 p-6 my-auto animate-modal-smooth">
+            <h3 className="text-base font-black text-slate-900 mb-0.5 font-outfit">Queue Performance Bonus</h3>
+            <p className="text-xs text-slate-500 mb-4">For {bonusTargetMember.name}</p>
 
             <div className="space-y-3 text-xs font-semibold">
               <div>
-                <label className="text-gray-700 block mb-1">Bonus Amount (₹)</label>
+                <label className="text-slate-700 block mb-1">Bonus Amount (₹)</label>
                 <input 
                   type="number" 
                   value={bonusForm.amount} 
                   placeholder="e.g. 5000" 
                   onChange={e => setBonusForm({...bonusForm, amount: e.target.value})} 
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-amber-500 font-mono font-bold" 
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-amber-500 font-mono font-bold text-slate-900 shadow-2xs" 
                 />
               </div>
               <div>
-                <label className="text-gray-700 block mb-1">Description / Reason</label>
+                <label className="text-slate-700 block mb-1">Description / Reason</label>
                 <input 
                   type="text" 
                   value={bonusForm.description} 
                   placeholder="e.g. Festival / Performance Bonus" 
                   onChange={e => setBonusForm({...bonusForm, description: e.target.value})} 
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:border-amber-500" 
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-amber-500 text-slate-900 shadow-2xs" 
                 />
               </div>
             </div>
 
-            <div className="flex gap-2 mt-6">
+            <div className="flex gap-2.5 mt-5">
               <button 
                 onClick={() => setIsBonusModalOpen(false)} 
-                className="flex-1 py-2 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 cursor-pointer"
+                className="flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 cursor-pointer"
               >
                 Cancel
               </button>
               <button 
                 onClick={handleCreateBonus} 
-                className="flex-1 py-2 text-xs font-bold text-amber-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-md cursor-pointer"
+                className="flex-1 py-2 text-xs font-bold text-slate-900 bg-amber-400 hover:bg-amber-500 rounded-xl shadow-md cursor-pointer transition-all active:scale-95"
               >
                 Queue Bonus
               </button>

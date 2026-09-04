@@ -6,6 +6,9 @@ import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+import email.utils
+import time
+
 def get_smtp_credentials(custom_config=None):
     """
     Resolves SMTP credentials from custom config, environment variables, or defaults.
@@ -16,7 +19,7 @@ def get_smtp_credentials(custom_config=None):
     port = int(config.get("port") or os.environ.get("SMTP_PORT") or 587)
     user = config.get("user") or os.environ.get("SMTP_USER") or "krushilgadhiya138@gmail.com"
     password = config.get("pass") or os.environ.get("SMTP_PASS") or "zxzqedanapymshgm"
-    sender_name = config.get("sender_name") or os.environ.get("SMTP_SENDER_NAME") or "TaxPro AI Enterprise"
+    sender_name = config.get("sender_name") or os.environ.get("SMTP_SENDER_NAME") or "TaxPro Enterprise"
     
     return host, port, user, password, sender_name
 
@@ -31,6 +34,13 @@ def send_email_via_smtplib(to_email, subject, html_content, text_content=None, c
     message["Subject"] = subject
     message["From"] = f"{sender_name} <{user}>"
     message["To"] = to_email
+    message["Reply-To"] = user
+    message["Date"] = email.utils.formatdate(localtime=True)
+    message["Message-ID"] = email.utils.make_msgid(domain="taxpro.com")
+    message["MIME-Version"] = "1.0"
+    message["X-Mailer"] = "TaxPro Enterprise Platform"
+    message["X-Priority"] = "1 (Highest)"
+    message["Importance"] = "High"
 
     if text_content:
         message.attach(MIMEText(text_content, "plain"))
@@ -373,11 +383,12 @@ def build_due_reminder_html(name, email, item_name, due_date, amount_due, client
 # =========================================================================
 # 5. INVITATION EMAIL TEMPLATE
 # =========================================================================
-def build_invite_html(name, email, role, password, origin):
+def build_invite_html(name, email, role, password, origin, member_id=""):
     user_name = name or "Team Member"
     user_role = role or "Employee"
     user_pass = password or "TaxPro@1234"
     portal_url = origin or "http://localhost:3000"
+    emp_id = member_id or "EMP-100000"
 
     return f"""
     <!DOCTYPE html>
@@ -402,7 +413,7 @@ def build_invite_html(name, email, role, password, origin):
     </head>
     <body>
       <div class="card">
-        <div class="logo">❖ TAXPRO AI ENTERPRISE</div>
+        <div class="logo">TAXPRO AI ENTERPRISE</div>
         <div class="tagline">Official Workspace Invitation</div>
         
         <div class="hero-banner">
@@ -418,7 +429,11 @@ def build_invite_html(name, email, role, password, origin):
         <div class="creds-box">
           <div style="font-size: 11px; font-weight: 800; color: #818cf8; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Your Access Credentials</div>
           <div class="cred-row">
-            <span class="cred-label">Login ID / Email</span>
+            <span class="cred-label">Employee ID</span>
+            <span class="cred-val" style="color: #00F0FF; font-size: 14px;">{emp_id}</span>
+          </div>
+          <div class="cred-row">
+            <span class="cred-label">Login Email</span>
             <span class="cred-val">{email}</span>
           </div>
           <div class="cred-row">
@@ -427,7 +442,7 @@ def build_invite_html(name, email, role, password, origin):
           </div>
           <div class="cred-row">
             <span class="cred-label">Assigned Role</span>
-            <span class="cred-val" style="color: #00F0FF;">{user_role}</span>
+            <span class="cred-val" style="color: #818cf8;">{user_role}</span>
           </div>
           <div class="cred-row">
             <span class="cred-label">Login Portal</span>
@@ -435,16 +450,8 @@ def build_invite_html(name, email, role, password, origin):
           </div>
         </div>
 
-        <a href="{portal_url}" class="btn">🚀 Sign In to TaxPro Workspace</a>
-
-        <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 16px;">
-          For security, please change your password after logging into your dashboard.
-        </p>
-
-        <div class="footer">
-          TaxPro Financial Operations &bull; Python smtplib Secure Dispatch<br>
-          Automated System Dispatch &bull; Confidential
-        </div>
+        <a href="{portal_url}" class="btn">Access Workspace &rarr;</a>
+        <div class="footer">TaxPro Financial Intelligence Suite &bull; TLS Protected</div>
       </div>
     </body>
     </html>
@@ -525,10 +532,30 @@ def main():
             name = payload.get("name", "Team Member")
             role = payload.get("role", "Employee")
             password = payload.get("password", "")
-            origin = payload.get("origin", "http://localhost:3000")
-            html = build_invite_html(name, target_email, role, password, origin)
-            subject = f"Invitation: Join TaxPro Workspace as {role}"
-            result = send_email_via_smtplib(target_email, subject, html, f"You are invited to TaxPro as {role}. Login at {origin}", custom_config)
+            emp_id = payload.get("id") or payload.get("member_id") or payload.get("employeeId") or "EMP-100000"
+            origin = payload.get("origin", "https://taxpro-suite.vercel.app")
+            html = build_invite_html(name, target_email, role, password, origin, emp_id)
+            subject = f"TaxPro Workspace Invitation for {name} ({emp_id})"
+            plain_text = f"""Hello {name},
+
+You have been invited to join the TaxPro Practice Management Platform as an authorized {role}.
+
+ACCOUNT ACCESS CREDENTIALS:
+--------------------------------------------------
+Assigned Role:       {role}
+Employee ID:         {emp_id}
+Login Email:         {target_email}
+Temporary Password:  {password}
+Login Portal:        {origin}
+--------------------------------------------------
+
+Please sign in using either your Employee ID ({emp_id}) or your Email ({target_email}) with your Temporary Password ({password}) to access firm clients, projects, and tasks.
+For security, please update your password after your initial login.
+
+TaxPro Practice Management Platform & Practice Intelligence
+Secured via Google SMTP TLS
+"""
+            result = send_email_via_smtplib(target_email, subject, html, plain_text, custom_config)
             print(json.dumps(result))
 
         # 6. RESET PASSWORD DISPATCH

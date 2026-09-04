@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, Search, Filter, Calendar, CheckCircle2, Clock, AlertCircle, User, 
   MoreVertical, X, Paperclip, ArrowLeft, Printer, CheckSquare, FolderKanban,
-  ArrowDownToLine, CheckCheck, Sparkles, FolderDown, Building2, Coffee
+  ArrowDownToLine, CheckCheck, Sparkles, FolderDown, Building2, Coffee, RotateCcw,
+  History, ShieldCheck, Archive, ExternalLink
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
+import { invalidateQueryCache } from '../../lib/postgresClient';
 import { logAuditActivity } from '../../lib/auditLogger';
 import { requireFirmSetup } from '../../lib/firmGatekeeper';
+import { printHtml } from '../../lib/printHelper';
+import { formatDate } from '../../lib/dateUtils';
+import TaskHistoryModal from './TaskHistoryModal';
 
 export default function TasksView({ onShowToast }) {
   const [activeFilter, setActiveFilter] = useState('All');
@@ -14,11 +19,23 @@ export default function TasksView({ onShowToast }) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
+  // Task History & Mode states
+  const [myTaskMode, setMyTaskMode] = useState('all'); // 'all' | 'active' | 'history'
+  const [myTasksScope, setMyTasksScope] = useState('mine'); // 'mine' | 'all'
+  const [historyPeriod, setHistoryPeriod] = useState('all'); // 'all' | '7days' | '30days' | 'month' | 'specific_date' | 'specific_month'
+  const [specificDate, setSpecificDate] = useState(''); // 'YYYY-MM-DD'
+  const [specificMonth, setSpecificMonth] = useState('2026-08'); // 'YYYY-MM'
+  const [selectedTaskForHistory, setSelectedTaskForHistory] = useState(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
   const [tasks, setTasks] = useState([]);
   const [clients, setClients] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [projects, setProjects] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const currentUserName = localStorage.getItem('taxpro_user_name') || localStorage.getItem('taxpro_user_fullname') || '';
+  const currentUserEmail = localStorage.getItem('taxpro_user_email') || '';
 
   // Import from project modal state
   const [selectedProjectForImport, setSelectedProjectForImport] = useState('');
@@ -50,14 +67,12 @@ export default function TasksView({ onShowToast }) {
        } catch (e) {}
     }
 
-    const currentUserName = localStorage.getItem('taxpro_user_name') || localStorage.getItem('taxpro_user_fullname') || 'Administrator';
-
     if (!membersRes.error && membersRes.data) {
        const names = membersRes.data.map(m => m.name).filter(n => n && n.trim() !== '');
-       const combined = Array.from(new Set([currentUserName, 'Administrator', ...names]));
+       const combined = Array.from(new Set([currentUserName || 'Administrator', 'Administrator', ...names]));
        setTeamMembers(combined);
     } else {
-       setTeamMembers([currentUserName, 'Administrator']);
+       setTeamMembers([currentUserName || 'Administrator', 'Administrator']);
     }
 
     if (!projectsRes.error && projectsRes.data) {
@@ -69,8 +84,6 @@ export default function TasksView({ onShowToast }) {
 
     setIsLoading(false);
   };
-
-  const currentUserName = localStorage.getItem('taxpro_user_name') || localStorage.getItem('taxpro_user_fullname') || 'Administrator';
 
   useEffect(() => {
     fetchData();
@@ -152,7 +165,15 @@ export default function TasksView({ onShowToast }) {
 
     setTasks([taskObj, ...tasks]);
     setIsAddModalOpen(false);
-    setNewTask({ title: '', client: '', category: 'GST', dueDate: '', priority: 'Medium', assignee: 'Krushil Gadhiya', project: '' });
+    setNewTask({ title: '', client: '', category: 'GST', dueDate: '', priority: 'Medium', assignee: currentUserName, project: '' });
+    
+    logAuditActivity({
+      action: 'ADD_TASK',
+      module: 'Tasks',
+      details: `Created deliverable task "${taskObj.title}" for client "${taskObj.client}" (Priority: ${taskObj.priority || 'Medium'}, Due: ${taskObj.dueDate})`,
+      metadata: { taskId: taskObj.id, title: taskObj.title, client: taskObj.client, priority: taskObj.priority }
+    });
+
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
     if (onShowToast) onShowToast('✓ New task safely persisted in cloud database!', 'success');
   };
@@ -167,14 +188,24 @@ export default function TasksView({ onShowToast }) {
     // 1. Optimistic local update
     setTasks(prev => prev.map(t => {
       if (t.id === id) {
-        return { ...t, status: nextStatus };
+        return { 
+          ...t, 
+          status: nextStatus,
+          completed_at: isCompleted ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString()
+        };
       }
       return t;
     }));
 
-    // 2. Update global_tasks in PostgreSQL database
+    // 2. Update global_tasks in PostgreSQL database with cache invalidation
     try {
-      const { error } = await supabase.from('global_tasks').update({ status: nextStatus }).eq('id', id);
+      invalidateQueryCache('global_tasks');
+      const { error } = await supabase.from('global_tasks').update({ 
+        status: nextStatus,
+        completed_at: isCompleted ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
+      }).eq('id', id);
       if (error) {
         if (onShowToast) onShowToast(`Failed to update status: ${error.message}`, 'error');
         return;
@@ -183,6 +214,7 @@ export default function TasksView({ onShowToast }) {
 
     // 3. Two-Way Sync: Update any linked Project checklist item in database and localStorage!
     try {
+      invalidateQueryCache('projects');
       const { data: dbProjects } = await supabase.from('projects').select('*');
       const allProjects = (dbProjects && dbProjects.length > 0) ? dbProjects : (projects || []);
 
@@ -225,15 +257,18 @@ export default function TasksView({ onShowToast }) {
     }
 
     // 4. Log Audit Activity
-    logAuditActivity({
-      action: 'UPDATE_TASK',
-      module: 'Tasks',
-      details: `Updated task "${task.title}" to ${nextStatus}${task.project && task.project !== 'None' ? ` (Project: ${task.project})` : ''}`,
-      metadata: { taskId: id, title: task.title, status: nextStatus, project: task.project }
-    });
+    try {
+      logAuditActivity({
+        action: 'UPDATE_TASK',
+        module: 'Tasks',
+        details: `Updated task "${task.title}" to ${nextStatus}${task.project && task.project !== 'None' ? ` (Project: ${task.project})` : ''}`,
+        metadata: { taskId: id, title: task.title, status: nextStatus, project: task.project }
+      });
+    } catch (e) {}
 
     // 5. Notify all other views
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+    window.dispatchEvent(new CustomEvent('taxpro_tasks_updated'));
     if (onShowToast) onShowToast(`✓ Task updated to ${nextStatus}!`, 'success');
   };
 
@@ -285,15 +320,108 @@ export default function TasksView({ onShowToast }) {
     window.dispatchEvent(new CustomEvent('ai_task_added'));
     fetchData();
 
+    logAuditActivity({
+      action: 'IMPORT_TASKS',
+      module: 'Tasks',
+      details: `Imported ${globalInserts.length} tasks from project "${proj.name}" into global tasks board`,
+      metadata: { projectId: proj.id, projectName: proj.name, count: globalInserts.length }
+    });
+
     if (onShowToast) onShowToast(`✓ Successfully imported ${globalInserts.length} tasks from ${proj.name}!`, 'success');
+  };
+
+  // Helper to test if task belongs to current user
+  const isAssignedToMe = (t) => {
+    const a = (t.assignee || '').toLowerCase().trim();
+    const u = (currentUserName || '').toLowerCase().trim();
+    const em = (currentUserEmail || '').toLowerCase().trim();
+    return (
+      (em && a.includes(em)) ||
+      (u && (a === u || (u !== 'administrator' && u !== 'my workspace' && (a.includes(u) || u.includes(a))))) ||
+      a === 'me'
+    );
+  };
+
+  // Metrics for My Tasks & History
+  const myTasksAll = useMemo(() => tasks.filter(isAssignedToMe), [tasks, currentUserName, currentUserEmail]);
+  const myCompletedTasks = useMemo(() => myTasksAll.filter(t => (t.status || '').toLowerCase() === 'completed'), [myTasksAll]);
+  const myActiveTasks = useMemo(() => myTasksAll.filter(t => (t.status || '').toLowerCase() !== 'completed'), [myTasksAll]);
+  const allTeamCompleted = useMemo(() => tasks.filter(t => (t.status || '').toLowerCase() === 'completed'), [tasks]);
+
+  const myOnTimeCount = useMemo(() => {
+    return myCompletedTasks.filter(t => {
+      if (!t.due_date) return true;
+      const compDate = (t.completed_at || t.updated_at || '').slice(0, 10);
+      return compDate && compDate <= t.due_date;
+    }).length;
+  }, [myCompletedTasks]);
+  const myOnTimeRate = myCompletedTasks.length > 0 ? Math.round((myOnTimeCount / myCompletedTasks.length) * 100) : 100;
+
+  // Helper to test date / month matches for history period
+  const matchesHistoryPeriod = (t) => {
+    const comp = t.completed_at || t.updated_at || t.due_date || t.dueDate || '';
+    const taskDate = comp.slice(0, 10);
+    const taskMonth = comp.slice(0, 7);
+
+    if (historyPeriod === '7days') {
+      if (!comp) return true;
+      const diff = Date.now() - new Date(comp).getTime();
+      return diff <= 7 * 24 * 60 * 60 * 1000;
+    }
+    if (historyPeriod === '30days') {
+      if (!comp) return true;
+      const diff = Date.now() - new Date(comp).getTime();
+      return diff <= 30 * 24 * 60 * 60 * 1000;
+    }
+    if (historyPeriod === 'month') {
+      if (!comp) return true;
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      return taskMonth === currentMonth;
+    }
+    if (historyPeriod === 'specific_date') {
+      if (!specificDate) return true;
+      return taskDate === specificDate;
+    }
+    if (historyPeriod === 'specific_month') {
+      if (!specificMonth) return true;
+      return taskMonth === specificMonth;
+    }
+    return true; // 'all'
   };
 
   const filteredTasks = tasks.filter(t => {
     let matchesFilter = false;
-    if (activeFilter === 'All') matchesFilter = true;
-    else if (activeFilter === 'My Tasks') matchesFilter = (t.assignee && t.assignee.includes('Krushil'));
-    else if (activeFilter === 'Project Tasks') matchesFilter = (t.category === 'Project Task' || (t.project && t.project !== 'None'));
-    else matchesFilter = t.status === activeFilter || t.category === activeFilter;
+    const isDone = (t.status || '').toLowerCase() === 'completed';
+
+    if (activeFilter === 'All') {
+      matchesFilter = true;
+    } else if (activeFilter === 'My Tasks') {
+      const assigned = isAssignedToMe(t);
+      // If user toggled to 'all' in My Tasks, or if user has 0 assigned tasks and is in history, include all
+      const shouldInclude = (myTasksScope === 'all' || (myTasksAll.length === 0 && myTaskMode === 'history'))
+        ? true
+        : assigned;
+
+      if (!shouldInclude) return false;
+
+      if (myTaskMode === 'active') {
+        matchesFilter = !isDone;
+      } else if (myTaskMode === 'history') {
+        if (!isDone) return false;
+        matchesFilter = matchesHistoryPeriod(t);
+      } else {
+        matchesFilter = true;
+      }
+    } else if (activeFilter === 'Task History') {
+      if (!isDone) return false;
+      const assigned = isAssignedToMe(t);
+      if (myTasksScope === 'mine' && myCompletedTasks.length > 0 && !assigned) return false;
+      matchesFilter = matchesHistoryPeriod(t);
+    } else if (activeFilter === 'Project Tasks') {
+      matchesFilter = (t.category === 'Project Task' || (t.project && t.project !== 'None'));
+    } else {
+      matchesFilter = t.status === activeFilter || t.category === activeFilter;
+    }
 
     const matchesSearch = (t.title && t.title.toLowerCase().includes(searchQuery.toLowerCase())) || 
                           (t.client && t.client.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -301,6 +429,72 @@ export default function TasksView({ onShowToast }) {
                           (t.id && t.id.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesFilter && matchesSearch;
   });
+
+  const handlePrintTasks = () => {
+    const list = filteredTasks.length > 0 ? filteredTasks : tasks;
+    if (list.length === 0) {
+      if (onShowToast) onShowToast('No tasks available to print.', 'warning');
+      return;
+    }
+
+    const rows = list.map((t, idx) => `
+      <tr>
+        <td style="font-family: monospace; color: #64748b; text-align: center;">${idx + 1}</td>
+        <td>
+          <strong style="color: #0f172a; font-size: 11px;">${t.title || 'Untitled Task'}</strong>
+          ${t.project && t.project !== 'None' ? `<div style="font-size: 9px; color: #0f766e; margin-top: 2px;">Project: ${t.project}</div>` : ''}
+        </td>
+        <td>${t.client || 'Internal Practice'}</td>
+        <td><span class="badge-blue">${t.category || 'General'}</span></td>
+        <td style="font-family: monospace;">${formatDate(t.dueDate || t.due_date)}</td>
+        <td><strong>${t.assignee || 'Unassigned'}</strong></td>
+        <td><span class="badge-teal">${t.priority || 'Medium'}</span></td>
+        <td>
+          <span class="status-pill ${
+            t.status === 'Completed' ? 'status-completed' :
+            t.status === 'In Progress' ? 'status-progress' :
+            t.status === 'Overdue' ? 'status-overdue' : 'status-pending'
+          }">
+            ${t.status || 'Pending'}
+          </span>
+        </td>
+      </tr>
+    `).join('');
+
+    const body = `
+      <div style="margin-bottom: 12px; font-weight: 800; font-size: 13px; color: #1e293b;">
+        Compliance & Workflow Tasks Register (${list.length} Records)
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 35px; text-align: center;">#</th>
+            <th>Task & Scope</th>
+            <th>Client Name</th>
+            <th>Category</th>
+            <th>Due Date</th>
+            <th>Assignee</th>
+            <th>Priority</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    `;
+
+    printHtml('Tasks Register', body);
+    
+    logAuditActivity({
+      action: 'PRINT_DOCUMENT',
+      module: 'Tasks',
+      details: `Generated printable compliance & workflow tasks register (${list.length} tasks)`,
+      metadata: { count: list.length }
+    });
+
+    if (onShowToast) onShowToast('🖨️ Generating printable task register...', 'info');
+  };
 
   const currentImportProject = projects.find(p => String(p.id) === String(selectedProjectForImport));
 
@@ -316,8 +510,19 @@ export default function TasksView({ onShowToast }) {
 
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           <button 
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 text-xs font-bold shadow-xs transition-all cursor-pointer"
+            type="button"
+            onClick={() => { window.location.hash = '#/task-history'; }}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold shadow-xs transition-all cursor-pointer"
+            title="Open Task History page"
+          >
+            <History className="w-4 h-4 text-indigo-600" />
+            <span>Task History ({allTeamCompleted.length}) ↗</span>
+          </button>
+
+          <button 
+            type="button"
+            onClick={handlePrintTasks}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
             title="Print Task Register"
           >
             <Printer className="w-4 h-4 text-gray-500" />
@@ -350,23 +555,36 @@ export default function TasksView({ onShowToast }) {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-6 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
         
         {/* Status Filter Chips */}
         <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
-          {['All', 'My Tasks', 'Project Tasks', 'Pending', 'In Progress', 'Completed', 'Overdue', 'GST', 'Income Tax', 'MCA'].map((f) => (
+          {['All', 'My Tasks', 'Task History', 'Project Tasks', 'Pending', 'In Progress', 'Completed', 'Overdue', 'GST', 'Income Tax', 'MCA'].map((f) => (
             <button
               key={f}
-              onClick={() => setActiveFilter(f)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              onClick={() => {
+                if (f === 'Task History') {
+                  window.location.hash = '#/task-history';
+                  return;
+                }
+                setActiveFilter(f);
+              }}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeFilter === f 
                   ? 'bg-[#5b52e0] text-white shadow-xs' 
                   : (f === 'My Tasks') ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800' 
+                  : (f === 'Task History') ? 'bg-purple-50 text-purple-700 hover:bg-purple-100 hover:text-purple-800 border border-purple-200'
                   : (f === 'Project Tasks') ? 'bg-teal-50 text-teal-700 hover:bg-teal-100 hover:text-teal-800 border border-teal-200' 
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {f}
+              {f === 'Task History' && <History className="w-3.5 h-3.5" />}
+              <span>{f}</span>
+              {f === 'My Tasks' && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeFilter === f ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+                  {myTasksAll.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -383,6 +601,84 @@ export default function TasksView({ onShowToast }) {
           />
         </div>
       </div>
+
+      {/* SUB-MODE CONTROLS WHEN 'MY TASKS' IS ACTIVE */}
+      {activeFilter === 'My Tasks' && (
+        <div className="bg-indigo-50/70 border border-indigo-100 rounded-2xl p-3 mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 animate-fade-in">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Team vs Mine Scope Selector */}
+            <div className="flex items-center bg-white p-1 rounded-xl border border-indigo-200 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setMyTasksScope('mine')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  myTasksScope === 'mine'
+                    ? 'bg-[#5b52e0] text-white shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                👤 My Tasks ({myTasksAll.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMyTasksScope('all')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  myTasksScope === 'all'
+                    ? 'bg-[#5b52e0] text-white shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                title="View all team deliverables"
+              >
+                <FolderKanban className="w-3.5 h-3.5" />
+                <span>All Team ({myTaskMode === 'history' ? allTeamCompleted.length : tasks.length})</span>
+              </button>
+            </div>
+
+            {/* Task Sub-Mode (All, Active, History) */}
+            <div className="flex items-center bg-white p-1 rounded-xl border border-indigo-200 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setMyTaskMode('all')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  myTaskMode === 'all'
+                    ? 'bg-indigo-900 text-white shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                All Tasks
+              </button>
+              <button
+                type="button"
+                onClick={() => setMyTaskMode('active')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  myTaskMode === 'active'
+                    ? 'bg-indigo-900 text-white shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Clock className="w-3 h-3" />
+                <span>Active Work</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { window.location.hash = '#/task-history'; }}
+                className="px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 text-gray-600 hover:text-indigo-700"
+                title="Open dedicated Task History page"
+              >
+                <History className="w-3 h-3 text-indigo-500" />
+                <span>Task History ({allTeamCompleted.length}) ↗</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-indigo-800 shrink-0">
+            <span>On-Time Deliveries:</span>
+            <span className="font-mono font-bold bg-white px-2 py-0.5 rounded-lg border border-indigo-200 text-indigo-900">
+              {myOnTimeRate}%
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Tasks Table */}
       <div className="bg-white border border-gray-200 rounded-2xl shadow-xs overflow-hidden">
@@ -439,7 +735,7 @@ export default function TasksView({ onShowToast }) {
                         {t.category}
                       </span>
                     </td>
-                    <td className="p-4 text-gray-600 font-mono">{t.dueDate}</td>
+                    <td className="p-4 text-gray-600 font-mono">{formatDate(t.dueDate)}</td>
                     <td className="p-4 text-gray-600 font-medium">{t.assignee}</td>
                     <td className="p-4">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -458,38 +754,58 @@ export default function TasksView({ onShowToast }) {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                        {t.status !== 'In Progress' && (
-                          <button
-                            type="button"
-                            onClick={() => updateTaskStatus(t.id, 'In Progress')}
-                            className="px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
-                            title="Set In Progress"
-                          >
-                            ⚡ In Progress
-                          </button>
-                        )}
-                        {t.status !== 'Pending' && t.status !== 'Completed' && (
-                          <button
-                            type="button"
-                            onClick={() => updateTaskStatus(t.id, 'Pending')}
-                            className="px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
-                            title="Set Pending"
-                          >
-                            ⏳ Pending
-                          </button>
-                        )}
-                        <button 
+                        {/* Task History & Timeline Button */}
+                        <button
                           type="button"
-                          onClick={() => updateTaskStatus(t.id, t.status === 'Completed' ? 'In Progress' : 'Completed')}
-                          className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                            t.status === 'Completed' 
-                              ? 'bg-emerald-600 text-white shadow-xs hover:bg-emerald-700' 
-                              : 'text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-xs'
-                          }`}
-                          title={t.status === 'Completed' ? 'Reopen to In Progress' : 'Mark Completed'}
+                          onClick={() => {
+                            setSelectedTaskForHistory(t);
+                            setIsHistoryModalOpen(true);
+                          }}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                          title="View Task History Timeline & Compliance Logs"
                         >
-                          {t.status === 'Completed' ? '✓ Done (Reopen)' : '✓ Mark Done'}
+                          <History className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">History</span>
                         </button>
+
+                        {t.status === 'Completed' ? (
+                          <span className="px-3 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>✓ Completed</span>
+                          </span>
+                        ) : (
+                          <>
+                            {t.status !== 'In Progress' && (
+                              <button
+                                type="button"
+                                onClick={() => updateTaskStatus(t.id, 'In Progress')}
+                                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+                                title="Set In Progress"
+                              >
+                                ⚡ In Progress
+                              </button>
+                            )}
+                            {t.status !== 'Pending' && (
+                              <button
+                                type="button"
+                                onClick={() => updateTaskStatus(t.id, 'Pending')}
+                                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
+                                title="Set Pending"
+                              >
+                                ⏳ Pending
+                              </button>
+                            )}
+                            <button 
+                              type="button"
+                              onClick={() => updateTaskStatus(t.id, 'Completed')}
+                              className="px-3 py-1 rounded-lg text-xs font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 shadow-xs transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                              title="Mark Completed"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>✓ Mark Done</span>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -500,25 +816,25 @@ export default function TasksView({ onShowToast }) {
         </div>
       </div>
 
-      {/* Add Task Modal */}
+      {/* ADD TASK / WORK ITEM MODAL */}
       {isAddModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsAddModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-3xl">
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
             
-            {/* Premium Gradient Header */}
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-gray-800">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   <CheckSquare className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
-                    Create New Task
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
+                    Create New Work Item & Task
                   </h3>
-                  <p className="text-xs text-gray-300 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Assign a workflow deliverable to client, project, and team member
                   </p>
                 </div>
@@ -526,7 +842,7 @@ export default function TasksView({ onShowToast }) {
 
               <button 
                 onClick={() => setIsAddModalOpen(false)} 
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 title="Close"
               >
                 <X className="w-5 h-5" />
@@ -534,32 +850,32 @@ export default function TasksView({ onShowToast }) {
             </div>
 
             {/* 2-Column Responsive Form Body */}
-            <form onSubmit={handleAddTask} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+            <form onSubmit={handleAddTask} className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 
                 {/* Column 1: Task Details & Scope */}
                 <div className="flex flex-col gap-3.5">
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Task Title <span className="text-red-500">*</span></label>
+                    <label className="font-semibold text-slate-700 block mb-1">Task Title <span className="text-rose-500">*</span></label>
                     <input 
                       type="text" 
                       placeholder="e.g. GSTR-3B Return Filing"
                       value={newTask.title}
                       onChange={e => setNewTask({...newTask, title: e.target.value})}
-                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs shadow-2xs font-semibold text-slate-900"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Client Name <span className="text-red-500">*</span></label>
+                    <label className="font-semibold text-slate-700 block mb-1">Client Name <span className="text-rose-500">*</span></label>
                     <select 
                       value={clients.some(c => c.name === newTask.client) ? newTask.client : ''}
                       onChange={e => {
                         if (e.target.value) setNewTask({...newTask, client: e.target.value});
                       }}
-                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer mb-1.5"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs cursor-pointer mb-1.5 shadow-2xs font-semibold text-slate-800"
                     >
                       <option value="">-- Choose from Client Directory ({clients.length} Clients) --</option>
                       {clients.map((c, idx) => (
@@ -571,17 +887,17 @@ export default function TasksView({ onShowToast }) {
                       placeholder="Or enter custom client name..."
                       value={newTask.client}
                       onChange={e => setNewTask({...newTask, client: e.target.value})}
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none focus:border-indigo-500 text-xs font-semibold text-gray-900"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs font-semibold text-slate-900 shadow-2xs"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Assign to Project (Optional)</label>
+                    <label className="font-semibold text-slate-700 block mb-1">Assign to Project (Optional)</label>
                     <select 
                       value={newTask.project}
                       onChange={e => setNewTask({...newTask, project: e.target.value})}
-                      className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs"
                     >
                       <option value="">-- No Project (Standalone) --</option>
                       {projects.map((p) => (
@@ -592,11 +908,11 @@ export default function TasksView({ onShowToast }) {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="font-semibold text-gray-700 block mb-1">Category</label>
+                      <label className="font-semibold text-slate-700 block mb-1">Category</label>
                       <select 
                         value={newTask.category}
                         onChange={e => setNewTask({...newTask, category: e.target.value})}
-                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs cursor-pointer"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs cursor-pointer shadow-2xs"
                       >
                         <option value="GST">GST</option>
                         <option value="Income Tax">Income Tax</option>
@@ -607,12 +923,12 @@ export default function TasksView({ onShowToast }) {
                     </div>
 
                     <div>
-                      <label className="font-semibold text-gray-700 block mb-1">Due Date</label>
+                      <label className="font-semibold text-slate-700 block mb-1">Due Date</label>
                       <input 
                         type="date"
                         value={newTask.dueDate}
                         onChange={e => setNewTask({...newTask, dueDate: e.target.value})}
-                        className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-indigo-500 text-xs"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-indigo-600 text-xs shadow-2xs font-mono"
                       />
                     </div>
                   </div>
@@ -622,7 +938,7 @@ export default function TasksView({ onShowToast }) {
                 <div className="flex flex-col gap-3.5">
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="font-semibold text-gray-700 block">Assign Team Member</label>
+                      <label className="font-semibold text-slate-700 block">Assign Team Member</label>
                       <button
                         type="button"
                         onClick={() => setNewTask({...newTask, assignee: currentUserName})}
@@ -631,7 +947,7 @@ export default function TasksView({ onShowToast }) {
                         ⚡ Assign to Me ({currentUserName.split(' ')[0]})
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 bg-gray-50 border border-gray-300 rounded-xl p-2.5 max-h-48 overflow-y-auto scrollbar-thin">
+                    <div className="grid grid-cols-2 gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-2.5 max-h-48 overflow-y-auto chat-custom-scrollbar shadow-2xs">
                       {teamMembers.length > 0 ? teamMembers.map(member => {
                         const isSelf = member === currentUserName || (currentUserName.includes('Admin') && member.includes('Admin'));
                         return (
@@ -639,34 +955,34 @@ export default function TasksView({ onShowToast }) {
                             key={member}
                             type="button"
                             onClick={() => setNewTask({...newTask, assignee: member})}
-                            className={`flex items-center gap-2 p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                            className={`flex items-center gap-2 p-2 rounded-xl border text-left transition-all cursor-pointer ${
                               newTask.assignee === member 
-                                ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-2xs font-bold' 
-                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-100'
+                                ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-2xs font-bold ring-2 ring-indigo-500/20' 
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
                             }`}
                           >
-                            <User className={`w-3.5 h-3.5 shrink-0 ${newTask.assignee === member ? 'text-indigo-600' : 'text-gray-400'}`} />
+                            <User className={`w-3.5 h-3.5 shrink-0 ${newTask.assignee === member ? 'text-indigo-600' : 'text-slate-400'}`} />
                             <span className="text-[11px] truncate leading-tight">
                               {member} {isSelf && <span className="text-[9px] text-indigo-600 font-bold">(Myself)</span>}
                             </span>
                           </button>
                         );
                       }) : (
-                        <div className="col-span-2 text-center text-xs text-gray-400 py-3">No team members available.</div>
+                        <div className="col-span-2 text-center text-xs text-slate-400 py-3">No team members available.</div>
                       )}
                     </div>
                   </div>
 
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Attachment (Optional)</label>
-                    <div className="border border-dashed border-gray-300 rounded-xl p-3 bg-gray-50 hover:bg-gray-100/80 transition-colors">
+                    <label className="font-semibold text-slate-700 block mb-1">Attachment (Optional)</label>
+                    <div className="border border-dashed border-slate-300 rounded-2xl p-3 bg-slate-50 hover:bg-slate-100 transition-colors shadow-2xs">
                       <input 
                         type="file" 
                         onChange={e => {
                           const file = e.target.files[0];
                           if (file) setNewTask({...newTask, attachment: file.name});
                         }} 
-                        className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" 
+                        className="block w-full text-xs text-slate-500 file:mr-3 file:py-1 file:px-2.5 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" 
                       />
                       {newTask.attachment && (
                         <p className="text-[11px] text-emerald-700 font-bold mt-1">
@@ -680,17 +996,17 @@ export default function TasksView({ onShowToast }) {
               </div>
 
               {/* Bottom Sticky Actions */}
-              <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 mt-3 -mx-6 -mb-6">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit" 
-                  className="px-6 py-2.5 bg-[#0f766e] hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-lg shadow-teal-700/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
                 >
                   Create Task
                 </button>
@@ -704,21 +1020,21 @@ export default function TasksView({ onShowToast }) {
       {isImportModalOpen && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setIsImportModalOpen(false); }}
-          className="modal-overlay-backdrop"
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
         >
-          <div className="modal-content-box max-w-2xl">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
             
             {/* Header */}
-            <div className="bg-gradient-to-r from-teal-900 via-emerald-950 to-teal-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-teal-800">
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-teal-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-600 shadow-2xs">
                   <FolderDown className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base sm:text-lg font-black font-outfit text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                     Import Project Deliverables
                   </h3>
-                  <p className="text-xs text-teal-200 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Select tasks from active projects to import directly into the global Task register
                   </p>
                 </div>
@@ -726,24 +1042,24 @@ export default function TasksView({ onShowToast }) {
 
               <button 
                 onClick={() => setIsImportModalOpen(false)} 
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-teal-200 hover:text-white transition-all cursor-pointer shadow-xs"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-4 text-xs font-semibold scrollbar-thin">
+            <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               
               <div>
-                <label className="text-gray-700 block mb-1">Select Source Project</label>
+                <label className="text-slate-700 block mb-1">Select Source Project</label>
                 <select
                   value={selectedProjectForImport}
                   onChange={e => {
                     setSelectedProjectForImport(e.target.value);
                     setSelectedTasksToImport([]);
                   }}
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl outline-none focus:bg-white focus:border-teal-600 text-xs cursor-pointer"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-teal-600 text-xs cursor-pointer shadow-2xs font-semibold text-slate-800"
                 >
                   {projects.map(p => (
                     <option key={p.id} value={p.id}>
@@ -756,7 +1072,7 @@ export default function TasksView({ onShowToast }) {
               {currentImportProject && (
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-700">
+                    <span className="text-xs font-bold text-slate-700">
                       Available Subtasks in Project:
                     </span>
                     {Array.isArray(currentImportProject.tasks) && currentImportProject.tasks.length > 0 && (
@@ -777,14 +1093,14 @@ export default function TasksView({ onShowToast }) {
                     )}
                   </div>
 
-                  <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100 max-h-56 overflow-y-auto shadow-2xs">
                     {Array.isArray(currentImportProject.tasks) && currentImportProject.tasks.length > 0 ? (
                       currentImportProject.tasks.map(task => {
                         const isChecked = selectedTasksToImport.includes(task.id);
                         return (
                           <label 
                             key={task.id} 
-                            className={`flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50 transition-colors ${isChecked ? 'bg-teal-50/50' : 'bg-white'}`}
+                            className={`flex items-center justify-between p-3 cursor-pointer hover:bg-slate-50 transition-colors ${isChecked ? 'bg-teal-50/50' : 'bg-white'}`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
                               <input 
@@ -795,21 +1111,21 @@ export default function TasksView({ onShowToast }) {
                                     prev.includes(task.id) ? prev.filter(id => id !== task.id) : [...prev, task.id]
                                   );
                                 }}
-                                className="w-4 h-4 rounded text-teal-600 border-gray-300 focus:ring-teal-500 cursor-pointer"
+                                className="w-4 h-4 rounded text-teal-600 border-slate-300 focus:ring-teal-500 cursor-pointer"
                               />
                               <div className="flex flex-col min-w-0">
-                                <span className="text-xs font-bold text-gray-800 truncate">{task.title}</span>
-                                <span className="text-[10px] text-gray-400">Assignee: {task.assignee}</span>
+                                <span className="text-xs font-bold text-slate-800 truncate">{task.title}</span>
+                                <span className="text-[10px] text-slate-400">Assignee: {task.assignee}</span>
                               </div>
                             </div>
 
                             <div className="shrink-0 flex items-center gap-2">
                               {task.importedToTasks ? (
-                                <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-500 text-[9px] font-bold">
+                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[9px] font-bold">
                                   Already Imported
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded bg-teal-100 text-teal-800 text-[9px] font-bold">
+                                <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 text-[9px] font-bold border border-teal-200">
                                   Ready to Import
                                 </span>
                               )}
@@ -818,7 +1134,7 @@ export default function TasksView({ onShowToast }) {
                         );
                       })
                     ) : (
-                      <div className="p-6 text-center text-xs text-gray-400 italic">
+                      <div className="p-6 text-center text-xs text-slate-400 italic">
                         No subtasks found inside this project. Open the project to add checklist tasks first.
                       </div>
                     )}
@@ -829,25 +1145,25 @@ export default function TasksView({ onShowToast }) {
             </div>
 
             {/* Footer */}
-            <div className="p-4 sm:p-5 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-3">
-              <span className="text-xs text-gray-500 font-medium">
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
+              <span className="text-xs text-slate-500 font-medium">
                 {selectedTasksToImport.length} task(s) selected
               </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setIsImportModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={handleExecuteImportFromProject}
                   disabled={selectedTasksToImport.length === 0}
-                  className="px-5 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+                  onClick={handleExecuteImportFromProject}
+                  className="px-5 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-teal-600/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
                 >
-                  <ArrowDownToLine className="w-3.5 h-3.5" /> Import Selected ({selectedTasksToImport.length})
+                  Import {selectedTasksToImport.length} Tasks
                 </button>
               </div>
             </div>
@@ -855,6 +1171,18 @@ export default function TasksView({ onShowToast }) {
           </div>
         </div>
       )}
+
+      {/* TASK HISTORY & COMPLIANCE TIMELINE MODAL */}
+      <TaskHistoryModal
+        task={selectedTaskForHistory}
+        isOpen={isHistoryModalOpen}
+        onClose={() => {
+          setIsHistoryModalOpen(false);
+          setSelectedTaskForHistory(null);
+        }}
+        onUpdateStatus={(id, status) => updateTaskStatus(id, status)}
+        onShowToast={onShowToast}
+      />
 
     </div>
   );

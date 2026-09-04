@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
+import { printHtml } from '../../lib/printHelper';
+import { formatDate } from '../../lib/dateUtils';
 
 export default function ReportsPMSView({ onShowToast }) {
   const [selectedReport, setSelectedReport] = useState(null);
@@ -149,7 +151,7 @@ export default function ReportsPMSView({ onShowToast }) {
           'Paid': Number(f.paid || 0),
           'Pending': Number(f.pending || Math.max(0, Number(f.amount || 0) - Number(f.paid || 0))),
           'Status': f.status || (Number(f.paid || 0) >= Number(f.amount || 0) ? 'Paid' : 'Pending'),
-          'Date': (f.due_date || f.date || f.created_at || '').slice(0, 10)
+          'Date': formatDate(f.due_date || f.date || f.created_at)
         }));
 
       } else if (report.id === 'csv_receipts_payments') {
@@ -166,7 +168,7 @@ export default function ReportsPMSView({ onShowToast }) {
           'Category': r.category || 'Financial Entry',
           'Channel': r.method || 'Bank Transfer',
           'Amount': Number(r.amount || 0),
-          'Date': (r.date || r.created_at || '').slice(0, 10),
+          'Date': formatDate(r.date || r.created_at),
           'Reference': r.reference || r.id
         }));
 
@@ -184,7 +186,7 @@ export default function ReportsPMSView({ onShowToast }) {
           method: p.method || 'Bank Transfer',
           amount: Number(p.amount || 0),
           status: 'Paid',
-          date: (p.created_at || '').slice(0, 10)
+          date: formatDate(p.created_at)
         }));
 
         const merged = [...history, ...dbPay];
@@ -200,7 +202,7 @@ export default function ReportsPMSView({ onShowToast }) {
           'Channel': p.method || 'Bank Transfer',
           'Amount': Number(p.amount || 0),
           'Status': p.status || 'Paid',
-          'Date': String(p.date || '').slice(0, 10)
+          'Date': formatDate(p.date)
         }));
 
       } else if (report.id === 'csv_client_master') {
@@ -220,7 +222,7 @@ export default function ReportsPMSView({ onShowToast }) {
           'Phone': c.phone || 'N/A',
           'Fee Plan': c.fee_amount ? `₹${Number(c.fee_amount).toLocaleString('en-IN')} (${c.billing_cycle || 'Monthly'})` : 'None',
           'Status': c.status || 'Active',
-          'Registered Date': (c.created_at || '').slice(0, 10)
+          'Registered Date': formatDate(c.created_at)
         }));
 
       } else if (report.id === 'csv_tasks_master') {
@@ -236,8 +238,8 @@ export default function ReportsPMSView({ onShowToast }) {
           'Client Name': t.client || 'N/A',
           'Priority': t.priority || 'Medium',
           'Status': t.status || 'To Do',
-          'Due Date': t.due_date || 'N/A',
-          'Created Date': (t.created_at || '').slice(0, 10)
+          'Due Date': formatDate(t.due_date),
+          'Created Date': formatDate(t.created_at)
         }));
 
       } else if (report.id === 'csv_projects') {
@@ -253,7 +255,7 @@ export default function ReportsPMSView({ onShowToast }) {
           'Department': p.department || 'General',
           'Progress': `${p.progress || 0}%`,
           'Status': p.status || 'Active',
-          'Deadline': p.deadline || 'N/A'
+          'Deadline': formatDate(p.deadline)
         }));
 
       } else if (report.id === 'csv_team_roster') {
@@ -279,7 +281,7 @@ export default function ReportsPMSView({ onShowToast }) {
           'Category': i.category || 'General',
           'Votes': i.votes || 0,
           'Status': i.status || 'Open',
-          'Date': (i.created_at || '').slice(0, 10)
+          'Date': formatDate(i.created_at)
         }));
       }
 
@@ -303,7 +305,7 @@ export default function ReportsPMSView({ onShowToast }) {
       let csvRows = [];
       csvRows.push([`TaxPro PMS Intelligence Report - ${selectedReport.title}`]);
       csvRows.push([`Reporting Scope: ${getPeriodLabel()}`]);
-      csvRows.push([`Generated On: ${new Date().toLocaleString('en-IN')}`]);
+      csvRows.push([`Generated On: ${formatDateTime(new Date())}`]);
       csvRows.push([`Total Matching Records: ${previewData.length}`]);
       csvRows.push([]);
 
@@ -313,8 +315,9 @@ export default function ReportsPMSView({ onShowToast }) {
       // Row Data
       previewData.forEach(row => {
         const rowVals = previewColumns.map(col => {
-          const val = row[col] !== undefined && row[col] !== null ? String(row[col]) : '';
-          return `"${val.replace(/"/g, '""')}"`;
+          let val = row[col] !== undefined && row[col] !== null ? String(row[col]) : '';
+          val = val.replace(/"/g, '""');
+          return `"${val}"`;
         });
         csvRows.push(rowVals);
       });
@@ -323,63 +326,81 @@ export default function ReportsPMSView({ onShowToast }) {
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement('a');
       link.setAttribute('href', encodedUri);
-
-      const cleanPeriodName = periodType === 'specific_month' 
-        ? `${MONTH_NAMES.find(m => m.num === filterMonth)?.name}_${filterYear}`
-        : periodType === 'specific_day' ? filterDay : 'Period';
-
-      link.setAttribute('download', `TaxPro_${selectedReport.title.replace(/\s+/g, '_')}_${cleanPeriodName}.csv`);
+      link.setAttribute('download', `TaxPro_${selectedReport.id}_${formatDate(new Date())}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
       logAuditActivity({
-        action: 'EXPORT_CSV',
-        module: 'Reports',
-        details: `Exported CSV Report: "${selectedReport.title}" for ${getPeriodLabel()} (${previewData.length} records)`,
-        metadata: { report: selectedReport.title, period: getPeriodLabel(), count: previewData.length }
+        action: 'DOWNLOAD_REPORT_CSV',
+        module: 'Reports & Analytics',
+        details: `Downloaded CSV for ${selectedReport.title} (${getPeriodLabel()})`,
+        metadata: { reportId: selectedReport.id, rows: previewData.length, period: periodType }
       });
 
-      if (onShowToast) onShowToast(`✓ ${selectedReport.title} CSV for ${getPeriodLabel()} downloaded successfully!`, 'success');
+      if (onShowToast) onShowToast(`✓ Downloaded ${selectedReport.title} CSV!`, 'success');
       setSelectedReport(null);
-    } catch (err) {
-      if (onShowToast) onShowToast('Failed to generate CSV file.', 'error');
+    } catch (e) {
+      console.error('[CSV Download Error]:', e);
+      if (onShowToast) onShowToast('Failed to export CSV report.', 'error');
     }
   };
 
-  // TRIGGER PRINT STATEMENT
-  const handlePrintStatement = () => {
+  // PRINT CURRENT REPORT VIA WINDOW.PRINT()
+  const handleTriggerPrint = () => {
+    if (!selectedReport || previewData.length === 0) {
+      if (onShowToast) onShowToast('No matching records found for this period to print.', 'warning');
+      return;
+    }
+
     logAuditActivity({
-      action: 'PRINT_DOCUMENT',
-      module: 'Reports',
-      details: `Printed Official Intelligence Statement: "${selectedReport.title}" for ${getPeriodLabel()} (${previewData.length} records)`,
-      metadata: { report: selectedReport.title, period: getPeriodLabel(), count: previewData.length }
+      action: 'PRINT_REPORT_DOCUMENT',
+      module: 'Reports & Analytics',
+      details: `Printed formal document for ${selectedReport.title} (${getPeriodLabel()})`,
+      metadata: { reportId: selectedReport.id, rows: previewData.length, period: periodType }
     });
 
-    setIsPrinting(true);
-    document.body.classList.add('printing-reports-ledger');
-    if (onShowToast) onShowToast(`Preparing official printable document for ${selectedReport.title}...`, 'info');
+    // Build printable HTML table
+    const tableHeader = previewColumns.map(col => `<th style="border: 1px solid #cbd5e1; padding: 8px 12px; background: #f8fafc; font-size: 11px; text-transform: uppercase;">${col}</th>`).join('');
+    const tableRows = previewData.map((row, idx) => {
+      const cols = previewColumns.map(col => {
+        let val = row[col] !== undefined && row[col] !== null ? String(row[col]) : '-';
+        return `<td style="border: 1px solid #e2e8f0; padding: 6px 12px; font-size: 11.5px; ${col.includes('Amount') || col === 'Paid' || col === 'Pending' ? 'font-family: monospace; font-weight: bold;' : ''}">${val}</td>`;
+      }).join('');
+      return `<tr style="background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">${cols}</tr>`;
+    }).join('');
 
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
-        document.body.classList.remove('printing-reports-ledger');
-        setIsPrinting(false);
-      }, 1200);
-    }, 400);
+    const bodyHtml = `
+      <div style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <strong style="color: #0f172a; font-size: 13px;">${selectedReport.title}</strong>
+          <div style="color: #64748b; font-size: 11px; margin-top: 2px;">Scope: ${getPeriodLabel()} • Status: ${statusFilter}</div>
+        </div>
+        <div style="text-align: right; font-family: monospace; font-size: 12px; color: #0284c7; font-weight: bold;">
+          Total Records: ${previewData.length}
+        </div>
+      </div>
+      <table style="width: 100%; border-collapse: collapse; text-align: left;">
+        <thead><tr>${tableHeader}</tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    `;
+
+    printHtml(`Report - ${selectedReport.title}`, bodyHtml);
+    if (onShowToast) onShowToast(`🖨️ Generating printable report for "${selectedReport.title}"...`, 'info');
+    setSelectedReport(null);
   };
 
   const getPeriodLabel = () => {
     if (periodType === 'specific_day') {
-      const d = new Date(filterDay);
-      return `Date: ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+      return `Date: ${formatDate(filterDay)}`;
     } else if (periodType === 'specific_month') {
       const mObj = MONTH_NAMES.find(m => m.num === filterMonth);
       return `Month: ${mObj?.name || filterMonth} ${filterYear}`;
     } else if (periodType === 'specific_year') {
       return `Financial Year: ${filterYear}`;
     } else if (periodType === 'custom_range') {
-      return `Date Range: ${fromDate} to ${toDate}`;
+      return `Date Range: ${formatDate(fromDate)} to ${formatDate(toDate)}`;
     }
     return 'All-Time Master Database';
   };
@@ -451,34 +472,34 @@ export default function ReportsPMSView({ onShowToast }) {
       {selectedReport && (
         <div 
           onClick={(e) => { if (e.target === e.currentTarget) setSelectedReport(null); }}
-          className="modal-overlay-backdrop print-hidden"
-          style={{ zIndex: 999 }}
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto print-hidden"
         >
-          <div className="modal-content-box max-w-2xl">
-            <div className="bg-gradient-to-r from-gray-900 via-indigo-950 to-gray-900 text-white p-5 flex items-center justify-between border-b border-gray-800">
+          <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth">
+            {/* Header */}
+            <div className="sticky top-0 bg-white/95 backdrop-blur-md z-20 px-6 py-4.5 border-b border-slate-100 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-xs">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
                   {modalAction === 'csv' ? <Download className="w-5 h-5" /> : <Printer className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h3 className="text-base font-black font-outfit text-white">
+                  <h3 className="text-base sm:text-lg font-black font-outfit text-slate-900 tracking-tight">
                     {modalAction === 'csv' ? 'Export CSV' : 'Print Statement'}: {selectedReport.title}
                   </h3>
-                  <p className="text-xs text-gray-300">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Select specific day, month, year or date range to generate
                   </p>
                 </div>
               </div>
-              <button onClick={() => setSelectedReport(null)} className="text-gray-400 hover:text-white p-1 cursor-pointer">
+              <button onClick={() => setSelectedReport(null)} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-5 flex flex-col gap-4 text-xs font-semibold">
+            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               
               {/* PERIOD SELECTION MODE */}
               <div>
-                <label className="text-gray-700 block mb-1">Select Reporting Period</label>
+                <label className="text-slate-700 block mb-1.5">Select Reporting Period</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
@@ -486,8 +507,8 @@ export default function ReportsPMSView({ onShowToast }) {
                       setPeriodType('specific_month');
                       fetchReportData(selectedReport, 'specific_month', filterDay, filterMonth, filterYear, fromDate, toDate, statusFilter);
                     }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
-                      periodType === 'specific_month' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-gray-50 text-gray-600 border-gray-200'
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
+                      periodType === 'specific_month' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     🗓️ Specific Month
@@ -499,8 +520,8 @@ export default function ReportsPMSView({ onShowToast }) {
                       setPeriodType('specific_day');
                       fetchReportData(selectedReport, 'specific_day', filterDay, filterMonth, filterYear, fromDate, toDate, statusFilter);
                     }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
-                      periodType === 'specific_day' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-gray-50 text-gray-600 border-gray-200'
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
+                      periodType === 'specific_day' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     📅 Specific Day
@@ -512,8 +533,8 @@ export default function ReportsPMSView({ onShowToast }) {
                       setPeriodType('specific_year');
                       fetchReportData(selectedReport, 'specific_year', filterDay, filterMonth, filterYear, fromDate, toDate, statusFilter);
                     }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
-                      periodType === 'specific_year' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-gray-50 text-gray-600 border-gray-200'
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
+                      periodType === 'specific_year' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     📆 Whole Year
@@ -525,8 +546,8 @@ export default function ReportsPMSView({ onShowToast }) {
                       setPeriodType('custom_range');
                       fetchReportData(selectedReport, 'custom_range', filterDay, filterMonth, filterYear, fromDate, toDate, statusFilter);
                     }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
-                      periodType === 'custom_range' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-gray-50 text-gray-600 border-gray-200'
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
+                      periodType === 'custom_range' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     ⏱️ Custom Range
@@ -538,8 +559,8 @@ export default function ReportsPMSView({ onShowToast }) {
                       setPeriodType('all_time');
                       fetchReportData(selectedReport, 'all_time', filterDay, filterMonth, filterYear, fromDate, toDate, statusFilter);
                     }}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center col-span-2 sm:col-span-2 ${
-                      periodType === 'all_time' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-gray-50 text-gray-600 border-gray-200'
+                    className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center col-span-2 sm:col-span-2 ${
+                      periodType === 'all_time' ? 'bg-indigo-50 text-indigo-700 border-indigo-300 shadow-2xs' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     🌐 All-Time Master Database
@@ -549,16 +570,16 @@ export default function ReportsPMSView({ onShowToast }) {
 
               {/* SPECIFIC MONTH PICKER */}
               {periodType === 'specific_month' && (
-                <div className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-xl grid grid-cols-2 gap-2">
+                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl grid grid-cols-2 gap-3 shadow-2xs">
                   <div>
-                    <label className="text-gray-700 block mb-1">Select Month</label>
+                    <label className="text-slate-700 block mb-1">Select Month</label>
                     <select
                       value={filterMonth}
                       onChange={e => {
                         setFilterMonth(e.target.value);
                         fetchReportData(selectedReport, 'specific_month', filterDay, e.target.value, filterYear, fromDate, toDate, statusFilter);
                       }}
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none font-bold text-xs cursor-pointer"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-bold text-xs cursor-pointer shadow-2xs"
                     >
                       {MONTH_NAMES.map(m => (
                         <option key={m.num} value={m.num}>{m.name}</option>
@@ -567,14 +588,14 @@ export default function ReportsPMSView({ onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-gray-700 block mb-1">Select Year</label>
+                    <label className="text-slate-700 block mb-1">Select Year</label>
                     <select
                       value={filterYear}
                       onChange={e => {
                         setFilterYear(e.target.value);
                         fetchReportData(selectedReport, 'specific_month', filterDay, filterMonth, e.target.value, fromDate, toDate, statusFilter);
                       }}
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none font-bold text-xs cursor-pointer"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-bold text-xs cursor-pointer shadow-2xs"
                     >
                       <option value="2024">2024</option>
                       <option value="2025">2025</option>
@@ -588,8 +609,8 @@ export default function ReportsPMSView({ onShowToast }) {
 
               {/* SPECIFIC DAY PICKER */}
               {periodType === 'specific_day' && (
-                <div className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-xl">
-                  <label className="text-gray-700 block mb-1">Select Exact Date</label>
+                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl shadow-2xs">
+                  <label className="text-slate-700 block mb-1">Select Exact Date</label>
                   <input 
                     type="date"
                     value={filterDay}
@@ -597,22 +618,22 @@ export default function ReportsPMSView({ onShowToast }) {
                       setFilterDay(e.target.value);
                       fetchReportData(selectedReport, 'specific_day', e.target.value, filterMonth, filterYear, fromDate, toDate, statusFilter);
                     }}
-                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none font-bold text-xs"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-bold text-xs shadow-2xs"
                   />
                 </div>
               )}
 
               {/* WHOLE YEAR PICKER */}
               {periodType === 'specific_year' && (
-                <div className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-xl">
-                  <label className="text-gray-700 block mb-1">Select Financial Year</label>
+                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl shadow-2xs">
+                  <label className="text-slate-700 block mb-1">Select Financial Year</label>
                   <select
                     value={filterYear}
                     onChange={e => {
                       setFilterYear(e.target.value);
                       fetchReportData(selectedReport, 'specific_year', filterDay, filterMonth, e.target.value, fromDate, toDate, statusFilter);
                     }}
-                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none font-bold text-xs cursor-pointer"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-bold text-xs cursor-pointer shadow-2xs"
                   >
                     <option value="2024">2024</option>
                     <option value="2025">2025</option>
@@ -624,9 +645,9 @@ export default function ReportsPMSView({ onShowToast }) {
 
               {/* CUSTOM DATE RANGE */}
               {periodType === 'custom_range' && (
-                <div className="bg-indigo-50/40 border border-indigo-100 p-3 rounded-xl grid grid-cols-2 gap-2">
+                <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl grid grid-cols-2 gap-3 shadow-2xs">
                   <div>
-                    <label className="text-gray-700 block mb-1">From Date</label>
+                    <label className="text-slate-700 block mb-1">From Date</label>
                     <input 
                       type="date"
                       value={fromDate}
@@ -634,11 +655,11 @@ export default function ReportsPMSView({ onShowToast }) {
                         setFromDate(e.target.value);
                         fetchReportData(selectedReport, 'custom_range', filterDay, filterMonth, filterYear, e.target.value, toDate, statusFilter);
                       }}
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none text-xs font-bold"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none text-xs font-bold shadow-2xs"
                     />
                   </div>
                   <div>
-                    <label className="text-gray-700 block mb-1">To Date</label>
+                    <label className="text-slate-700 block mb-1">To Date</label>
                     <input 
                       type="date"
                       value={toDate}
@@ -646,32 +667,32 @@ export default function ReportsPMSView({ onShowToast }) {
                         setToDate(e.target.value);
                         fetchReportData(selectedReport, 'custom_range', filterDay, filterMonth, filterYear, fromDate, e.target.value, statusFilter);
                       }}
-                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl outline-none text-xs font-bold"
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none text-xs font-bold shadow-2xs"
                     />
                   </div>
                 </div>
               )}
 
               {/* MATCHING SUMMARY CARD */}
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5 flex items-center justify-between text-xs font-bold">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between text-xs font-bold shadow-2xs">
                 <div>
-                  <span className="text-gray-500 block text-[10px] uppercase">Active Scope</span>
-                  <span className="text-indigo-900 font-extrabold">{getPeriodLabel()}</span>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Active Scope</span>
+                  <span className="text-slate-900 font-extrabold">{getPeriodLabel()}</span>
                 </div>
                 <div className="text-right">
-                  <span className="text-gray-500 block text-[10px] uppercase">Matching Records</span>
-                  <span className="font-mono font-black text-emerald-700 text-sm">
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Matching Records</span>
+                  <span className="font-mono font-black text-emerald-600 text-sm">
                     {isProcessing ? 'Counting...' : `${previewData.length} Entries`}
                   </span>
                 </div>
               </div>
 
               {/* ACTION BUTTONS */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
+              <div className="sticky bottom-0 bg-white/95 backdrop-blur-md p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0 -mx-6 -mb-6 mt-3">
                 <button
                   type="button"
                   onClick={() => setSelectedReport(null)}
-                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -681,7 +702,7 @@ export default function ReportsPMSView({ onShowToast }) {
                     type="button"
                     onClick={handleDownloadCSV}
                     disabled={previewData.length === 0 || isProcessing}
-                    className="px-5 py-2 bg-[#5b52e0] hover:bg-[#4c44cf] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
                   >
                     <Download className="w-4 h-4" /> Download CSV ({previewData.length})
                   </button>
@@ -690,7 +711,7 @@ export default function ReportsPMSView({ onShowToast }) {
                     type="button"
                     onClick={handlePrintStatement}
                     disabled={previewData.length === 0 || isProcessing}
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
                   >
                     <Printer className="w-4 h-4" /> Print Document ({previewData.length})
                   </button>
@@ -722,7 +743,7 @@ export default function ReportsPMSView({ onShowToast }) {
                   {getPeriodLabel()}
                 </div>
                 <div className="text-[10px] font-mono text-gray-600 mt-0.5">
-                  Generated: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  Generated: {formatDate(new Date())}
                 </div>
                 <div className="text-[10px] font-bold text-gray-700 uppercase mt-0.5">
                   Total Entries: {previewData.length}
