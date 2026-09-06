@@ -55,8 +55,6 @@ import {
   ExternalLink,
   Briefcase,
   History,
-  Pin,
-  PinOff,
   GripVertical,
   ArrowUp,
   ArrowDown,
@@ -192,28 +190,10 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
   const [isFirmConfigured, setIsFirmConfigured] = useState(() => localStorage.getItem('taxpro_firm_configured') === 'true');
   const [isFirmModalOpen, setIsFirmModalOpen] = useState(false);
 
-  // Taskbar / Sidebar Fixed (Pinned) State
-  const [isTaskbarPinned, setIsTaskbarPinned] = useState(() => localStorage.getItem('taxpro_taskbar_pinned') === 'true');
-
+  // Clean up any legacy pinned state
   useEffect(() => {
-    const handlePinnedChange = (e) => {
-      if (e && e.detail !== undefined) {
-        setIsTaskbarPinned(Boolean(e.detail));
-      } else {
-        setIsTaskbarPinned(localStorage.getItem('taxpro_taskbar_pinned') === 'true');
-      }
-    };
-    window.addEventListener('taxpro_taskbar_pinned_changed', handlePinnedChange);
-    return () => window.removeEventListener('taxpro_taskbar_pinned_changed', handlePinnedChange);
+    try { localStorage.removeItem('taxpro_taskbar_pinned'); } catch (e) { }
   }, []);
-
-  const toggleTaskbarPin = () => {
-    const next = !isTaskbarPinned;
-    setIsTaskbarPinned(next);
-    localStorage.setItem('taxpro_taskbar_pinned', String(next));
-    window.dispatchEvent(new CustomEvent('taxpro_taskbar_pinned_changed', { detail: next }));
-    if (onShowToast) onShowToast(next ? '📌 Taskbar fixed (locked in expanded view)' : 'Taskbar set to auto-collapse on hover', 'info');
-  };
 
   // Custom Sidebar / Taskbar Ordering
   const [customSidebarOrder, setCustomSidebarOrder] = useState(() => {
@@ -245,7 +225,6 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
   useEffect(() => {
     const handleOpenEdit = () => {
       setIsTaskbarEditMode(true);
-      setIsTaskbarPinned(true);
     };
     window.addEventListener('taxpro_open_taskbar_edit_mode', handleOpenEdit);
     return () => window.removeEventListener('taxpro_open_taskbar_edit_mode', handleOpenEdit);
@@ -1600,41 +1579,11 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
 
       <div className="flex flex-1 relative overflow-hidden">
 
-        {/* LEFT NAVY SIDEBAR (Hover or Pinned or Edit Mode to expand) */}
-        <aside className={`group ${isTaskbarPinned || isTaskbarEditMode ? 'w-64' : 'w-16 hover:w-64'} bg-[#181c32] text-gray-300 flex flex-col py-4 px-3 flex-shrink-0 h-full overflow-y-auto overflow-x-hidden transition-all duration-300 z-30 relative custom-scrollbar-hide print:hidden`}>
-          {/* Header with Pin/Unpin button and Edit Mode toggle */}
-          <div className="flex items-center justify-between px-2 pb-2.5 mb-2 border-b border-white/10 w-full min-w-[36px]">
-            <span className={`text-[10px] font-black uppercase tracking-widest text-indigo-300 font-mono transition-opacity ${isTaskbarPinned || isTaskbarEditMode ? 'block' : 'hidden group-hover:block'}`}>
-              {isTaskbarEditMode ? '🛠️ Edit Mode' : (isTaskbarPinned ? '📌 Fixed Taskbar' : 'Navigation')}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !isTaskbarEditMode;
-                  setIsTaskbarEditMode(next);
-                  if (next) setIsTaskbarPinned(true);
-                  if (onShowToast) onShowToast(next ? '🛠️ Taskbar Edit Mode opened! Double-tap or hold-click any button.' : 'Taskbar layout saved', 'info');
-                }}
-                title={isTaskbarEditMode ? 'Exit Taskbar Edit Mode' : 'Edit Taskbar Order'}
-                className={`p-1.5 rounded-lg transition-all cursor-pointer ${isTaskbarEditMode ? 'bg-amber-500/30 text-amber-300 border border-amber-400 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
-              >
-                <Edit3 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={toggleTaskbarPin}
-                title={isTaskbarPinned ? 'Unpin Taskbar (Auto-collapse on hover)' : 'Fix / Pin Taskbar (Keep permanently expanded)'}
-                className={`p-1.5 rounded-lg transition-all cursor-pointer ${isTaskbarPinned ? 'bg-indigo-600/50 text-white border border-indigo-400 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
-              >
-                {isTaskbarPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-          </div>
-
-          {/* EDIT MODE TOP PROMINENT BANNER */}
+        {/* LEFT NAVY SIDEBAR (Auto-expands on hover; in Edit Mode: stays expanded) */}
+        <aside className={`group ${isTaskbarEditMode ? 'w-64' : 'w-16 hover:w-64'} bg-[#181c32] text-gray-300 flex flex-col py-4 px-3 flex-shrink-0 h-full overflow-y-auto overflow-x-hidden transition-all duration-300 z-30 relative custom-scrollbar-hide print:hidden`}>
+          {/* EDIT MODE TOP PROMINENT BANNER (Only visible when Edit Mode is active from Settings) */}
           {isTaskbarEditMode && (
-            <div className="bg-gradient-to-r from-indigo-950 to-purple-950 border border-indigo-500/40 rounded-2xl p-2.5 mb-3 text-left shadow-lg animate-fade-in w-56">
+            <div className="bg-gradient-to-r from-indigo-950 to-purple-950 border border-indigo-500/40 rounded-2xl p-2.5 mb-3 text-left shadow-lg animate-fade-in w-56 shrink-0">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[11px] font-black text-indigo-300 font-mono flex items-center gap-1.5">
                   <Edit3 className="w-3.5 h-3.5 text-indigo-400" />
@@ -1643,7 +1592,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                 <button
                   type="button"
                   onClick={() => setIsTaskbarEditMode(false)}
-                  className="px-2.5 py-0.5 text-[10px] font-bold rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer shadow-xs"
+                  className="px-2.5 py-0.5 text-[10px] font-bold rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer shadow-xs font-sans"
                 >
                   Done ✓
                 </button>
@@ -1723,7 +1672,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                     )}
                     <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-gray-400'}`} />
                     <span className={`${
-                      isTaskbarPinned || isTaskbarEditMode
+                      isTaskbarEditMode
                         ? 'opacity-100 translate-x-0 visible'
                         : 'opacity-0 translate-x-4 invisible group-hover:visible group-hover:translate-x-0 group-hover:opacity-100'
                     } transition-all duration-300 whitespace-nowrap truncate`}>
@@ -1763,9 +1712,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                     </div>
 
                     {item.hasSub && !isTaskbarEditMode && (
-                      <ChevronRight className={`w-3.5 h-3.5 text-gray-500 transition-opacity whitespace-nowrap ${
-                        isTaskbarPinned ? 'block opacity-100' : 'hidden group-hover:block opacity-0 group-hover:opacity-100'
-                      }`} />
+                      <ChevronRight className="w-3.5 h-3.5 text-gray-500 transition-opacity whitespace-nowrap hidden group-hover:block opacity-0 group-hover:opacity-100" />
                     )}
                   </div>
                 </div>
