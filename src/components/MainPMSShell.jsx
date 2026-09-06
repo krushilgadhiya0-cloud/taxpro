@@ -55,7 +55,12 @@ import {
   Briefcase,
   History,
   Pin,
-  PinOff
+  PinOff,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpToLine,
+  ArrowDownToLine
 } from 'lucide-react';
 
 import DashboardView from './DashboardView';
@@ -229,6 +234,12 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
     window.addEventListener('taxpro_sidebar_order_changed', handleOrderChange);
     return () => window.removeEventListener('taxpro_sidebar_order_changed', handleOrderChange);
   }, []);
+
+  // Direct Taskbar Reorder States (Hold-Click / Drag & Drop and Double-Click)
+  const [draggedIdx, setDraggedIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const [doubleClickModalItem, setDoubleClickModalItem] = useState(null);
+
   const [isDirectFirmSetup, setIsDirectFirmSetup] = useState(false);
 
   useEffect(() => {
@@ -1152,6 +1163,53 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
     });
   }
 
+  // Interactive Taskbar Reorder Handlers (Hold-Click & Double-Click)
+  const handleReorderSidebar = (sourceIndex, targetIndex) => {
+    if (sourceIndex === targetIndex || sourceIndex < 0 || targetIndex < 0) return;
+    const currentOrder = sidebarItems.map(item => item.name);
+    const [moved] = currentOrder.splice(sourceIndex, 1);
+    currentOrder.splice(targetIndex, 0, moved);
+
+    setCustomSidebarOrder(currentOrder);
+    localStorage.setItem('taxpro_sidebar_order', JSON.stringify(currentOrder));
+    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: currentOrder }));
+    if (onShowToast) onShowToast(`Taskbar reordered: "${moved}" moved!`, 'success');
+  };
+
+  const handleShiftItem = (itemName, direction) => {
+    const currentOrder = sidebarItems.map(item => item.name);
+    const idx = currentOrder.indexOf(itemName);
+    if (idx === -1) return;
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= currentOrder.length) return;
+    handleReorderSidebar(idx, targetIdx);
+    setDoubleClickModalItem(prev => (prev ? { ...prev, index: targetIdx } : null));
+  };
+
+  const handleMoveToTop = (itemName) => {
+    const currentOrder = sidebarItems.map(item => item.name);
+    const idx = currentOrder.indexOf(itemName);
+    if (idx <= 0) return;
+    handleReorderSidebar(idx, 0);
+    setDoubleClickModalItem(prev => (prev ? { ...prev, index: 0 } : null));
+  };
+
+  const handleMoveToBottom = (itemName) => {
+    const currentOrder = sidebarItems.map(item => item.name);
+    const idx = currentOrder.indexOf(itemName);
+    if (idx === -1 || idx === currentOrder.length - 1) return;
+    handleReorderSidebar(idx, currentOrder.length - 1);
+    setDoubleClickModalItem(prev => (prev ? { ...prev, index: currentOrder.length - 1 } : null));
+  };
+
+  const handleResetSidebarToDefault = () => {
+    localStorage.removeItem('taxpro_sidebar_order');
+    setCustomSidebarOrder(null);
+    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: null }));
+    if (onShowToast) onShowToast('Taskbar order reset to default', 'info');
+    setDoubleClickModalItem(null);
+  };
+
   const activeModuleKey = moduleKeyMap[activeItem] || activeItem.toLowerCase().replace(/[\s&]+/g, '_');
   const isCurrentModuleAllowed = isAdmin || userPermissions[activeModuleKey] !== false;
 
@@ -1489,26 +1547,62 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
           </div>
 
           <div className="flex flex-col gap-1 w-56">
-            {sidebarItems.map((item) => {
+            {sidebarItems.map((item, index) => {
               const Icon = item.icon;
               const isActive = activeItem === item.name;
+              const isBeingDragged = draggedIdx === index;
+              const isDragTarget = dragOverIdx === index && draggedIdx !== index;
+
               return (
                 <button
                   key={item.name}
+                  draggable
+                  onDragStart={(e) => {
+                    setDraggedIdx(index);
+                    e.dataTransfer.effectAllowed = 'move';
+                    try { e.dataTransfer.setData('text/plain', String(index)); } catch (err) {}
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (dragOverIdx !== index) setDragOverIdx(index);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (draggedIdx !== null && draggedIdx !== index) {
+                      handleReorderSidebar(draggedIdx, index);
+                    }
+                    setDraggedIdx(null);
+                    setDragOverIdx(null);
+                  }}
+                  onDragEnd={() => {
+                    setDraggedIdx(null);
+                    setDragOverIdx(null);
+                  }}
                   onClick={() => navigateTo(item.name)}
-                  className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${isActive
+                  onDoubleClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDoubleClickModalItem({ name: item.name, label: item.label || item.name, index });
+                  }}
+                  className={`group/item flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-grab active:cursor-grabbing select-none relative ${
+                    isActive
                       ? 'bg-[#5b52e0] text-white shadow-lg shadow-[#5b52e0]/30 font-bold'
                       : 'text-gray-400 hover:text-white hover:bg-white/5'
-                    }`}
-                  title={item.name}
+                  } ${isBeingDragged ? 'opacity-35 scale-95 border-2 border-dashed border-indigo-400' : ''} ${
+                    isDragTarget ? 'border-t-2 border-indigo-400 bg-white/10' : ''
+                  }`}
+                  title={`${item.label || item.name} (Hold-click to drag & drop, Double-click to re-arrange)`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {/* Subtle grip handle shown on hover */}
+                    <GripVertical className="w-3.5 h-3.5 text-gray-500 group-hover/item:text-indigo-300 opacity-0 group-hover/item:opacity-100 transition-opacity -ml-1 flex-shrink-0" />
                     <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-gray-400'}`} />
                     <span className={`${
                       isTaskbarPinned
                         ? 'opacity-100 translate-x-0 visible'
                         : 'opacity-0 translate-x-4 invisible group-hover:visible group-hover:translate-x-0 group-hover:opacity-100'
-                    } transition-all duration-300 whitespace-nowrap`}>
+                    } transition-all duration-300 whitespace-nowrap truncate`}>
                       {item.label || item.name}
                     </span>
                   </div>
@@ -2592,6 +2686,121 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
         isDirectSetup={isDirectFirmSetup}
         userRole={userRole}
       />
+
+      {/* TASKBAR DIRECT REARRANGE MODAL (TRIGGERED BY DOUBLE-CLICKING ANY TASKBAR ITEM) */}
+      {doubleClickModalItem && (
+        <div 
+          onClick={() => setDoubleClickModalItem(null)}
+          className="fixed inset-0 z-[99999] bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-[#121727] border border-indigo-500/40 rounded-3xl p-6 shadow-2xl text-left text-white animate-modal-smooth"
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600/30 border border-indigo-500/50 flex items-center justify-center text-indigo-400 font-bold">
+                  <GripVertical className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold font-outfit text-white">
+                    Rearrange Taskbar
+                  </h3>
+                  <p className="text-[11px] text-gray-400">
+                    Slot #{doubleClickModalItem.index + 1} of {sidebarItems.length}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDoubleClickModalItem(null)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Target Item Name Banner */}
+            <div className="p-3 rounded-2xl bg-indigo-950/60 border border-indigo-500/30 flex items-center justify-between mb-4 shadow-inner">
+              <span className="text-xs font-black text-indigo-300 font-mono tracking-wide">
+                {doubleClickModalItem.label || doubleClickModalItem.name}
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/25 text-[10px] font-bold text-indigo-300 border border-indigo-500/30">
+                Position #{doubleClickModalItem.index + 1}
+              </span>
+            </div>
+
+            {/* Quick Reorder Action Buttons */}
+            <div className="grid grid-cols-2 gap-2.5 mb-4">
+              <button
+                type="button"
+                onClick={() => handleShiftItem(doubleClickModalItem.name, -1)}
+                disabled={doubleClickModalItem.index === 0}
+                className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-indigo-600 disabled:opacity-35 disabled:hover:bg-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:cursor-not-allowed border border-white/10"
+              >
+                <ArrowUp className="w-3.5 h-3.5" />
+                <span>Move Up</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleShiftItem(doubleClickModalItem.name, 1)}
+                disabled={doubleClickModalItem.index === sidebarItems.length - 1}
+                className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-indigo-600 disabled:opacity-35 disabled:hover:bg-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:cursor-not-allowed border border-white/10"
+              >
+                <ArrowDown className="w-3.5 h-3.5" />
+                <span>Move Down</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleMoveToTop(doubleClickModalItem.name)}
+                disabled={doubleClickModalItem.index === 0}
+                className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-cyan-600 disabled:opacity-35 disabled:hover:bg-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:cursor-not-allowed border border-white/10"
+              >
+                <ArrowUpToLine className="w-3.5 h-3.5" />
+                <span>Move to Top</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleMoveToBottom(doubleClickModalItem.name)}
+                disabled={doubleClickModalItem.index === sidebarItems.length - 1}
+                className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-cyan-600 disabled:opacity-35 disabled:hover:bg-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:cursor-not-allowed border border-white/10"
+              >
+                <ArrowDownToLine className="w-3.5 h-3.5" />
+                <span>Move to Bottom</span>
+              </button>
+            </div>
+
+            {/* Gesture Tip Callout */}
+            <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-[11px] text-gray-400 space-y-1 mb-4">
+              <div className="text-gray-300 font-bold flex items-center gap-1">
+                <span>💡 Hold-Click Drag & Drop:</span>
+              </div>
+              <p>You can also <strong>click & hold</strong> any taskbar item directly and drag it up or down to swap slots instantly.</p>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={handleResetSidebarToDefault}
+                className="text-[11px] text-gray-400 hover:text-red-300 transition-colors cursor-pointer"
+              >
+                Reset Default Order
+              </button>
+              <button
+                type="button"
+                onClick={() => setDoubleClickModalItem(null)}
+                className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
