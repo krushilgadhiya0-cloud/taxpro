@@ -942,44 +942,64 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
             key={animKey}
             className="w-full max-w-[390px] sm:max-w-[410px] aspect-square flex flex-col justify-between bg-gradient-to-b from-[#0e1424] via-[#090d16] to-[#06080f] border border-cyan-500/30 rounded-3xl p-5 sm:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden text-white group select-none"
           >
-            {/* Scoped CSS animations for draw-from-start and dynamic arrow flow pulse */}
+            {/* Scoped CSS animations for slow moving line, expanding area fill, and repeating arrow flow */}
             <style>{`
-              @keyframes traceLineFromStart {
+              @keyframes slowTraceAndRepeat {
                 0% {
-                  stroke-dashoffset: 1200;
+                  stroke-dashoffset: 1000;
+                  opacity: 0.2;
                 }
-                100% {
+                5% {
+                  opacity: 1;
+                }
+                76% {
+                  stroke-dashoffset: 0;
+                  opacity: 1;
+                }
+                90% {
+                  stroke-dashoffset: 0;
+                  opacity: 1;
+                }
+                96% {
+                  opacity: 0;
                   stroke-dashoffset: 0;
                 }
+                100% {
+                  stroke-dashoffset: 1000;
+                  opacity: 0;
+                }
               }
-              @keyframes expandAreaFill {
+              @keyframes slowAreaAndRepeat {
                 0% {
                   opacity: 0;
                   clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
                 }
-                100% {
+                5% {
+                  opacity: 0.75;
+                }
+                76% {
                   opacity: 1;
                   clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
                 }
-              }
-              @keyframes arrowPopAppear {
-                0%, 70% {
+                90% {
+                  opacity: 1;
+                  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+                }
+                96% {
                   opacity: 0;
-                  transform: scale(0.2);
+                  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
                 }
                 100% {
-                  opacity: 1;
-                  transform: scale(1);
+                  opacity: 0;
+                  clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
                 }
               }
-              @keyframes arrowFlowPulse {
+              @keyframes arrowFlowHeadPulse {
                 0%, 100% {
-                  transform: translateX(0px) scale(1);
-                  opacity: 0.95;
+                  transform: scale(1);
                 }
                 50% {
-                  transform: translateX(5px) scale(1.2);
-                  opacity: 1;
+                  transform: scale(1.18);
                 }
               }
             `}</style>
@@ -1112,34 +1132,45 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                   strokeOpacity="0.8"
                 />
 
-                {/* Area Under Curve Fill (Expands from Start) */}
+                {/* 1. Faint Base Track Curve (Always Visible Behind Flow) */}
+                <path 
+                  d={graphDetails.linePathD} 
+                  fill="none" 
+                  stroke={graphDetails.themeColor} 
+                  strokeWidth="1.6" 
+                  strokeOpacity="0.22" 
+                  strokeDasharray="4 4" 
+                />
+
+                {/* 2. Area Under Curve Fill (Expands and Repeats with Line) */}
                 {graphDetails.areaPathD && (
                   <path 
                     d={graphDetails.areaPathD} 
                     fill="url(#neonAreaGradient)" 
-                    style={{ animation: 'expandAreaFill 1.1s cubic-bezier(0.2, 0.9, 0.4, 1) forwards' }}
+                    style={{ animation: 'slowAreaAndRepeat 4s cubic-bezier(0.35, 0, 0.25, 1) infinite' }}
                   />
                 )}
 
-                {/* Neon Glowing Spline Line (Draws From Start) */}
+                {/* 3. Neon Glowing Spline Line (Moves Slowly and Repeats) */}
                 {graphDetails.linePathD && (
                   <path 
                     d={graphDetails.linePathD} 
                     fill="none" 
                     stroke={graphDetails.themeColor} 
-                    strokeWidth="2.8" 
+                    strokeWidth="3" 
                     strokeLinecap="round" 
                     strokeLinejoin="round" 
                     filter="url(#neonLineGlow)" 
+                    pathLength="1000"
                     style={{
-                      strokeDasharray: 1200,
-                      strokeDashoffset: 1200,
-                      animation: 'traceLineFromStart 1.1s cubic-bezier(0.2, 0.9, 0.4, 1) forwards'
+                      strokeDasharray: 1000,
+                      strokeDashoffset: 1000,
+                      animation: 'slowTraceAndRepeat 4s cubic-bezier(0.35, 0, 0.25, 1) infinite'
                     }}
                   />
                 )}
 
-                {/* Interactive Data Points */}
+                {/* 4. Interactive Data Points */}
                 {graphDetails.plotPoints.map((pt, idx) => (
                   <g key={idx} onMouseEnter={() => setHoverPoint(pt)} className="cursor-pointer">
                     <circle
@@ -1147,53 +1178,64 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                       cy={pt.y}
                       r={idx === graphDetails.plotPoints.length - 1 ? 3.5 : 2}
                       fill={graphDetails.themeColor}
+                      fillOpacity="0.6"
                       className="transition-all hover:scale-150"
                     />
                   </g>
                 ))}
 
-                {/* ARROW FLOW AT THE LAST (Glowing Dynamic Flow Arrow Pointing Along Direction) */}
-                {graphDetails.lastPt && (
-                  <g 
-                    transform={`translate(${graphDetails.lastPt.x}, ${graphDetails.lastPt.y})`}
-                    style={{ animation: 'arrowPopAppear 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
-                  >
+                {/* 5. ARROW FLOW CONTINUOUSLY TRAVELING WITH LINE & REPEATING */}
+                <g>
+                  <g style={{ animation: 'arrowFlowHeadPulse 1.2s ease-in-out infinite' }}>
                     {/* Animated Pulsing Outer Halo Ping */}
                     <circle
                       r="12"
                       fill={graphDetails.themeColor}
-                      fillOpacity="0.28"
+                      fillOpacity="0.32"
                       className="animate-ping"
                     />
                     
-                    {/* Rotated Arrow Flow Head along curve slope */}
-                    <g transform={`rotate(${graphDetails.arrowAngle || 0})`}>
-                      {/* Flowing Arrow with continuous dynamic forward motion */}
-                      <g style={{ animation: 'arrowFlowPulse 1.5s ease-in-out infinite' }}>
-                        {/* Glow halo behind arrow head */}
-                        <circle cx="2" cy="0" r="8" fill={graphDetails.themeColor} fillOpacity="0.45" filter="url(#neonLineGlow)" />
-                        
-                        {/* Sharp forward directional arrow head */}
-                        <path
-                          d="M -7 -6 L 8 0 L -7 6 L -3 0 Z"
-                          fill={graphDetails.themeColor}
-                          stroke="#ffffff"
-                          strokeWidth="0.8"
-                          filter="url(#neonLineGlow)"
-                        />
+                    {/* Glow halo behind arrow head */}
+                    <circle cx="2" cy="0" r="8" fill={graphDetails.themeColor} fillOpacity="0.45" filter="url(#neonLineGlow)" />
+                    
+                    {/* Sharp forward directional arrow head along path direction */}
+                    <path
+                      d="M -7 -6 L 8 0 L -7 6 L -3 0 Z"
+                      fill={graphDetails.themeColor}
+                      stroke="#ffffff"
+                      strokeWidth="0.8"
+                      filter="url(#neonLineGlow)"
+                    />
 
-                        {/* Arrow core highlight */}
-                        <polygon
-                          points="-2,-2 5,0 -2,2 0,0"
-                          fill="#ffffff"
-                        />
-                      </g>
-                    </g>
+                    {/* Arrow core highlight */}
+                    <polygon
+                      points="-2,-2 5,0 -2,2 0,0"
+                      fill="#ffffff"
+                    />
 
-                    {/* Bright Core Center Pivot */}
-                    <circle r="3" fill="#ffffff" stroke={graphDetails.themeColor} strokeWidth="1.5" />
+                    {/* Bright Center Core Pivot */}
+                    <circle r="2.5" fill="#ffffff" />
                   </g>
-                )}
+
+                  {/* Native SVG Motion along the bezier curve */}
+                  <animateMotion
+                    path={graphDetails.linePathD}
+                    dur="4s"
+                    repeatCount="indefinite"
+                    rotate="auto"
+                    keyPoints="0; 1; 1; 0"
+                    keyTimes="0; 0.76; 0.90; 1"
+                    calcMode="spline"
+                    keySplines="0.35 0 0.25 1; 0 0 1 1; 0.35 0 0.25 1"
+                  />
+                  <animate
+                    attributeName="opacity"
+                    dur="4s"
+                    repeatCount="indefinite"
+                    values="0; 1; 1; 1; 0; 0"
+                    keyTimes="0; 0.05; 0.76; 0.90; 0.96; 1"
+                  />
+                </g>
 
                 {/* Hover Cursor Vertical Line */}
                 {hoverPoint && (
