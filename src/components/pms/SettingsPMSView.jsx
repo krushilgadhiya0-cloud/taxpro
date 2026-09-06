@@ -22,107 +22,9 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
     window.dispatchEvent(new CustomEvent('taxpro_zoom_changed', { detail: clamped }));
   };
 
-  // Navigation Taskbar Custom Ordering
-  const DEFAULT_NAV_ITEMS = [
-    'Dashboard',
-    'AI Studio',
-    'My Work',
-    'Clients',
-    'Contact Person',
-    'Projects',
-    'Tasks',
-    'Task History',
-    'Attendance',
-    'Communication',
-    'Private Chat',
-    'Ask Leave',
-    'Leaves',
-    'Team Members',
-    'Departments',
-    'Fees Tracking',
-    'Receipts & Payments',
-    'Members Payment',
-    'Our Payment',
-    'Owner Payments',
-    'Reports',
-    'Activity Logs',
-    'Integrations',
-    'Calendar',
-    'Support & Help',
-    'Settings'
-  ];
-
-  const [navOrder, setNavOrder] = useState(() => {
-    try {
-      const saved = localStorage.getItem('taxpro_sidebar_order');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const missing = DEFAULT_NAV_ITEMS.filter(i => !parsed.includes(i));
-          return [...parsed, ...missing];
-        }
-      }
-    } catch(e) {}
-    return DEFAULT_NAV_ITEMS;
-  });
-
-  const moveNavItem = (index, direction) => {
-    const targetIdx = index + direction;
-    if (targetIdx < 0 || targetIdx >= navOrder.length) return;
-    const newOrder = [...navOrder];
-    const temp = newOrder[index];
-    newOrder[index] = newOrder[targetIdx];
-    newOrder[targetIdx] = temp;
-    setNavOrder(newOrder);
-    localStorage.setItem('taxpro_sidebar_order', JSON.stringify(newOrder));
-    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: newOrder }));
-    if (onShowToast) onShowToast(`Moved "${temp}" ${direction < 0 ? 'up' : 'down'}`, 'info');
-  };
-
-  const [isTaskbarPinned, setIsTaskbarPinned] = useState(() => localStorage.getItem('taxpro_taskbar_pinned') === 'true');
-
-  const handleToggleTaskbarPin = (pinned) => {
-    setIsTaskbarPinned(pinned);
-    localStorage.setItem('taxpro_taskbar_pinned', String(pinned));
-    window.dispatchEvent(new CustomEvent('taxpro_taskbar_pinned_changed', { detail: pinned }));
-    if (onShowToast) onShowToast(pinned ? '📌 Taskbar fixed & locked in expanded view' : 'Taskbar set to auto-collapse on hover', 'success');
-  };
-
-  const moveNavItemToExtreme = (index, toTop = true) => {
-    const item = navOrder[index];
-    const remaining = navOrder.filter((_, idx) => idx !== index);
-    const newOrder = toTop ? [item, ...remaining] : [...remaining, item];
-    setNavOrder(newOrder);
-    localStorage.setItem('taxpro_sidebar_order', JSON.stringify(newOrder));
-    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: newOrder }));
-    if (onShowToast) onShowToast(`Moved "${item}" to ${toTop ? 'top' : 'bottom'}`, 'info');
-  };
-
-  const applyNavPreset = (presetName) => {
-    let newOrder = [...DEFAULT_NAV_ITEMS];
-    if (presetName === 'executive') {
-      const priority = ['Dashboard', 'Reports', 'Team Members', 'Departments', 'Projects', 'Tasks', 'Fees Tracking', 'Receipts & Payments', 'Owner Payments', 'Activity Logs'];
-      const rest = DEFAULT_NAV_ITEMS.filter(i => !priority.includes(i));
-      newOrder = [...priority, ...rest];
-    } else if (presetName === 'billing') {
-      const priority = ['Receipts & Payments', 'Fees Tracking', 'Members Payment', 'Our Payment', 'Owner Payments', 'Dashboard', 'Clients', 'Projects', 'Tasks'];
-      const rest = DEFAULT_NAV_ITEMS.filter(i => !priority.includes(i));
-      newOrder = [...priority, ...rest];
-    } else if (presetName === 'team') {
-      const priority = ['Attendance', 'Leaves', 'Ask Leave', 'Communication', 'Private Chat', 'My Work', 'Tasks', 'Team Members', 'Dashboard'];
-      const rest = DEFAULT_NAV_ITEMS.filter(i => !priority.includes(i));
-      newOrder = [...priority, ...rest];
-    }
-    setNavOrder(newOrder);
-    localStorage.setItem('taxpro_sidebar_order', JSON.stringify(newOrder));
-    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: newOrder }));
-    if (onShowToast) onShowToast(`Applied "${presetName}" navigation layout!`, 'success');
-  };
-
   const handleResetNavOrder = () => {
-    setNavOrder(DEFAULT_NAV_ITEMS);
     localStorage.removeItem('taxpro_sidebar_order');
-    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: DEFAULT_NAV_ITEMS }));
+    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: null }));
     if (onShowToast) onShowToast('Taskbar & sidebar order reset to default', 'success');
   };
   
@@ -1240,188 +1142,64 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
             </div>
           </div>
 
-          {/* 6. SIDEBAR & TASKBAR ARRANGEMENT & PINNING */}
+          {/* 6. TASKBAR & SIDEBAR NAVIGATION (NORMAL BOX WITH EDIT BUTTON) */}
           <div className={`border rounded-3xl p-6 shadow-xs ${
             theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200/90 shadow-sm'
           } smooth-card print:hidden`}>
-            
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-5 border-b border-slate-200/80 dark:border-slate-800">
-              <div>
-                <h3 className={`font-extrabold text-base flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
-                  <ListOrdered className="w-5 h-5 text-indigo-500" /> Taskbar & Sidebar Navigation Manager
-                </h3>
-                <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Fix / pin the taskbar in expanded view or allow auto-collapse, and rearrange navigation items to fit your daily practice workflow.
-                </p>
-              </div>
-
-              {/* Taskbar Fixed Toggle */}
-              <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-800/80 p-1.5 px-3 rounded-2xl border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-2">
-                  {isTaskbarPinned ? <Pin className="w-4 h-4 text-indigo-500" /> : <PinOff className="w-4 h-4 text-slate-400" />}
-                  <span className={`text-xs font-bold ${theme === 'dark' ? 'text-slate-200' : 'text-slate-800'}`}>
-                    {isTaskbarPinned ? 'Taskbar Fixed (Locked Open)' : 'Auto-Collapse on Hover'}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleToggleTaskbarPin(!isTaskbarPinned)}
-                  className={`px-3 py-1 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                    isTaskbarPinned
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-600'
-                  }`}
-                >
-                  {isTaskbarPinned ? 'Unfix' : 'Fix Taskbar'}
-                </button>
-              </div>
-            </div>
-
-            {/* Workflow Quick Presets & Reset */}
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`text-xs font-bold ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Quick Presets:
-                </span>
-                <button
-                  type="button"
-                  onClick={() => applyNavPreset('default')}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
-                    theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  ⚡ Practice Default
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyNavPreset('executive')}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
-                    theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  👔 Executive / CA Lead
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyNavPreset('billing')}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
-                    theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  💰 Billing & Accounts
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyNavPreset('team')}
-                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
-                    theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  👥 Team & Attendance
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleResetNavOrder}
-                className={`px-3 py-1.5 border text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold border shrink-0 ${
                   theme === 'dark'
-                    ? 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700'
-                    : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset to Factory Order</span>
-              </button>
-            </div>
+                    ? 'bg-indigo-950/50 border-indigo-500/30 text-indigo-400'
+                    : 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                }`}>
+                  <ListOrdered className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className={`font-extrabold text-sm flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                    Taskbar & Sidebar Navigation
+                  </h3>
+                  <p className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Rearrange taskbar items by double-tapping or hold-clicking any button.
+                  </p>
+                </div>
+              </div>
 
-            {/* List of Reorderable Nav Items */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[420px] overflow-y-auto pr-1">
-              {navOrder.map((itemName, index) => (
-                <div
-                  key={itemName}
-                  className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all ${
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem('taxpro_sidebar_order');
+                    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: null }));
+                    if (onShowToast) onShowToast('Taskbar order reset to default layout', 'info');
+                  }}
+                  className={`px-3 py-2 text-xs font-semibold rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 ${
                     theme === 'dark'
-                      ? 'bg-slate-900/60 border-slate-800 hover:border-indigo-500/40'
-                      : 'bg-slate-50/80 border-slate-200/80 hover:border-indigo-300'
+                      ? 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title="Reset to default taskbar order"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('taxpro_open_taskbar_edit_mode'));
+                    if (onShowToast) onShowToast('🛠️ Taskbar Edit Mode opened! Double-tap or hold-click any button to change.', 'success');
+                  }}
+                  className={`px-5 py-2.5 text-xs font-bold rounded-xl border transition-all cursor-pointer flex items-center gap-2 shadow-sm ${
+                    theme === 'dark'
+                      ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-500/50 text-white shadow-indigo-600/30'
+                      : 'bg-indigo-600 hover:bg-indigo-700 border-indigo-600 text-white shadow-indigo-500/20'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
-                      theme === 'dark' ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-600'
-                    }`}>
-                      {index + 1}
-                    </span>
-                    <span className={`text-xs font-bold truncate ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>
-                      {itemName}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0 ml-2">
-                    <button
-                      type="button"
-                      onClick={() => moveNavItemToExtreme(index, true)}
-                      disabled={index === 0}
-                      title="Move to Top"
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                        index === 0
-                          ? 'opacity-20 cursor-not-allowed'
-                          : theme === 'dark'
-                            ? 'bg-slate-800 text-slate-400 hover:bg-indigo-600 hover:text-white'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600'
-                      }`}
-                    >
-                      <ChevronsUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveNavItem(index, -1)}
-                      disabled={index === 0}
-                      title="Move Up"
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                        index === 0
-                          ? 'opacity-20 cursor-not-allowed'
-                          : theme === 'dark'
-                            ? 'bg-slate-800 text-slate-300 hover:bg-indigo-600 hover:text-white'
-                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600'
-                      }`}
-                    >
-                      <ArrowUp className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveNavItem(index, 1)}
-                      disabled={index === navOrder.length - 1}
-                      title="Move Down"
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                        index === navOrder.length - 1
-                          ? 'opacity-20 cursor-not-allowed'
-                          : theme === 'dark'
-                            ? 'bg-slate-800 text-slate-300 hover:bg-indigo-600 hover:text-white'
-                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600'
-                      }`}
-                    >
-                      <ArrowDown className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveNavItemToExtreme(index, false)}
-                      disabled={index === navOrder.length - 1}
-                      title="Move to Bottom"
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                        index === navOrder.length - 1
-                          ? 'opacity-20 cursor-not-allowed'
-                          : theme === 'dark'
-                            ? 'bg-slate-800 text-slate-400 hover:bg-indigo-600 hover:text-white'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600'
-                      }`}
-                    >
-                      <ChevronsDown className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                  <Edit3 className="w-4 h-4" />
+                  <span>Edit</span>
+                </button>
+              </div>
             </div>
           </div>
 
