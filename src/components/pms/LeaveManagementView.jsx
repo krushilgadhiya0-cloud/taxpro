@@ -44,71 +44,7 @@ const DEFAULT_LEAVE_POLICY = {
 };
 
 // Initial Seed Leaves to make the UI rich, interactive and immediately usable
-const DEFAULT_LEAVES = [
-  {
-    id: 'LV-1001',
-    applicantName: 'Vikram Mehta',
-    applicantEmail: 'vikram.mehta@taxpro.local',
-    applicantRole: 'Employee',
-    department: 'Tax Audit & Compliance',
-    leaveType: 'Casual Leave (CL)',
-    startDate: '2026-08-28',
-    endDate: '2026-08-29',
-    totalDays: 2,
-    reason: 'Family ceremony and out of station travel.',
-    handoverTo: 'Priya Sharma',
-    emergencyPhone: '+91 98765 43210',
-    status: 'Pending', // 'Pending' | 'Approved' | 'Rejected'
-    appliedAt: '2026-08-23T10:30:00Z',
-    approvedBy: null,
-    approverRole: null,
-    approvedAt: null,
-    overruledBy: null,
-    rejectionReason: null
-  },
-  {
-    id: 'LV-1002',
-    applicantName: 'Ananya Roy',
-    applicantEmail: 'ananya.roy@taxpro.local',
-    applicantRole: 'Employee',
-    department: 'GST & Indirect Tax',
-    leaveType: 'Sick Leave (SL)',
-    startDate: '2026-08-20',
-    endDate: '2026-08-22',
-    totalDays: 3,
-    reason: 'Viral fever and prescribed medical rest.',
-    handoverTo: 'Rahul Deshmukh',
-    emergencyPhone: '+91 98234 56789',
-    status: 'Approved',
-    appliedAt: '2026-08-19T08:15:00Z',
-    approvedBy: 'Vikram Mehta',
-    approverRole: 'Manager',
-    approvedAt: '2026-08-19T09:00:00Z',
-    overruledBy: null,
-    rejectionReason: null
-  },
-  {
-    id: 'LV-1003',
-    applicantName: 'Rajesh Kumar',
-    applicantEmail: 'rajesh.kumar@taxpro.local',
-    applicantRole: 'Employee',
-    department: 'Accounting & Payroll',
-    leaveType: 'Casual Leave (CL)',
-    startDate: '2026-08-10',
-    endDate: '2026-08-13',
-    totalDays: 4,
-    reason: 'Personal family vacation.',
-    handoverTo: 'Neha Gupta',
-    emergencyPhone: '+91 99887 76655',
-    status: 'Approved',
-    appliedAt: '2026-08-08T14:20:00Z',
-    approvedBy: 'Administrator',
-    approverRole: 'Admin',
-    approvedAt: '2026-08-08T15:00:00Z',
-    overruledBy: null,
-    rejectionReason: null
-  }
-];
+const DEFAULT_LEAVES = [];
 
 export default function LeaveManagementView({ userRole, onShowToast }) {
   const currentUserName = localStorage.getItem('taxpro_user_name') || localStorage.getItem('taxpro_user_fullname') || 'Administrator';
@@ -133,6 +69,12 @@ export default function LeaveManagementView({ userRole, onShowToast }) {
 
   // Leaves state
   const [leaves, setLeaves] = useState(() => {
+    try {
+      const c = localStorage.getItem('taxpro_leave_requests');
+      if (c && (c.includes('Priya') || c.includes('Vikram Mehta'))) {
+        localStorage.removeItem('taxpro_leave_requests');
+      }
+    } catch (e) {}
     try {
       const cached = localStorage.getItem('taxpro_leave_requests');
       if (cached) return JSON.parse(cached);
@@ -1104,7 +1046,7 @@ export default function LeaveManagementView({ userRole, onShowToast }) {
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Priya Sharma / Rahul"
+                    placeholder="e.g. Designated Colleague Name"
                     value={leaveForm.handoverTo}
                     onChange={(e) => setLeaveForm(prev => ({ ...prev, handoverTo: e.target.value }))}
                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"

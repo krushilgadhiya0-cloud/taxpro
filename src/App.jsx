@@ -770,6 +770,15 @@ export default function App() {
           setUserRole(targetRole);
           setIsAuthenticated(true);
           setLoading(false);
+
+          // Direct jump to Practice PMS Dashboard
+          localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+          setWorkspaceMode('pms_workspace');
+          localStorage.setItem('taxpro_setup_completed', 'true');
+          localStorage.setItem('taxpro_active_nav', 'Dashboard');
+          window.location.hash = '#/dashboard';
+          window.dispatchEvent(new CustomEvent('taxpro_nav_switch', { detail: 'Dashboard' }));
+
           setActiveTab('dashboard');
           setPendingTab(null);
           setIsOTPModalOpen(false);
@@ -834,7 +843,16 @@ export default function App() {
           localStorage.setItem('taxpro_user_role', targetRole);
           setUserRole(targetRole);
           setIsAuthenticated(true);
-          setActiveTab(pendingTab || 'dashboard');
+
+          // Direct jump to Practice PMS Dashboard
+          localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+          setWorkspaceMode('pms_workspace');
+          localStorage.setItem('taxpro_setup_completed', 'true');
+          localStorage.setItem('taxpro_active_nav', 'Dashboard');
+          window.location.hash = '#/dashboard';
+          window.dispatchEvent(new CustomEvent('taxpro_nav_switch', { detail: 'Dashboard' }));
+
+          setActiveTab('dashboard');
           setPendingTab(null);
           setIsAuthModalOpen(false);
 

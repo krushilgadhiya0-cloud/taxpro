@@ -24,6 +24,13 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
   }, []);
 
   const fetchDepts = async () => {
+    // Purge legacy dummy cache
+    try {
+      const c = localStorage.getItem('taxpro_departments');
+      if (c && (c.includes('Priya') || c.includes('Sharma') || c.includes('Finance Lead'))) {
+        localStorage.removeItem('taxpro_departments');
+      }
+    } catch(e) {}
     setIsLoading(true);
     try {
       const [deptRes, teamRes] = await Promise.all([
