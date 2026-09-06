@@ -10,57 +10,42 @@ def send_otp_via_smtplib(target_email, otp_code, smtp_host="smtp.gmail.com", smt
     Standard smtplib OTP Dispatcher for TaxPro AI Workspace.
     Uses pure Python smtplib with SSL/TLS encryption.
     """
-    subject = f"Your TaxPro Verification Code: {otp_code}"
+    subject = f"{otp_code} is your TaxPro verification code"
     
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <style>
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0d0d11; color: #ffffff; margin: 0; padding: 20px; }}
-        .card {{ max-width: 480px; margin: 0 auto; background: #14141d; border: 1px solid rgba(0, 240, 255, 0.2); border-radius: 20px; padding: 32px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }}
-        .header {{ text-align: center; margin-bottom: 24px; }}
-        .logo {{ font-size: 24px; font-weight: 900; background: linear-gradient(135deg, #00F0FF, #00FFA3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
-        .tagline {{ font-size: 11px; color: #8a8f98; text-transform: uppercase; letter-spacing: 2px; margin-top: 4px; }}
-        .otp-box {{ background: rgba(0, 240, 255, 0.08); border: 2px dashed #00F0FF; border-radius: 16px; padding: 18px; text-align: center; margin: 28px 0; }}
-        .otp-code {{ font-size: 38px; font-weight: 900; letter-spacing: 12px; color: #ffffff; font-family: monospace; text-shadow: 0 0 20px rgba(0, 240, 255, 0.6); }}
-        .desc {{ font-size: 13px; color: #b0b4ba; line-height: 1.6; text-align: center; }}
-        .footer {{ text-align: center; margin-top: 30px; font-size: 11px; color: #5a5f68; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 16px; }}
-        .badge {{ display: inline-block; background: rgba(0, 255, 163, 0.1); border: 1px solid rgba(0, 255, 163, 0.3); color: #00FFA3; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 20px; margin-top: 12px; }}
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <div class="header">
-          <div class="logo">❖ TAXPRO PMS</div>
-          <div class="tagline">Zero-Knowledge Quantum Authentication</div>
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaxPro Verification Code</title>
+</head>
+<body style="margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f9fafb; color: #111827;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 480px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px;">
+    <tr>
+      <td>
+        <div style="font-size: 20px; font-weight: 800; color: #0284c7; letter-spacing: -0.5px; margin-bottom: 20px;">TaxPro</div>
+        <h1 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 12px 0;">Your Verification Code</h1>
+        <p style="font-size: 14px; line-height: 22px; color: #4b5563; margin: 0 0 20px 0;">
+          Use the following code to complete your verification on TaxPro. This code will expire in 10 minutes.
+        </p>
+        <div style="background-color: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px 24px; text-align: center; margin: 0 0 24px 0;">
+          <span style="font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: 800; letter-spacing: 10px; color: #0284c7; display: inline-block;">{otp_code}</span>
         </div>
-        
-        <p class="desc">Hello,</p>
-        <p class="desc">Please use the single-use 4-digit verification code below to authorize your session into the TaxPro AI Workspace.</p>
-        
-        <div class="otp-box">
-          <div class="otp-code">{otp_code}</div>
+        <p style="font-size: 13px; line-height: 20px; color: #6b7280; margin: 0 0 24px 0;">
+          If you did not request this verification code, you can safely ignore this email. Someone may have entered your email address by mistake.
+        </p>
+        <div style="border-top: 1px solid #f3f4f6; padding-top: 16px; font-size: 12px; color: #9ca3af; text-align: left;">
+          TaxPro Practice Management Platform &bull; Automated Account Security
         </div>
-        
-        <p class="desc" style="font-size: 12px; color: #888;">This code is valid for 10 minutes. If you did not request this code, please ignore this email.</p>
-        
-        <div style="text-align: center;">
-          <span class="badge">🔒 AES-256 SMTPLIB ENCRYPTED</span>
-        </div>
-        
-        <div class="footer">
-          TaxPro Financial Intelligence Platform &bull; Automated SecOps Mailer
-        </div>
-      </div>
-    </body>
-    </html>
-    """
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
 
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
-    message["From"] = f"TaxPro Security <{smtp_user or 'security@taxpro.ai'}>"
+    message["From"] = f"TaxPro <{smtp_user or 'krushilgadhiya138@gmail.com'}>"
     message["To"] = target_email
 
     part_text = MIMEText(f"Your TaxPro verification code is: {otp_code}. Valid for 10 minutes.", "plain")

@@ -78,45 +78,44 @@ export default async function handler(req, res) {
 
     const htmlContent = `
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>TaxPro Verification Code</title>
       </head>
-      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px;">
-        <div style="max-width: 480px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08);">
-          <div style="font-size: 20px; font-weight: 800; color: #0f172a; margin-bottom: 8px;">TaxPro Security Code</div>
-          <p style="font-size: 14px; color: #475569; margin-bottom: 24px; line-height: 1.5;">
-            Use the following ${codeLen}-digit verification code to complete your security authentication:
-          </p>
-          <div style="background: #f1f5f9; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 24px;">
-            <span style="font-family: monospace; font-size: 38px; font-weight: 800; letter-spacing: 12px; color: #0284c7;">${otpCode}</span>
-          </div>
-          <p style="font-size: 12px; color: #64748b; line-height: 1.4;">
-            This verification code is valid for 10 minutes. If you did not make this request, you can safely ignore this email.
-          </p>
-          <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #f1f5f9; font-size: 11px; color: #94a3b8; text-align: center;">
-            TaxPro Enterprise Financial Platform &bull; Automated Security Transmission
-          </div>
-        </div>
+      <body style="margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f9fafb; color: #111827;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 480px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px;">
+          <tr>
+            <td>
+              <div style="font-size: 20px; font-weight: 800; color: #0284c7; letter-spacing: -0.5px; margin-bottom: 20px;">TaxPro</div>
+              <h1 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 12px 0;">Your Verification Code</h1>
+              <p style="font-size: 14px; line-height: 22px; color: #4b5563; margin: 0 0 20px 0;">
+                Use the following ${codeLen}-digit code to complete your verification on TaxPro. This code will expire in 10 minutes.
+              </p>
+              <div style="background-color: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px 24px; text-align: center; margin: 0 0 24px 0;">
+                <span style="font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: 800; letter-spacing: 10px; color: #0284c7; display: inline-block;">${otpCode}</span>
+              </div>
+              <p style="font-size: 13px; line-height: 20px; color: #6b7280; margin: 0 0 24px 0;">
+                If you did not request this verification code, you can safely ignore this email. Someone may have entered your email address by mistake.
+              </p>
+              <div style="border-top: 1px solid #f3f4f6; padding-top: 16px; font-size: 12px; color: #9ca3af; text-align: left;">
+                TaxPro Practice Management Platform &bull; Automated Account Security
+              </div>
+            </td>
+          </tr>
+        </table>
       </body>
       </html>
     `;
 
     await transporter.sendMail({
-      from: `"TaxPro Enterprise" <${smtpUser}>`,
+      from: `"TaxPro" <${smtpUser}>`,
       to: targetEmail,
       replyTo: smtpUser,
-      subject: `TaxPro Security Verification Code: ${otpCode}`,
-      text: `Hello,\n\nYour TaxPro account security verification code is: ${otpCode}\n\nThis code is valid for 10 minutes.\n\nThank you,\nTaxPro Enterprise Security Team`,
-      html: htmlContent,
-      headers: {
-        'X-Priority': '1 (Highest)',
-        'X-MSMail-Priority': 'High',
-        'Importance': 'High',
-        'X-Mailer': 'TaxPro Enterprise Auth Gateway 3.0',
-        'X-Entity-Ref-ID': `TAXPRO-${Date.now()}`
-      }
+      subject: `${otpCode} is your TaxPro verification code`,
+      text: `Your TaxPro verification code is: ${otpCode}\n\nThis code is valid for 10 minutes. If you did not request this code, you can safely ignore this message.\n\n— TaxPro Support`,
+      html: htmlContent
     });
 
     console.log(`[Vercel Serverless Mailer] ✓ Live OTP ${otpCode} delivered cleanly to ${targetEmail}`);

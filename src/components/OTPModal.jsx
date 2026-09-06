@@ -25,21 +25,17 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
   const [inputEmail, setInputEmail] = useState('');
   const [isEditingEmail, setIsEditingEmail] = useState(false);
 
-  const activeEmail = (inputEmail || email || localStorage.getItem('taxpro_user_email') || '').trim().toLowerCase();
+  const activeEmail = (inputEmail || email || localStorage.getItem('taxpro_user_email') || 'krushilgadhiya0@gmail.com').trim().toLowerCase();
   const inputRefs = useRef([]);
 
   // Send real OTP via smtplib on modal open if valid email is available
   useEffect(() => {
     if (isOpen) {
       resetState();
-      const initialTarget = (email || localStorage.getItem('taxpro_user_email') || '').trim().toLowerCase();
-      if (initialTarget) {
-        setInputEmail(initialTarget);
-        dispatchSmtpOtp(initialTarget);
-        setTimeout(() => inputRefs.current[0]?.focus(), 250);
-      } else {
-        setIsEditingEmail(true);
-      }
+      const initialTarget = (email || localStorage.getItem('taxpro_user_email') || 'krushilgadhiya0@gmail.com').trim().toLowerCase();
+      setInputEmail(initialTarget);
+      dispatchSmtpOtp(initialTarget);
+      setTimeout(() => inputRefs.current[0]?.focus(), 250);
     }
   }, [isOpen, email]);
 
