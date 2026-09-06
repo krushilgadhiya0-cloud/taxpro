@@ -1,4 +1,4 @@
-﻿export default async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -31,28 +31,24 @@
     const { query } = await import('../../server/db.js');
     if (query) {
       const userRes = await query(
-        UPDATE users 
-        SET password =  
-        WHERE LOWER(email) =  
-        RETURNING *;
-      , [newPassword, cleanEmail]);
+        'UPDATE users SET password = $1 WHERE LOWER(email) = $2 RETURNING *;',
+        [newPassword, cleanEmail]
+      );
 
       await query(
-        UPDATE team_members 
-        SET preset_password =  
-        WHERE LOWER(email) = ;
-      , [newPassword, cleanEmail]);
+        'UPDATE team_members SET preset_password = $1 WHERE LOWER(email) = $2;',
+        [newPassword, cleanEmail]
+      );
 
       if (userRes.rowCount === 0) {
         const superAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com', 'superadmin@taxpro.com'];
-        const memRes = await query('SELECT id FROM team_members WHERE LOWER(email) = ', [cleanEmail]);
+        const memRes = await query('SELECT id FROM team_members WHERE LOWER(email) = $1;', [cleanEmail]);
         if (memRes.rowCount === 0) {
           if (superAdmins.includes(cleanEmail)) {
             await query(
-              INSERT INTO users (id, email, password, name, role, company)
-              VALUES (, , , , 'Super Admin', 'TaxPro Enterprise Platform')
-              ON CONFLICT (email) DO UPDATE SET password = EXCLUDED.password;
-            , [USR-, cleanEmail, newPassword, cleanEmail.split('@')[0]]);
+              'INSERT INTO users (id, email, password, name, role, company) VALUES ($1, $2, $3, $4, \'Super Admin\', \'TaxPro Enterprise Platform\') ON CONFLICT (email) DO UPDATE SET password = EXCLUDED.password;',
+              ['USR-' + Date.now().toString().slice(-6), cleanEmail, newPassword, cleanEmail.split('@')[0]]
+            );
           } else {
             return res.status(400).json({
               success: false,
@@ -68,6 +64,6 @@
 
   return res.json({
     success: true,
-    message: '✓ Password updated successfully! Please sign in with your new password.'
+    message: '? Password updated successfully! Please sign in with your new password.'
   });
 }

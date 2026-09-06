@@ -1,4 +1,4 @@
-﻿export default async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -35,13 +35,13 @@
     });
   }
 
-  const newId = USR-;
+  const newId = 'USR-' + Math.floor(1000 + Math.random() * 9000);
   const userName = name || 'New Finance Manager';
 
   try {
     const { query } = await import('../../server/db.js');
     if (query) {
-      const checkUser = await query('SELECT id FROM users WHERE LOWER(email) =  LIMIT 1', [cleanEmail]);
+      const checkUser = await query('SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1;', [cleanEmail]);
       if (checkUser.rowCount > 0) {
         return res.status(400).json({
           success: false,
@@ -49,7 +49,7 @@
         });
       }
 
-      const checkTeam = await query('SELECT id FROM team_members WHERE LOWER(email) =  LIMIT 1', [cleanEmail]);
+      const checkTeam = await query('SELECT id FROM team_members WHERE LOWER(email) = $1 LIMIT 1;', [cleanEmail]);
       if (checkTeam.rowCount > 0) {
         return res.status(400).json({
           success: false,
@@ -58,16 +58,14 @@
       }
 
       await query(
-        INSERT INTO users (id, email, password, name, role, company)
-        VALUES (, , , , 'Financial Director', 'TaxPro Enterprise Client')
-        RETURNING *;
-      , [newId, cleanEmail, password, userName]);
+        'INSERT INTO users (id, email, password, name, role, company) VALUES ($1, $2, $3, $4, \'Financial Director\', \'TaxPro Enterprise Client\') RETURNING *;',
+        [newId, cleanEmail, password, userName]
+      );
 
       await query(
-        INSERT INTO team_members (name, email, role, preset_password, status)
-        VALUES (, , 'Financial Director', , 'Active')
-        ON CONFLICT (email) DO NOTHING;
-      , [userName, cleanEmail, password]);
+        'INSERT INTO team_members (name, email, role, preset_password, status) VALUES ($1, $2, \'Financial Director\', $3, \'Active\') ON CONFLICT (email) DO NOTHING;',
+        [userName, cleanEmail, password]
+      );
     }
   } catch (err) {
     console.warn('[Vercel Signup DB Warning]:', err.message);
