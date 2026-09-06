@@ -1712,6 +1712,21 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
               );
             })}
           </div>
+
+          {/* STICKY BOTTOM DONE BUTTON (Accessible whether user scrolls up or down) */}
+          {isTaskbarEditMode && (
+            <div className="sticky bottom-0 left-0 right-0 pt-3 pb-2 mt-auto bg-[#181c32]/95 backdrop-blur-md border-t border-white/10 shrink-0 w-56 z-20 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => setIsTaskbarEditMode(false)}
+                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer font-sans active:scale-98"
+                title="Save taskbar layout and exit edit mode"
+              >
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>Done ✓ Save Taskbar</span>
+              </button>
+            </div>
+          )}
         </aside>
 
         {/* ACTIVE MODULE VIEW ROUTER */}
