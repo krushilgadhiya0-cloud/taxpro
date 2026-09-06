@@ -24,11 +24,11 @@ export default function PaymentCheckoutModal({
 
   const BANK_CONFIG = {
     accountName: 'TaxPro Enterprise Solutions (Krushil Gadhiya)',
-    bankName: 'HDFC Bank Ltd.',
-    accountNumber: '50200083921841',
-    ifsc: 'HDFC0000240',
-    accountType: 'Current Business Account',
-    branch: 'Corporate Finance Branch, Gujarat'
+    bankName: 'The Varachha Co-operative Bank Ltd.',
+    accountNumber: '00110121914054',
+    ifsc: 'VARA0289001',
+    accountType: 'Savings Bank Account',
+    branch: 'Varachha Bank, Surat, Gujarat'
   };
 
   const UPI_ID = '9327397851@upi';
@@ -631,6 +631,11 @@ export default function PaymentCheckoutModal({
                     <span className="text-[10px] text-gray-400 block">{BANK_CONFIG.branch}</span>
                   </div>
 
+                  <div>
+                    <span className="text-[10px] text-gray-400 block font-mono">ACCOUNT TYPE</span>
+                    <span className="font-semibold text-emerald-400 text-xs">{BANK_CONFIG.accountType}</span>
+                  </div>
+
                   <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/60 border border-white/10">
                     <div>
                       <span className="text-[9px] text-gray-400 block font-mono">ACCOUNT NUMBER</span>
@@ -692,7 +697,7 @@ export default function PaymentCheckoutModal({
                     <input
                       type="text"
                       required
-                      placeholder="e.g. HDFCR520260906001928"
+                      placeholder="e.g. VARAR520260906001928 or UTR Reference"
                       value={utrNumber}
                       onChange={(e) => setUtrNumber(e.target.value.toUpperCase())}
                       className="w-full px-4 py-2.5 bg-black/50 border border-white/15 focus:border-indigo-400 rounded-xl text-xs text-white font-mono tracking-wider outline-none uppercase"
