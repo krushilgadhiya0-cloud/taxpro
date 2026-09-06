@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, Shield, Printer, Mail, Phone, Lock, KeyRound, Building, CheckCircle2, Check, User, Globe, Moon, Sun, ArrowRight, Eye, EyeOff, AlertCircle, ShieldAlert, Sparkles, ShieldCheck, Key, ZoomIn, ZoomOut, Maximize2, Sliders, Tag, BadgeCheck, MapPin, RefreshCw, RotateCcw, Loader2, QrCode, IndianRupee, Edit3, Copy } from 'lucide-react';
+import { Settings, Save, Shield, Printer, Mail, Phone, Lock, KeyRound, Building, CheckCircle2, Check, User, Globe, Moon, Sun, ArrowRight, Eye, EyeOff, AlertCircle, ShieldAlert, Sparkles, ShieldCheck, Key, ZoomIn, ZoomOut, Maximize2, Sliders, Tag, BadgeCheck, MapPin, RefreshCw, RotateCcw, Loader2, QrCode, IndianRupee, Edit3, Copy, ArrowUp, ArrowDown, ListOrdered } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { printHtml } from '../../lib/printHelper';
 import { formatDate } from '../../lib/dateUtils';
@@ -20,6 +20,70 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
     document.documentElement.style.zoom = `${clamped}%`;
     localStorage.setItem('taxpro_global_zoom', String(clamped));
     window.dispatchEvent(new CustomEvent('taxpro_zoom_changed', { detail: clamped }));
+  };
+
+  // Navigation Taskbar Custom Ordering
+  const DEFAULT_NAV_ITEMS = [
+    'Dashboard',
+    'AI Studio',
+    'My Work',
+    'Clients',
+    'Contact Person',
+    'Projects',
+    'Tasks',
+    'Task History',
+    'Attendance',
+    'Communication',
+    'Private Chat',
+    'Ask Leave',
+    'Leaves',
+    'Team Members',
+    'Departments',
+    'Fees Tracking',
+    'Receipts & Payments',
+    'Members Payment',
+    'Our Payment',
+    'Owner Payments',
+    'Reports',
+    'Activity Logs',
+    'Integrations',
+    'Calendar',
+    'Support & Help',
+    'Settings'
+  ];
+
+  const [navOrder, setNavOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_sidebar_order');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const missing = DEFAULT_NAV_ITEMS.filter(i => !parsed.includes(i));
+          return [...parsed, ...missing];
+        }
+      }
+    } catch(e) {}
+    return DEFAULT_NAV_ITEMS;
+  });
+
+  const moveNavItem = (index, direction) => {
+    const targetIdx = index + direction;
+    if (targetIdx < 0 || targetIdx >= navOrder.length) return;
+    const newOrder = [...navOrder];
+    const temp = newOrder[index];
+    newOrder[index] = newOrder[targetIdx];
+    newOrder[targetIdx] = temp;
+    setNavOrder(newOrder);
+    localStorage.setItem('taxpro_sidebar_order', JSON.stringify(newOrder));
+    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: newOrder }));
+    if (onShowToast) onShowToast(`Moved "${temp}" ${direction < 0 ? 'up' : 'down'}`, 'info');
+  };
+
+  const handleResetNavOrder = () => {
+    setNavOrder(DEFAULT_NAV_ITEMS);
+    localStorage.removeItem('taxpro_sidebar_order');
+    window.dispatchEvent(new CustomEvent('taxpro_sidebar_order_changed', { detail: DEFAULT_NAV_ITEMS }));
+    if (onShowToast) onShowToast('Taskbar & sidebar order reset to default', 'success');
   };
   
   // User Profile & Contact States
@@ -1133,6 +1197,87 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
               >
                 Reset to 90% (Default)
               </button>
+            </div>
+          </div>
+
+          {/* 6. SIDEBAR & TASKBAR ARRANGEMENT */}
+          <div className={`border rounded-3xl p-6 shadow-xs ${
+            theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200/90 shadow-sm'
+          } smooth-card print:hidden`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className={`font-extrabold text-sm flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                  <ListOrdered className="w-4 h-4 text-indigo-500" /> Taskbar & Sidebar Menu Arrangement
+                </h3>
+                <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Personalize and rearrange the navigation order according to your daily practice workflow. Changes apply instantly.
+                </p>
+              </div>
+              <button
+                onClick={handleResetNavOrder}
+                className={`px-3 py-1.5 border text-xs font-semibold rounded-xl transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                  theme === 'dark'
+                    ? 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700'
+                    : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Default Order</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[380px] overflow-y-auto pr-1">
+              {navOrder.map((itemName, index) => (
+                <div
+                  key={itemName}
+                  className={`flex items-center justify-between p-2.5 rounded-2xl border transition-all ${
+                    theme === 'dark'
+                      ? 'bg-slate-900/60 border-slate-800 hover:border-indigo-500/40'
+                      : 'bg-slate-50/80 border-slate-200/80 hover:border-indigo-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                      theme === 'dark' ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {index + 1}
+                    </span>
+                    <span className={`text-xs font-bold truncate ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>
+                      {itemName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                    <button
+                      onClick={() => moveNavItem(index, -1)}
+                      disabled={index === 0}
+                      title="Move Up"
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                        index === 0
+                          ? 'opacity-30 cursor-not-allowed'
+                          : theme === 'dark'
+                            ? 'bg-slate-800 text-slate-300 hover:bg-indigo-600 hover:text-white'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600'
+                      }`}
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => moveNavItem(index, 1)}
+                      disabled={index === navOrder.length - 1}
+                      title="Move Down"
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                        index === navOrder.length - 1
+                          ? 'opacity-30 cursor-not-allowed'
+                          : theme === 'dark'
+                            ? 'bg-slate-800 text-slate-300 hover:bg-indigo-600 hover:text-white'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600'
+                      }`}
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 

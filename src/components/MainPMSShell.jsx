@@ -183,6 +183,27 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
   const [firmTag, setFirmTag] = useState(() => localStorage.getItem('taxpro_firm_tag') || 'TaxPro');
   const [isFirmConfigured, setIsFirmConfigured] = useState(() => localStorage.getItem('taxpro_firm_configured') === 'true');
   const [isFirmModalOpen, setIsFirmModalOpen] = useState(false);
+
+  // Custom Sidebar / Taskbar Ordering
+  const [customSidebarOrder, setCustomSidebarOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem('taxpro_sidebar_order');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    const handleOrderChange = () => {
+      try {
+        const saved = localStorage.getItem('taxpro_sidebar_order');
+        setCustomSidebarOrder(saved ? JSON.parse(saved) : null);
+      } catch (e) {}
+    };
+    window.addEventListener('taxpro_sidebar_order_changed', handleOrderChange);
+    return () => window.removeEventListener('taxpro_sidebar_order_changed', handleOrderChange);
+  }, []);
   const [isDirectFirmSetup, setIsDirectFirmSetup] = useState(false);
 
   useEffect(() => {
@@ -1093,6 +1114,17 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
   } else {
     // Admin sees 'Leaves' (Approvals desk) instead of 'Ask Leave'
     sidebarItems = sidebarItems.filter(item => item.name !== 'Ask Leave');
+  }
+
+  // Apply User Custom Sidebar / Taskbar Ordering
+  if (Array.isArray(customSidebarOrder) && customSidebarOrder.length > 0) {
+    sidebarItems.sort((a, b) => {
+      let idxA = customSidebarOrder.indexOf(a.name);
+      let idxB = customSidebarOrder.indexOf(b.name);
+      if (idxA === -1) idxA = 999;
+      if (idxB === -1) idxB = 999;
+      return idxA - idxB;
+    });
   }
 
   const activeModuleKey = moduleKeyMap[activeItem] || activeItem.toLowerCase().replace(/[\s&]+/g, '_');

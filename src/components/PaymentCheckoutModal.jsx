@@ -141,9 +141,7 @@ export default function PaymentCheckoutModal({
       localStorage.setItem('taxpro_subscription_seats', seatCount);
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
-      if (onPaymentSuccess) {
-        onPaymentSuccess({ txId, plan: planTitle, amount: rawPriceNum, method: methodName });
-      }
+// onPaymentSuccess called when user clicks Enter Workspace on confirmation screen
     } catch (err) {
       console.warn('Payment notice:', err.message);
       setPaidTxId(txId);
@@ -289,57 +287,65 @@ export default function PaymentCheckoutModal({
                 
                 {/* LEFT: 3D CARD ANIMATION & ORDER SUMMARY */}
                 <div className="flex flex-col gap-6">
-                  <div className="card-3d-perspective">
-                    <div 
-                      className={`card-3d-inner ${isFlipped ? 'is-flipped' : ''}`}
-                      onMouseEnter={() => setIsFlipped(true)}
-                      onMouseLeave={() => setIsFlipped(false)}
-                    >
-                      {/* FRONT OF CARD */}
-                      <div className="card-3d-face card-3d-front">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="card-chip" />
-                            <svg className="w-5 h-5 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M8.5 16.5a5 5 0 0 1 0-9" />
-                              <path d="M12 19a8.5 8.5 0 0 0 0-14" />
-                              <path d="M15.5 21.5a12 12 0 0 0 0-19" />
-                            </svg>
+                  <div className="p-6 rounded-2xl bg-[#eef2f6] dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 flex flex-col items-center justify-center relative glow--ok">
+                    <div className="card-3d-perspective w-full max-w-[340px]">
+                      <div 
+                        className={`card-3d-inner ${isFlipped ? 'is-flipped' : ''}`}
+                        style={{ height: '210px' }}
+                      >
+                        {/* FRONT OF CARD (Matching Sable Ice-Blue Metallic Style) */}
+                        <div className="card-3d-face card-3d-front card-3d-front-sable">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="card-chip-silver" />
+                              <svg className="w-5 h-5 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M8.5 16.5a5 5 0 0 1 0-9" />
+                                <path d="M12 19a8.5 8.5 0 0 0 0-14" />
+                                <path d="M15.5 21.5a12 12 0 0 0 0-19" />
+                              </svg>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-xs font-black font-sans tracking-[2px] text-slate-800 block">
+                                SABLE
+                              </span>
+                              <span className="text-[8px] text-slate-500 tracking-wider font-mono">
+                                PLATINUM
+                              </span>
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <span className="text-[10px] font-black font-mono tracking-widest text-cyan-300 block">TAXPRO PLATFORM</span>
-                            <span className="text-[8px] text-gray-400 tracking-wider uppercase">AUTOPAY ENABLED</span>
-                          </div>
-                        </div>
 
-                        {/* Card Number display */}
-                        <div className="my-2">
-                          <div className="font-mono text-lg sm:text-xl font-bold tracking-[3px] text-white drop-shadow">
-                            {cardNumber || '4242 4242 4242 4242'}
+                          {/* Formatted Card Number */}
+                          <div className="my-2">
+                            <div className="pan-engraved text-lg sm:text-xl font-mono tracking-[3.5px]">
+                              {cardNumber || '4242 4242 4242 4242'}
+                            </div>
                           </div>
-                        </div>
 
-                        {/* Cardholder & Expiry & Network */}
-                        <div className="flex items-end justify-between">
-                          <div>
-                            <span className="text-[8px] text-gray-400 uppercase tracking-wider block">CARDHOLDER NAME</span>
-                            <span className="font-mono text-xs font-bold text-white uppercase tracking-wider block truncate max-w-[160px]">
-                              {cardholderName || 'A. HASIB'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[8px] text-gray-400 uppercase tracking-wider block">EXPIRES</span>
-                            <span className="font-mono text-xs font-bold text-white block">
-                              {expiryDate || '12/28'}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <span className="font-black italic text-lg text-white tracking-wider font-mono">
-                              {getCardNetwork()}
-                            </span>
+                          {/* Bottom Row: Cardholder, Expiry, Brand */}
+                          <div className="flex items-end justify-between text-slate-800">
+                            <div>
+                              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">
+                                CARDHOLDER
+                              </span>
+                              <span className="font-mono text-xs font-black uppercase tracking-wider block truncate max-w-[150px]">
+                                {cardholderName || 'A. HASIB'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">
+                                EXPIRES
+                              </span>
+                              <span className="font-mono text-xs font-black block">
+                                {expiryDate || '12/??'}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="font-black italic text-lg text-slate-900 tracking-wider font-sans">
+                                {getCardNetwork()}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
                       {/* BACK OF CARD */}
                       <div className="card-3d-face card-3d-back">
@@ -359,8 +365,17 @@ export default function PaymentCheckoutModal({
                           <span>Direct Settlement to Bank Account &bull; 256-Bit TLS</span>
                         </div>
                       </div>
-
                     </div>
+                  </div>
+
+                  <button
+                      type="button"
+                      onClick={() => setIsFlipped(!isFlipped)}
+                      className="mt-3 text-[10px] text-slate-500 hover:text-slate-800 dark:hover:text-white flex items-center gap-1 font-mono cursor-pointer transition-colors"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>{isFlipped ? 'Flip to Front' : 'Click to Flip (or Reach for CVC)'}</span>
+                    </button>
                   </div>
 
                   {/* YOUR ORDER SUMMARY */}
@@ -489,7 +504,7 @@ export default function PaymentCheckoutModal({
                   <button
                     type="submit"
                     disabled={isProcessing}
-                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-cyan-400 active:scale-98 text-white font-black text-xs shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                    className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-black text-xs shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
                   >
                     <Lock className="w-4 h-4" />
                     <span>{isProcessing ? 'Processing Direct Settlement...' : `Pay ₹${rawPriceNum.toLocaleString('en-IN')}.00`}</span>
@@ -499,12 +514,12 @@ export default function PaymentCheckoutModal({
                   <div className="flex items-center justify-center gap-4 text-[10px] text-gray-500 font-mono mt-1">
                     <span className="flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-emerald-400" /> PCI-DSS Level 1</span>
                     <span className="flex items-center gap-1"><Lock className="w-3 h-3 text-cyan-400" /> 256-bit TLS</span>
-                    <span>Direct Settlement</span>
+                    <span>Sable never stores your CVC</span>
                   </div>
 
                   <div className="text-[10px] text-gray-500 text-center font-mono">
                     <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">
-                      Type a card. Reach for CVC to flip. (4242 4242 4242 4242 approves)
+                      Type a card. Reach for the CVC. (4242 4242 4242 4242 approves)
                     </span>
                   </div>
                 </form>
