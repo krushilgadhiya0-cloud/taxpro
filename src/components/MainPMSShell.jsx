@@ -240,6 +240,60 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
   const [dragOverIdx, setDragOverIdx] = useState(null);
   const [doubleClickModalItem, setDoubleClickModalItem] = useState(null);
 
+  // Smart Click, Double-Click & Hold-Click Tracking Refs
+  const clickTimeoutRef = useRef(null);
+  const holdTimerRef = useRef(null);
+  const isHoldTriggeredRef = useRef(false);
+
+  const handleItemMouseDown = (e, item, index) => {
+    if (e.button !== 0) return; // only left click
+    isHoldTriggeredRef.current = false;
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+
+    // Hold click (380ms): user presses down and holds mouse
+    holdTimerRef.current = setTimeout(() => {
+      isHoldTriggeredRef.current = true;
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+        clickTimeoutRef.current = null;
+      }
+      setDoubleClickModalItem({ name: item.name, label: item.label || item.name, index });
+      if (onShowToast) onShowToast(`Hold-Click activated for "${item.label || item.name}"`, 'info');
+    }, 380);
+  };
+
+  const handleItemMouseUp = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  };
+
+  const handleItemClick = (e, item, index) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // If hold click just triggered, prevent normal navigation
+    if (isHoldTriggeredRef.current) {
+      isHoldTriggeredRef.current = false;
+      return;
+    }
+
+    if (clickTimeoutRef.current) {
+      // DOUBLE CLICK DETECTED (Second click within 240ms)
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+      setDoubleClickModalItem({ name: item.name, label: item.label || item.name, index });
+      if (onShowToast) onShowToast(`Double-click reorder opened for "${item.label || item.name}"`, 'info');
+    } else {
+      // SINGLE CLICK: Wait 240ms to check if second click arrives
+      clickTimeoutRef.current = setTimeout(() => {
+        clickTimeoutRef.current = null;
+        navigateTo(item.name);
+      }, 240);
+    }
+  };
+
   const [isDirectFirmSetup, setIsDirectFirmSetup] = useState(false);
 
   useEffect(() => {
@@ -1554,10 +1608,24 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
               const isDragTarget = dragOverIdx === index && draggedIdx !== index;
 
               return (
-                <button
+                <div
                   key={item.name}
+                  role="button"
+                  tabIndex={0}
                   draggable
+                  onMouseDown={(e) => handleItemMouseDown(e, item, index)}
+                  onMouseUp={handleItemMouseUp}
+                  onMouseLeave={handleItemMouseUp}
+                  onClick={(e) => handleItemClick(e, item, index)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigateTo(item.name);
+                    }
+                  }}
                   onDragStart={(e) => {
+                    handleItemMouseUp();
+                    isHoldTriggeredRef.current = true;
                     setDraggedIdx(index);
                     e.dataTransfer.effectAllowed = 'move';
                     try { e.dataTransfer.setData('text/plain', String(index)); } catch (err) {}
@@ -1569,6 +1637,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
+                    e.stopPropagation();
                     if (draggedIdx !== null && draggedIdx !== index) {
                       handleReorderSidebar(draggedIdx, index);
                     }
@@ -1578,25 +1647,20 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                   onDragEnd={() => {
                     setDraggedIdx(null);
                     setDragOverIdx(null);
+                    handleItemMouseUp();
                   }}
-                  onClick={() => navigateTo(item.name)}
-                  onDoubleClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDoubleClickModalItem({ name: item.name, label: item.label || item.name, index });
-                  }}
-                  className={`group/item flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-grab active:cursor-grabbing select-none relative ${
+                  className={`group/item flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer active:cursor-grabbing select-none relative ${
                     isActive
                       ? 'bg-[#5b52e0] text-white shadow-lg shadow-[#5b52e0]/30 font-bold'
                       : 'text-gray-400 hover:text-white hover:bg-white/5'
                   } ${isBeingDragged ? 'opacity-35 scale-95 border-2 border-dashed border-indigo-400' : ''} ${
                     isDragTarget ? 'border-t-2 border-indigo-400 bg-white/10' : ''
                   }`}
-                  title={`${item.label || item.name} (Hold-click to drag & drop, Double-click to re-arrange)`}
+                  title={`${item.label || item.name} (Single click: Open | Double click: Reorder | Hold click: Quick Menu)`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     {/* Subtle grip handle shown on hover */}
-                    <GripVertical className="w-3.5 h-3.5 text-gray-500 group-hover/item:text-indigo-300 opacity-0 group-hover/item:opacity-100 transition-opacity -ml-1 flex-shrink-0" />
+                    <GripVertical className="w-3.5 h-3.5 text-gray-500 group-hover/item:text-indigo-300 opacity-0 group-hover/item:opacity-100 transition-opacity -ml-1 flex-shrink-0 cursor-grab" />
                     <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-gray-400'}`} />
                     <span className={`${
                       isTaskbarPinned
@@ -1606,12 +1670,45 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                       {item.label || item.name}
                     </span>
                   </div>
-                  {item.hasSub && (
-                    <ChevronRight className={`w-3.5 h-3.5 text-gray-500 transition-opacity whitespace-nowrap ${
-                      isTaskbarPinned ? 'block opacity-100' : 'hidden group-hover:block opacity-0 group-hover:opacity-100'
-                    }`} />
-                  )}
-                </button>
+
+                  {/* Right side actions: Quick Up/Down arrows on hover, or Sub-menu chevron */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleShiftItem(item.name, -1);
+                        }}
+                        disabled={index === 0}
+                        title="Move Up"
+                        className="p-1 rounded hover:bg-white/20 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer"
+                      >
+                        <ArrowUp className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleShiftItem(item.name, 1);
+                        }}
+                        disabled={index === sidebarItems.length - 1}
+                        title="Move Down"
+                        className="p-1 rounded hover:bg-white/20 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer"
+                      >
+                        <ArrowDown className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {item.hasSub && (
+                      <ChevronRight className={`w-3.5 h-3.5 text-gray-500 transition-opacity whitespace-nowrap ${
+                        isTaskbarPinned ? 'block opacity-100' : 'hidden group-hover:block opacity-0 group-hover:opacity-100'
+                      }`} />
+                    )}
+                  </div>
+                </div>
               );
             })}
           </div>
