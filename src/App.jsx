@@ -11,6 +11,7 @@ import AttendanceView from './components/AttendanceView';
 import AuthModal from './components/AuthModal';
 import SecurityPanel from './components/SecurityPanel';
 import PricingSection from './components/PricingSection';
+import PaymentCheckoutModal from './components/PaymentCheckoutModal';
 import ContactSection from './components/ContactSection';
 import ToastContainer from './components/ToastContainer';
 import LoadingScreen from './components/LoadingScreen';
@@ -133,6 +134,8 @@ export default function App() {
   const [isSuperAdminAuthModalOpen, setIsSuperAdminAuthModalOpen] = useState(false);
   const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
   const [isPWAModalOpen, setIsPWAModalOpen] = useState(false);
+  const [selectedCheckoutPlan, setSelectedCheckoutPlan] = useState(null);
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [authMode, setAuthMode] = useState('login');
@@ -647,7 +650,14 @@ export default function App() {
         )}
 
         {activeTab === 'pricing' && (
-          <PricingSection onOpenAuth={handleOpenAuth} />
+          <PricingSection 
+            onOpenAuth={handleOpenAuth} 
+            onSelectTab={handleSelectTab}
+            onSelectPlan={(plan) => {
+              setSelectedCheckoutPlan(plan);
+              setIsCheckoutModalOpen(true);
+            }}
+          />
         )}
 
         {activeTab === 'contact' && (
@@ -670,6 +680,19 @@ export default function App() {
       </div>
 
 
+      {/* DIRECT CARD, UPI & BANK PAYMENT CHECKOUT MODAL */}
+      <PaymentCheckoutModal
+        isOpen={isCheckoutModalOpen}
+        plan={selectedCheckoutPlan}
+        onClose={() => setIsCheckoutModalOpen(false)}
+        onShowToast={showToast}
+        onPaymentSuccess={(details) => {
+          showToast(`✓ Payment of ₹${details.amount?.toLocaleString('en-IN')} confirmed! ${details.plan} is now active.`, 'success');
+          setIsCheckoutModalOpen(false);
+          setActiveTab('dashboard');
+        }}
+      />
+
       {/* PWA INSTALLATION MODAL */}
       <PWAModal
         isOpen={isPWAModalOpen}
@@ -683,30 +706,47 @@ export default function App() {
         isOpen={isOTPModalOpen}
         email={userEmail}
         onClose={() => setIsOTPModalOpen(false)}
-        onSuccessRedirect={async () => {
+        onSuccessRedirect={async (verifiedEmail) => {
           showToast('✓ OTP Verification Successful! Opening Workspace...', 'success');
           localStorage.setItem('taxpro_profile_completed', 'true');
           
           let targetRole = localStorage.getItem('taxpro_user_role') || 'Admin';
-          const cleanEmail = (userEmail || localStorage.getItem('taxpro_user_email') || '').trim();
+          const cleanEmail = (verifiedEmail || userEmail || localStorage.getItem('taxpro_user_email') || '').trim();
 
-          // 1. Commit pending registration payload to database now that email OTP is verified!
+          // 1. Commit pending registration payload to PostgreSQL database now that email OTP is verified!
           try {
             const pendingRaw = sessionStorage.getItem('taxpro_pending_signup');
             if (pendingRaw) {
               const pending = JSON.parse(pendingRaw);
               if (pending.email && pending.password) {
-                await supabase.auth.signUp({
-                  email: pending.email,
-                  password: pending.password,
-                  options: {
-                    data: {
-                      name: pending.name || pending.email.split('@')[0],
-                      role: pending.role || 'Administrator',
-                      department: pending.department || 'Executive Management'
+                try {
+                  const baseUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE_URL || '';
+                  await fetch(`${baseUrl}/api/auth/signup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      email: pending.email,
+                      password: pending.password,
+                      name: pending.name || pending.email.split('@')[0]
+                    })
+                  });
+                } catch (pgErr) {
+                  console.warn('[Pending Signup PG Sync]:', pgErr.message);
+                }
+
+                try {
+                  await supabase.auth.signUp({
+                    email: pending.email,
+                    password: pending.password,
+                    options: {
+                      data: {
+                        name: pending.name || pending.email.split('@')[0],
+                        role: pending.role || 'Administrator',
+                        department: pending.department || 'Executive Management'
+                      }
                     }
-                  }
-                });
+                  });
+                } catch (e) {}
               }
               sessionStorage.removeItem('taxpro_pending_signup');
             }

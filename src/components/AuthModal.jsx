@@ -175,15 +175,54 @@ export default function AuthModal({
         return;
       }
 
-      // Check if email is already registered in users table or local store
+      // Strictly check if email is already registered across PostgreSQL DB, team members, and auth stores
+      let isAlreadyRegistered = false;
+
+      // 1. Check PostgreSQL backend via find-account endpoint
       try {
-        const { data: existingUser } = await supabase.from('users').select('id, email').ilike('email', cleanEmail).limit(1);
-        if (existingUser && existingUser.length > 0) {
-          setAlreadyRegisteredAlert(true);
-          setIsSubmitting(false);
-          return;
+        const baseUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE_URL || '';
+        const findRes = await fetch(`${baseUrl}/api/auth/find-account`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail })
+        });
+        const findData = await findRes.json().catch(() => null);
+        if (findData && findData.success && findData.account) {
+          isAlreadyRegistered = true;
         }
       } catch (e) {}
+
+      // 2. Check Supabase users & team_members tables
+      if (!isAlreadyRegistered) {
+        try {
+          const { data: existingUser } = await supabase.from('users').select('id, email').ilike('email', cleanEmail).limit(1);
+          if (existingUser && existingUser.length > 0) isAlreadyRegistered = true;
+        } catch (e) {}
+      }
+
+      if (!isAlreadyRegistered) {
+        try {
+          const { data: existingMember } = await supabase.from('team_members').select('id, email').ilike('email', cleanEmail).limit(1);
+          if (existingMember && existingMember.length > 0) isAlreadyRegistered = true;
+        } catch (e) {}
+      }
+
+      // 3. Check reserved SuperAdmin accounts and active local user accounts
+      const reservedAdmins = ['superadmin@taxpro.com', 'workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com'];
+      const savedUserEmail = (localStorage.getItem('taxpro_user_email') || '').toLowerCase().trim();
+      const savedSuperAdmin = (localStorage.getItem('taxpro_secret_superadmin') || '').toLowerCase().trim();
+      if (reservedAdmins.includes(cleanEmail) || savedUserEmail === cleanEmail || savedSuperAdmin === cleanEmail) {
+        isAlreadyRegistered = true;
+      }
+
+      if (isAlreadyRegistered) {
+        setAlreadyRegisteredAlert(true);
+        if (onShowToast) {
+          onShowToast(`⚠️ Account Already Registered: "${cleanEmail}" already exists. Please sign in or reset your password.`, 'warning');
+        }
+        setIsSubmitting(false);
+        return;
+      }
 
       // Store pending registration payload in session memory - committed ONLY after OTP verification!
       sessionStorage.setItem('taxpro_pending_signup', JSON.stringify({

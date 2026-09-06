@@ -22,22 +22,36 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
   const [countdown, setCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [inputEmail, setInputEmail] = useState('');
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
 
-  const activeEmail = (email || 'krushilgadhiya0@gmail.com').trim().toLowerCase();
+  const activeEmail = (inputEmail || email || localStorage.getItem('taxpro_user_email') || '').trim().toLowerCase();
   const inputRefs = useRef([]);
 
-  // Send real OTP via smtplib on modal open
+  // Send real OTP via smtplib on modal open if valid email is available
   useEffect(() => {
     if (isOpen) {
       resetState();
-      dispatchSmtpOtp();
-      setTimeout(() => inputRefs.current[0]?.focus(), 250);
+      const initialTarget = (email || localStorage.getItem('taxpro_user_email') || '').trim().toLowerCase();
+      if (initialTarget) {
+        setInputEmail(initialTarget);
+        dispatchSmtpOtp(initialTarget);
+        setTimeout(() => inputRefs.current[0]?.focus(), 250);
+      } else {
+        setIsEditingEmail(true);
+      }
     }
   }, [isOpen, email]);
 
   // Dispatch OTP via backend smtplib pipeline
-  const dispatchSmtpOtp = async () => {
+  const dispatchSmtpOtp = async (target) => {
+    const targetEmail = (target || activeEmail || '').trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      setIsEditingEmail(true);
+      return;
+    }
     setIsSendingOtp(true);
+    setErrorMessage('');
     try {
       let smtpConfig = null;
       try {
@@ -52,7 +66,7 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            email: activeEmail,
+            email: targetEmail,
             smtpConfig
           })
         });
@@ -64,12 +78,12 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
 
       if (data && data.success) {
         if (data.token) {
-          sessionStorage.setItem(`taxpro_otp_token_${activeEmail}`, data.token);
+          sessionStorage.setItem(`taxpro_otp_token_${targetEmail}`, data.token);
         }
         if (data.devOtp) {
-          sessionStorage.setItem(`taxpro_dev_otp_${activeEmail}`, String(data.devOtp).trim());
+          sessionStorage.setItem(`taxpro_dev_otp_${targetEmail}`, String(data.devOtp).trim());
         }
-        console.log(`[OTP Security] ✓ Sended real OTP to ${activeEmail}`);
+        console.log(`[OTP Security] ✓ Sended real OTP to ${targetEmail}`);
       } else if (data && data.error) {
         setErrorMessage(data.error);
       }
@@ -210,7 +224,7 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
         window.confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
       }
       setTimeout(() => {
-        if (onSuccessRedirect) onSuccessRedirect();
+        if (onSuccessRedirect) onSuccessRedirect(activeEmail);
         onClose();
         resetState();
       }, 500);
@@ -218,9 +232,8 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
       setStage('verdict_error');
       setTimeout(() => {
         setStage('input');
-        setOtp(['', '', '', '']);
-        setTimeout(() => inputRefs.current[0]?.focus(), 100);
-      }, 900);
+        setTimeout(() => inputRefs.current[3]?.focus(), 100);
+      }, 1200);
     }
   };
 
@@ -269,14 +282,48 @@ export default function OTPModal({ isOpen, onClose, onSuccessRedirect, email }) 
         <div className="mb-5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[11px] font-mono mb-3">
             <Mail className="w-3 h-3 text-cyan-400" />
-            <span>PYTHON SMTPLIB DISPATCHED</span>
+            <span>SECURE OTP DISPATCH</span>
           </div>
           <h3 className="text-xl sm:text-2xl font-black text-white font-outfit tracking-tight">
             Security Verification
           </h3>
-          <p className="text-xs text-gray-400 mt-1">
-            4-digit code dispatched to <span className="text-white font-mono font-bold">{activeEmail}</span>
-          </p>
+          
+          {isEditingEmail || !activeEmail ? (
+            <div className="mt-3 flex flex-col gap-2">
+              <input
+                type="email"
+                placeholder="Enter your registered email address"
+                value={inputEmail}
+                onChange={(e) => setInputEmail(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-black/60 border border-cyan-500/40 rounded-xl text-white outline-none focus:border-cyan-400 font-mono text-center"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (inputEmail && inputEmail.includes('@')) {
+                    setIsEditingEmail(false);
+                    dispatchSmtpOtp(inputEmail);
+                  }
+                }}
+                disabled={!inputEmail || !inputEmail.includes('@') || isSendingOtp}
+                className="py-1.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs cursor-pointer transition-all disabled:opacity-40"
+              >
+                {isSendingOtp ? 'Sending...' : 'Send Verification Code'}
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 mt-1 flex items-center justify-center gap-1.5 flex-wrap">
+              <span>Code sent to:</span>
+              <span className="text-white font-mono font-bold truncate max-w-[200px]">{activeEmail}</span>
+              <button
+                type="button"
+                onClick={() => setIsEditingEmail(true)}
+                className="text-[10px] text-cyan-400 hover:underline cursor-pointer ml-1"
+              >
+                (Change)
+              </button>
+            </p>
+          )}
         </div>
 
         {/* ========================================================= */}

@@ -12,8 +12,60 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [accountFoundInfo, setAccountFoundInfo] = useState(null);
   const [unregisteredError, setUnregisteredError] = useState(null);
+  const [countdown, setCountdown] = useState(60);
+  const [canResend, setCanResend] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
   const inputRefs = useRef([]);
+
+  React.useEffect(() => {
+    let timer;
+    if (step === 2 && countdown > 0 && !canResend) {
+      timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            setCanResend(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [step, countdown, canResend]);
+
+  const handleResendOtp = async () => {
+    if (!canResend) return;
+    setIsResending(true);
+    const cleanEmail = email.toLowerCase().trim();
+    try {
+      const baseUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE_URL || '';
+      const otpResp = await fetch(`${baseUrl}/api/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, length: 6 })
+      });
+      const otpJson = await otpResp.json().catch(() => null);
+      if (otpJson && !otpJson.success && otpJson.error) {
+        throw new Error(otpJson.error);
+      }
+      if (otpJson && otpJson.token) {
+        sessionStorage.setItem(`taxpro_reset_otp_token_${cleanEmail}`, otpJson.token);
+      }
+      if (otpJson && otpJson.devOtp) {
+        sessionStorage.setItem(`taxpro_reset_dev_otp_${cleanEmail}`, String(otpJson.devOtp).trim());
+      }
+      setCountdown(60);
+      setCanResend(false);
+      setOtp(['', '', '', '', '', '']);
+      if (onShowToast) onShowToast(`✓ New 6-digit security code dispatched to ${cleanEmail}`, 'success');
+      setTimeout(() => inputRefs.current[0]?.focus(), 100);
+    } catch (e) {
+      if (onShowToast) onShowToast(`Could not resend code: ${e.message}`, 'error');
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -31,7 +83,7 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
     setUnregisteredError(null);
     
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+      const baseUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE_URL || "";
       let matchedAccount = null;
 
       // 1. Check native PostgreSQL API endpoint first
@@ -131,6 +183,8 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
 
       setAccountFoundInfo(matchedAccount);
       setStep(2);
+      setCountdown(60);
+      setCanResend(false);
       if (onShowToast) onShowToast(`✓ Account verified! 6-digit security OTP code dispatched to ${cleanEmail}`, 'success');
     } catch(err) {
       if (onShowToast) onShowToast(`Error locating account: ${err.message}`, 'error');
@@ -172,7 +226,7 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
 
     try {
       const cleanEmail = email.toLowerCase().trim();
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+      const baseUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE_URL || "";
       const storedToken = sessionStorage.getItem(`taxpro_reset_otp_token_${cleanEmail}`) || '';
       const storedDevOtp = sessionStorage.getItem(`taxpro_reset_dev_otp_${cleanEmail}`) || '';
 
@@ -352,6 +406,23 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
                     className="w-10 h-11 text-center text-lg font-bold font-mono bg-black/60 border border-white/20 rounded-xl text-white outline-none focus:border-cyan-400 focus:bg-cyan-500/10 transition-all"
                   />
                 ))}
+              </div>
+
+              {/* Resend Code Action */}
+              <div className="flex items-center justify-between text-[11px] text-gray-400 mt-2 px-1">
+                <span>Didn't get the code?</span>
+                <button
+                  type="button"
+                  disabled={!canResend || isResending}
+                  onClick={handleResendOtp}
+                  className={`font-semibold transition-colors ${
+                    canResend 
+                      ? 'text-cyan-400 hover:text-cyan-300 underline underline-offset-2 cursor-pointer' 
+                      : 'text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {isResending ? 'Dispatching...' : (canResend ? 'Resend 6-Digit Code' : `Resend code in ${countdown}s`)}
+                </button>
               </div>
             </div>
 
