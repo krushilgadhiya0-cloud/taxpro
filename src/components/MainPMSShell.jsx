@@ -33,6 +33,7 @@ import {
   FolderKanban,
   Users2,
   Edit,
+  Edit3,
   Repeat,
   LifeBuoy,
   Key,
