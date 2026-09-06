@@ -55,7 +55,6 @@ import {
   ExternalLink,
   Briefcase,
   History,
-  GripVertical,
   ArrowUp,
   ArrowDown,
   ArrowUpToLine,
@@ -230,25 +229,20 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
     return () => window.removeEventListener('taxpro_open_taskbar_edit_mode', handleOpenEdit);
   }, []);
 
-  // Smart Click, Double-Click & Hold-Click Tracking Refs
-  const clickTimeoutRef = useRef(null);
+  // Hold-Click Tracking Ref for Edit Mode
   const holdTimerRef = useRef(null);
   const isHoldTriggeredRef = useRef(false);
 
   const handleItemMouseDown = (e, item, index) => {
+    if (!isTaskbarEditMode) return; // Changes only allowed after clicking Edit
     if (e.button !== 0) return; // only left click
     isHoldTriggeredRef.current = false;
     if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
 
-    // Hold click (380ms): user presses down and holds mouse
+    // Hold click (380ms) in Edit Mode: open reorder modal
     holdTimerRef.current = setTimeout(() => {
       isHoldTriggeredRef.current = true;
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current);
-        clickTimeoutRef.current = null;
-      }
       setDoubleClickModalItem({ name: item.name, label: item.label || item.name, index });
-      if (onShowToast) onShowToast(`Hold-Click activated for "${item.label || item.name}"`, 'info');
     }, 380);
   };
 
@@ -260,34 +254,23 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
   };
 
   const handleItemClick = (e, item, index) => {
+    // In normal mode: immediate navigation, zero delay, no reordering
+    if (!isTaskbarEditMode) {
+      navigateTo(item.name);
+      return;
+    }
+
     e.preventDefault();
     e.stopPropagation();
 
-    // If hold click just triggered, prevent normal navigation
+    // If hold click just triggered in Edit Mode, prevent duplicate popup
     if (isHoldTriggeredRef.current) {
       isHoldTriggeredRef.current = false;
       return;
     }
 
-    // In Edit Mode, any click or double-click opens the rearrange modal directly
-    if (isTaskbarEditMode) {
-      setDoubleClickModalItem({ name: item.name, label: item.label || item.name, index });
-      return;
-    }
-
-    if (clickTimeoutRef.current) {
-      // DOUBLE CLICK DETECTED (Second click within 240ms)
-      clearTimeout(clickTimeoutRef.current);
-      clickTimeoutRef.current = null;
-      setDoubleClickModalItem({ name: item.name, label: item.label || item.name, index });
-      if (onShowToast) onShowToast(`Double-click reorder opened for "${item.label || item.name}"`, 'info');
-    } else {
-      // SINGLE CLICK: Wait 240ms to check if second click arrives
-      clickTimeoutRef.current = setTimeout(() => {
-        clickTimeoutRef.current = null;
-        navigateTo(item.name);
-      }, 240);
-    }
+    // In Edit Mode, clicking or double-tapping opens the reorder modal
+    setDoubleClickModalItem({ name: item.name, label: item.label || item.name, index });
   };
 
   const [isDirectFirmSetup, setIsDirectFirmSetup] = useState(false);
@@ -1615,7 +1598,7 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                   key={item.name}
                   role="button"
                   tabIndex={0}
-                  draggable
+                  draggable={isTaskbarEditMode}
                   onMouseDown={(e) => handleItemMouseDown(e, item, index)}
                   onMouseUp={handleItemMouseUp}
                   onMouseLeave={handleItemMouseUp}
@@ -1623,10 +1606,18 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      navigateTo(item.name);
+                      if (isTaskbarEditMode) {
+                        setDoubleClickModalItem({ name: item.name, label: item.label || item.name, index });
+                      } else {
+                        navigateTo(item.name);
+                      }
                     }
                   }}
                   onDragStart={(e) => {
+                    if (!isTaskbarEditMode) {
+                      e.preventDefault();
+                      return;
+                    }
                     handleItemMouseUp();
                     isHoldTriggeredRef.current = true;
                     setDraggedIdx(index);
@@ -1634,11 +1625,13 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                     try { e.dataTransfer.setData('text/plain', String(index)); } catch (err) {}
                   }}
                   onDragOver={(e) => {
+                    if (!isTaskbarEditMode) return;
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
                     if (dragOverIdx !== index) setDragOverIdx(index);
                   }}
                   onDrop={(e) => {
+                    if (!isTaskbarEditMode) return;
                     e.preventDefault();
                     e.stopPropagation();
                     if (draggedIdx !== null && draggedIdx !== index) {
@@ -1652,23 +1645,21 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                     setDragOverIdx(null);
                     handleItemMouseUp();
                   }}
-                  className={`group/item flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer active:cursor-grabbing select-none relative ${
+                  className={`group/item flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer select-none relative ${
                     isActive
                       ? 'bg-[#5b52e0] text-white shadow-lg shadow-[#5b52e0]/30 font-bold'
                       : 'text-gray-400 hover:text-white hover:bg-white/5'
                   } ${isBeingDragged ? 'opacity-35 scale-95 border-2 border-dashed border-indigo-400' : ''} ${
                     isDragTarget ? 'border-t-2 border-indigo-400 bg-white/10' : ''
-                  } ${isTaskbarEditMode ? 'hover:border hover:border-indigo-400/60' : ''}`}
-                  title={`${item.label || item.name} (Single click: Open | Double click: Reorder | Hold click: Quick Menu)`}
+                  } ${isTaskbarEditMode ? 'hover:border hover:border-indigo-400/60 active:cursor-grabbing' : ''}`}
+                  title={isTaskbarEditMode ? `${item.label || item.name} (Click or drag to reorder)` : (item.label || item.name)}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    {/* Grip handle or Edit slot number */}
-                    {isTaskbarEditMode ? (
+                    {/* Position badge ONLY in Edit Mode */}
+                    {isTaskbarEditMode && (
                       <span className="w-4 h-4 rounded-md bg-indigo-500/30 text-indigo-300 flex items-center justify-center text-[9px] font-bold font-mono shrink-0">
                         {index + 1}
                       </span>
-                    ) : (
-                      <GripVertical className="w-3.5 h-3.5 text-gray-500 group-hover/item:text-indigo-300 opacity-0 group-hover/item:opacity-100 transition-opacity -ml-1 flex-shrink-0 cursor-grab" />
                     )}
                     <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-gray-400'}`} />
                     <span className={`${
@@ -1680,36 +1671,38 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                     </span>
                   </div>
 
-                  {/* Right side actions: Quick Up/Down arrows (always visible in Edit Mode or on hover) */}
+                  {/* Right side actions: Quick Up/Down arrows ONLY in Edit Mode */}
                   <div className="flex items-center gap-1 shrink-0">
-                    <div className={`flex items-center gap-0.5 ${isTaskbarEditMode ? 'opacity-100' : 'opacity-0 group-hover/item:opacity-100'} transition-opacity`}>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleShiftItem(item.name, -1);
-                        }}
-                        disabled={index === 0}
-                        title="Move Up"
-                        className="p-1 rounded hover:bg-white/20 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer"
-                      >
-                        <ArrowUp className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleShiftItem(item.name, 1);
-                        }}
-                        disabled={index === sidebarItems.length - 1}
-                        title="Move Down"
-                        className="p-1 rounded hover:bg-white/20 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer"
-                      >
-                        <ArrowDown className="w-3 h-3" />
-                      </button>
-                    </div>
+                    {isTaskbarEditMode && (
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleShiftItem(item.name, -1);
+                          }}
+                          disabled={index === 0}
+                          title="Move Up"
+                          className="p-1 rounded hover:bg-white/20 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer"
+                        >
+                          <ArrowUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleShiftItem(item.name, 1);
+                          }}
+                          disabled={index === sidebarItems.length - 1}
+                          title="Move Down"
+                          className="p-1 rounded hover:bg-white/20 text-gray-400 hover:text-white disabled:opacity-20 cursor-pointer"
+                        >
+                          <ArrowDown className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
 
                     {item.hasSub && !isTaskbarEditMode && (
                       <ChevronRight className="w-3.5 h-3.5 text-gray-500 transition-opacity whitespace-nowrap hidden group-hover:block opacity-0 group-hover:opacity-100" />
