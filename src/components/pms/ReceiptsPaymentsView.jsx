@@ -252,6 +252,12 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
   // Selected Graph State ('inflow' | 'outflow' | 'netcash' | null)
   const [activeMetricGraph, setActiveMetricGraph] = useState(null);
   const [hoverPoint, setHoverPoint] = useState(null);
+  const [animKey, setAnimKey] = useState(0);
+
+  const handleSelectMetric = (metric) => {
+    setActiveMetricGraph(metric);
+    setAnimKey(prev => prev + 1);
+  };
 
   // Smooth spline curve generator for SVG
   const getSmoothSvgPath = (pts) => {
@@ -335,9 +341,10 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
       ];
     }
 
-    const chartWidth = 700;
-    const chartHeight = 175;
-    const padX = 25;
+    // Proportioned for compact medium square widget
+    const chartWidth = 360;
+    const chartHeight = 180;
+    const padX = 20;
     const padY = 25;
 
     const values = rawPoints.map(p => p.cumulative);
@@ -357,8 +364,14 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
 
     const linePathD = getSmoothSvgPath(plotPoints);
     const lastPt = plotPoints[plotPoints.length - 1];
+    const prevPt = plotPoints[plotPoints.length - 2] || plotPoints[0];
     const firstPt = plotPoints[0];
     const areaPathD = linePathD ? `${linePathD} L ${lastPt.x.toFixed(1)} ${(chartHeight - padY).toFixed(1)} L ${firstPt.x.toFixed(1)} ${(chartHeight - padY).toFixed(1)} Z` : '';
+
+    // Calculate flow angle for the arrow at the end
+    const dx = lastPt && prevPt ? lastPt.x - prevPt.x : 1;
+    const dy = lastPt && prevPt ? lastPt.y - prevPt.y : 0;
+    const arrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
 
     let title = 'PORTFOLIO VALUE';
     let val = 0;
@@ -404,7 +417,8 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
       plotPoints,
       linePathD,
       areaPathD,
-      lastPt
+      lastPt,
+      arrowAngle
     };
   }, [activeMetricGraph, filteredLedgerEntries, totalInflow, totalOutflow, netPosition]);
 
@@ -840,7 +854,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         <div 
           role="button"
           tabIndex={0}
-          onClick={() => setActiveMetricGraph(prev => prev === 'inflow' ? null : 'inflow')}
+          onClick={() => handleSelectMetric('inflow')}
           className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none flex items-center justify-between ${
             activeMetricGraph === 'inflow'
               ? 'bg-emerald-50/50 border-emerald-400 shadow-md ring-2 ring-emerald-400/40 scale-[1.01]'
@@ -868,7 +882,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         <div 
           role="button"
           tabIndex={0}
-          onClick={() => setActiveMetricGraph(prev => prev === 'outflow' ? null : 'outflow')}
+          onClick={() => handleSelectMetric('outflow')}
           className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none flex items-center justify-between ${
             activeMetricGraph === 'outflow'
               ? 'bg-rose-50/50 border-rose-400 shadow-md ring-2 ring-rose-400/40 scale-[1.01]'
@@ -896,7 +910,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         <div 
           role="button"
           tabIndex={0}
-          onClick={() => setActiveMetricGraph(prev => prev === 'netcash' ? null : 'netcash')}
+          onClick={() => handleSelectMetric('netcash')}
           className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none flex items-center justify-between ${
             activeMetricGraph === 'netcash'
               ? 'bg-indigo-50/50 border-indigo-400 shadow-md ring-2 ring-indigo-400/40 scale-[1.01]'
@@ -921,24 +935,123 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         </div>
       </div>
 
-      {/* GLOWING ANALYTICS TREND GRAPH CARD (MATCHING USER SCREENSHOT EXACTLY) */}
+      {/* GLOWING ANALYTICS TREND GRAPH CARD (MEDIUM SQUARE FORMAT WITH DRAW-FROM-START & ARROW FLOW) */}
       {graphDetails && (
-        <div className="mb-4 bg-[#0c101d] border border-blue-500/25 rounded-3xl p-5 sm:p-6 shadow-2xl relative overflow-hidden print-hidden animate-fade-in text-white">
-          {/* Subtle Top Cyan Glow Highlight Line */}
-          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400/80 to-transparent"></div>
+        <div className="flex justify-center my-4 print-hidden animate-fade-in">
+          <div 
+            key={animKey}
+            className="w-full max-w-[390px] sm:max-w-[410px] aspect-square flex flex-col justify-between bg-gradient-to-b from-[#0e1424] via-[#090d16] to-[#06080f] border border-cyan-500/30 rounded-3xl p-5 sm:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden text-white group select-none"
+          >
+            {/* Scoped CSS animations for draw-from-start and dynamic arrow flow pulse */}
+            <style>{`
+              @keyframes traceLineFromStart {
+                0% {
+                  stroke-dashoffset: 1200;
+                }
+                100% {
+                  stroke-dashoffset: 0;
+                }
+              }
+              @keyframes expandAreaFill {
+                0% {
+                  opacity: 0;
+                  clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+                }
+                100% {
+                  opacity: 1;
+                  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+                }
+              }
+              @keyframes arrowPopAppear {
+                0%, 70% {
+                  opacity: 0;
+                  transform: scale(0.2);
+                }
+                100% {
+                  opacity: 1;
+                  transform: scale(1);
+                }
+              }
+              @keyframes arrowFlowPulse {
+                0%, 100% {
+                  transform: translateX(0px) scale(1);
+                  opacity: 0.95;
+                }
+                50% {
+                  transform: translateX(5px) scale(1.2);
+                  opacity: 1;
+                }
+              }
+            `}</style>
 
-          {/* Top Bar: Metric Title, Big Value, Growth Badge & Controls */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            {/* Subtle Top Cyan Glow Highlight Line */}
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400/80 to-transparent"></div>
+
+            {/* Top Header: Metric Title, Big Value, Growth Badge & Controls */}
             <div>
-              <div className="text-[10px] font-black uppercase tracking-widest font-mono text-slate-400 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: graphDetails.themeColor }}></span>
-                {graphDetails.title}
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] font-black uppercase tracking-widest font-mono text-slate-400 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: graphDetails.themeColor }}></span>
+                  {graphDetails.title}
+                </div>
+
+                {/* Top Right Mini Controls */}
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center bg-slate-900/90 border border-slate-700/80 rounded-lg p-0.5 gap-0.5 shadow-inner">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectMetric('inflow')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                        activeMetricGraph === 'inflow' 
+                          ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400/40 shadow-xs' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                      title="Show Inflow"
+                    >
+                      In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectMetric('outflow')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                        activeMetricGraph === 'outflow' 
+                          ? 'bg-rose-500/30 text-rose-300 border border-rose-400/40 shadow-xs' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                      title="Show Outflow"
+                    >
+                      Out
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectMetric('netcash')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                        activeMetricGraph === 'netcash' 
+                          ? 'bg-indigo-500/30 text-indigo-300 border border-indigo-400/40 shadow-xs' 
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                      title="Show Net Cash"
+                    >
+                      Net
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveMetricGraph(null)}
+                    className="p-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white transition-all cursor-pointer"
+                    title="Close Chart"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-3 mt-1.5">
+
+              <div className="flex items-center gap-2.5 mt-1">
                 <span className="text-2xl sm:text-3xl font-black font-mono text-white tracking-tight">
                   ₹{graphDetails.val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
-                <span className={`px-2.5 py-0.5 rounded-md text-xs font-black font-mono flex items-center gap-1 ${
+                <span className={`px-2 py-0.5 rounded-md text-[11px] font-black font-mono flex items-center gap-1 ${
                   graphDetails.isPos
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                     : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
@@ -946,214 +1059,193 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                   {graphDetails.isPos ? '+' : ''}{graphDetails.growth}%
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 mt-1 font-mono">
+              <p className="text-[10px] text-slate-400 mt-0.5 font-mono truncate">
                 {graphDetails.sub}
               </p>
             </div>
 
-            {/* Quick Switcher & Close button */}
-            <div className="flex items-center gap-2 self-start sm:self-auto">
-              <div className="flex items-center bg-slate-900/90 border border-slate-700/80 rounded-xl p-1 gap-1 shadow-inner">
-                <button
-                  type="button"
-                  onClick={() => setActiveMetricGraph('inflow')}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                    activeMetricGraph === 'inflow' 
-                      ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-400/40 shadow-sm' 
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Inflow
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveMetricGraph('outflow')}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                    activeMetricGraph === 'outflow' 
-                      ? 'bg-rose-500/25 text-rose-300 border border-rose-400/40 shadow-sm' 
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Outflow
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveMetricGraph('netcash')}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-                    activeMetricGraph === 'netcash' 
-                      ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-400/40 shadow-sm' 
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Net Cash
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setActiveMetricGraph(null)}
-                className="p-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white transition-all cursor-pointer"
-                title="Close Chart"
+            {/* SVG Glow Chart Canvas (Medium Square Proportions: 360 x 180) */}
+            <div className="relative w-full flex-1 my-1.5 select-none flex items-center">
+              <svg 
+                className="w-full h-full max-h-[190px] overflow-visible" 
+                viewBox={`0 0 ${graphDetails.chartWidth} ${graphDetails.chartHeight}`} 
+                preserveAspectRatio="none"
+                onMouseLeave={() => setHoverPoint(null)}
               >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+                <defs>
+                  <linearGradient id="neonAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={graphDetails.themeColor} stopOpacity="0.4" />
+                    <stop offset="70%" stopColor={graphDetails.themeColor} stopOpacity="0.08" />
+                    <stop offset="100%" stopColor={graphDetails.themeColor} stopOpacity="0.0" />
+                  </linearGradient>
 
-          {/* SVG Glow Chart Canvas */}
-          <div className="relative w-full h-44 sm:h-52 mt-1 select-none">
-            <svg 
-              className="w-full h-full overflow-visible" 
-              viewBox={`0 0 ${graphDetails.chartWidth} ${graphDetails.chartHeight}`} 
-              preserveAspectRatio="none"
-              onMouseLeave={() => setHoverPoint(null)}
-            >
-              <defs>
-                <linearGradient id="neonAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={graphDetails.themeColor} stopOpacity="0.4" />
-                  <stop offset="70%" stopColor={graphDetails.themeColor} stopOpacity="0.1" />
-                  <stop offset="100%" stopColor={graphDetails.themeColor} stopOpacity="0.0" />
-                </linearGradient>
+                  <filter id="neonLineGlow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="0" stdDeviation="3.5" floodColor={graphDetails.themeColor} floodOpacity="0.85" />
+                  </filter>
+                </defs>
 
-                <filter id="neonLineGlow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="0" dy="0" stdDeviation="3.5" floodColor={graphDetails.themeColor} floodOpacity="0.85" />
-                </filter>
-              </defs>
-
-              {/* Background Grid Guidelines */}
-              <line 
-                x1={graphDetails.padX} 
-                y1={graphDetails.padY} 
-                x2={graphDetails.chartWidth - graphDetails.padX} 
-                y2={graphDetails.padY} 
-                stroke="#1e293b" 
-                strokeDasharray="4 4" 
-                strokeOpacity="0.6"
-              />
-              <line 
-                x1={graphDetails.padX} 
-                y1={graphDetails.chartHeight / 2} 
-                x2={graphDetails.chartWidth - graphDetails.padX} 
-                y2={graphDetails.chartHeight / 2} 
-                stroke="#1e293b" 
-                strokeDasharray="4 4" 
-                strokeOpacity="0.6"
-              />
-              <line 
-                x1={graphDetails.padX} 
-                y1={graphDetails.chartHeight - graphDetails.padY} 
-                x2={graphDetails.chartWidth - graphDetails.padX} 
-                y2={graphDetails.chartHeight - graphDetails.padY} 
-                stroke="#1e293b" 
-                strokeOpacity="0.8"
-              />
-
-              {/* Area Under Curve Fill */}
-              {graphDetails.areaPathD && (
-                <path d={graphDetails.areaPathD} fill="url(#neonAreaGradient)" />
-              )}
-
-              {/* Neon Glowing Spline Line */}
-              {graphDetails.linePathD && (
-                <path 
-                  d={graphDetails.linePathD} 
-                  fill="none" 
-                  stroke={graphDetails.themeColor} 
-                  strokeWidth="2.8" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  filter="url(#neonLineGlow)" 
+                {/* Background Grid Guidelines */}
+                <line 
+                  x1={graphDetails.padX} 
+                  y1={graphDetails.padY} 
+                  x2={graphDetails.chartWidth - graphDetails.padX} 
+                  y2={graphDetails.padY} 
+                  stroke="#1e293b" 
+                  strokeDasharray="4 4" 
+                  strokeOpacity="0.6"
                 />
-              )}
+                <line 
+                  x1={graphDetails.padX} 
+                  y1={graphDetails.chartHeight / 2} 
+                  x2={graphDetails.chartWidth - graphDetails.padX} 
+                  y2={graphDetails.chartHeight / 2} 
+                  stroke="#1e293b" 
+                  strokeDasharray="4 4" 
+                  strokeOpacity="0.6"
+                />
+                <line 
+                  x1={graphDetails.padX} 
+                  y1={graphDetails.chartHeight - graphDetails.padY} 
+                  x2={graphDetails.chartWidth - graphDetails.padX} 
+                  y2={graphDetails.chartHeight - graphDetails.padY} 
+                  stroke="#1e293b" 
+                  strokeOpacity="0.8"
+                />
 
-              {/* Interactive Data Points */}
-              {graphDetails.plotPoints.map((pt, idx) => (
-                <g key={idx} onMouseEnter={() => setHoverPoint(pt)} className="cursor-pointer">
-                  <circle
-                    cx={pt.x}
-                    cy={pt.y}
-                    r={idx === graphDetails.plotPoints.length - 1 ? 4 : 2.5}
-                    fill={graphDetails.themeColor}
-                    className="transition-all hover:scale-150"
+                {/* Area Under Curve Fill (Expands from Start) */}
+                {graphDetails.areaPathD && (
+                  <path 
+                    d={graphDetails.areaPathD} 
+                    fill="url(#neonAreaGradient)" 
+                    style={{ animation: 'expandAreaFill 1.1s cubic-bezier(0.2, 0.9, 0.4, 1) forwards' }}
                   />
-                </g>
-              ))}
+                )}
 
-              {/* Latest End Highlight Point with Pulsing Ring (like screenshot!) */}
-              {graphDetails.lastPt && (
-                <g>
-                  <circle
-                    cx={graphDetails.lastPt.x}
-                    cy={graphDetails.lastPt.y}
-                    r="9"
-                    fill={graphDetails.themeColor}
-                    fillOpacity="0.3"
-                    className="animate-ping"
-                  />
-                  <circle
-                    cx={graphDetails.lastPt.x}
-                    cy={graphDetails.lastPt.y}
-                    r="5"
-                    fill="#0c101d"
-                    stroke={graphDetails.themeColor}
-                    strokeWidth="2.5"
-                  />
-                  <circle
-                    cx={graphDetails.lastPt.x}
-                    cy={graphDetails.lastPt.y}
-                    r="2.5"
-                    fill={graphDetails.themeColor}
-                  />
-                </g>
-              )}
-
-              {/* Hover Cursor Vertical Line */}
-              {hoverPoint && (
-                <g>
-                  <line 
-                    x1={hoverPoint.x} 
-                    y1={graphDetails.padY} 
-                    x2={hoverPoint.x} 
-                    y2={graphDetails.chartHeight - graphDetails.padY} 
-                    stroke="#ffffff" 
-                    strokeOpacity="0.4" 
-                    strokeDasharray="2 2" 
-                  />
-                  <circle 
-                    cx={hoverPoint.x} 
-                    cy={hoverPoint.y} 
-                    r="5" 
-                    fill="#ffffff" 
+                {/* Neon Glowing Spline Line (Draws From Start) */}
+                {graphDetails.linePathD && (
+                  <path 
+                    d={graphDetails.linePathD} 
+                    fill="none" 
                     stroke={graphDetails.themeColor} 
-                    strokeWidth="2.5" 
+                    strokeWidth="2.8" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    filter="url(#neonLineGlow)" 
+                    style={{
+                      strokeDasharray: 1200,
+                      strokeDashoffset: 1200,
+                      animation: 'traceLineFromStart 1.1s cubic-bezier(0.2, 0.9, 0.4, 1) forwards'
+                    }}
                   />
-                </g>
-              )}
-            </svg>
+                )}
 
-            {/* Hover Floating Tooltip Badge */}
-            {hoverPoint && (
-              <div 
-                className="absolute pointer-events-none transform -translate-x-1/2 -translate-y-full px-3 py-1.5 rounded-xl bg-slate-950/95 border border-cyan-500/50 shadow-2xl text-center z-10"
-                style={{
-                  left: `${(hoverPoint.x / graphDetails.chartWidth) * 100}%`,
-                  top: `${(hoverPoint.y / graphDetails.chartHeight) * 100}%`,
-                  marginTop: '-12px'
-                }}
-              >
-                <div className="text-[10px] text-slate-400 font-mono">{hoverPoint.formattedDate || hoverPoint.date}</div>
-                <div className="text-xs font-black text-cyan-300 font-mono">
-                  ₹{Number(hoverPoint.cumulative || hoverPoint.value).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                {/* Interactive Data Points */}
+                {graphDetails.plotPoints.map((pt, idx) => (
+                  <g key={idx} onMouseEnter={() => setHoverPoint(pt)} className="cursor-pointer">
+                    <circle
+                      cx={pt.x}
+                      cy={pt.y}
+                      r={idx === graphDetails.plotPoints.length - 1 ? 3.5 : 2}
+                      fill={graphDetails.themeColor}
+                      className="transition-all hover:scale-150"
+                    />
+                  </g>
+                ))}
+
+                {/* ARROW FLOW AT THE LAST (Glowing Dynamic Flow Arrow Pointing Along Direction) */}
+                {graphDetails.lastPt && (
+                  <g 
+                    transform={`translate(${graphDetails.lastPt.x}, ${graphDetails.lastPt.y})`}
+                    style={{ animation: 'arrowPopAppear 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
+                  >
+                    {/* Animated Pulsing Outer Halo Ping */}
+                    <circle
+                      r="12"
+                      fill={graphDetails.themeColor}
+                      fillOpacity="0.28"
+                      className="animate-ping"
+                    />
+                    
+                    {/* Rotated Arrow Flow Head along curve slope */}
+                    <g transform={`rotate(${graphDetails.arrowAngle || 0})`}>
+                      {/* Flowing Arrow with continuous dynamic forward motion */}
+                      <g style={{ animation: 'arrowFlowPulse 1.5s ease-in-out infinite' }}>
+                        {/* Glow halo behind arrow head */}
+                        <circle cx="2" cy="0" r="8" fill={graphDetails.themeColor} fillOpacity="0.45" filter="url(#neonLineGlow)" />
+                        
+                        {/* Sharp forward directional arrow head */}
+                        <path
+                          d="M -7 -6 L 8 0 L -7 6 L -3 0 Z"
+                          fill={graphDetails.themeColor}
+                          stroke="#ffffff"
+                          strokeWidth="0.8"
+                          filter="url(#neonLineGlow)"
+                        />
+
+                        {/* Arrow core highlight */}
+                        <polygon
+                          points="-2,-2 5,0 -2,2 0,0"
+                          fill="#ffffff"
+                        />
+                      </g>
+                    </g>
+
+                    {/* Bright Core Center Pivot */}
+                    <circle r="3" fill="#ffffff" stroke={graphDetails.themeColor} strokeWidth="1.5" />
+                  </g>
+                )}
+
+                {/* Hover Cursor Vertical Line */}
+                {hoverPoint && (
+                  <g>
+                    <line 
+                      x1={hoverPoint.x} 
+                      y1={graphDetails.padY} 
+                      x2={hoverPoint.x} 
+                      y2={graphDetails.chartHeight - graphDetails.padY} 
+                      stroke="#ffffff" 
+                      strokeOpacity="0.4" 
+                      strokeDasharray="2 2" 
+                    />
+                    <circle 
+                      cx={hoverPoint.x} 
+                      cy={hoverPoint.y} 
+                      r="5" 
+                      fill="#ffffff" 
+                      stroke={graphDetails.themeColor} 
+                      strokeWidth="2.5" 
+                    />
+                  </g>
+                )}
+              </svg>
+
+              {/* Hover Floating Tooltip Badge */}
+              {hoverPoint && (
+                <div 
+                  className="absolute pointer-events-none transform -translate-x-1/2 -translate-y-full px-2.5 py-1 rounded-xl bg-slate-950/95 border border-cyan-500/50 shadow-2xl text-center z-10"
+                  style={{
+                    left: `${(hoverPoint.x / graphDetails.chartWidth) * 100}%`,
+                    top: `${(hoverPoint.y / graphDetails.chartHeight) * 100}%`,
+                    marginTop: '-10px'
+                  }}
+                >
+                  <div className="text-[9px] text-slate-400 font-mono">{hoverPoint.formattedDate || hoverPoint.date}</div>
+                  <div className="text-[11px] font-black text-cyan-300 font-mono">
+                    ₹{Number(hoverPoint.cumulative || hoverPoint.value).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* Bottom X-Axis Date Labels */}
-          <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 mt-2 px-1">
-            {graphDetails.plotPoints.filter((_, i, arr) => i === 0 || i === Math.floor(arr.length / 2) || i === arr.length - 1).map((pt, i) => (
-              <span key={i}>{pt.formattedDate || pt.date}</span>
-            ))}
+            {/* Bottom: Date Range Labels & Live Arrow Flow Badge */}
+            <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 pt-1 border-t border-white/5">
+              <span>{graphDetails.plotPoints[0]?.formattedDate || 'Start'}</span>
+              <span className="px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700/80 text-[9px] font-bold text-slate-300 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full animate-ping" style={{ backgroundColor: graphDetails.themeColor }}></span>
+                Flow ↗
+              </span>
+              <span>{graphDetails.lastPt?.formattedDate || 'Latest'}</span>
+            </div>
           </div>
         </div>
       )}
