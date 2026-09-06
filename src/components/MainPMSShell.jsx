@@ -53,7 +53,9 @@ import {
   ArrowRight,
   ExternalLink,
   Briefcase,
-  History
+  History,
+  Pin,
+  PinOff
 } from 'lucide-react';
 
 import DashboardView from './DashboardView';
@@ -183,6 +185,29 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
   const [firmTag, setFirmTag] = useState(() => localStorage.getItem('taxpro_firm_tag') || 'TaxPro');
   const [isFirmConfigured, setIsFirmConfigured] = useState(() => localStorage.getItem('taxpro_firm_configured') === 'true');
   const [isFirmModalOpen, setIsFirmModalOpen] = useState(false);
+
+  // Taskbar / Sidebar Fixed (Pinned) State
+  const [isTaskbarPinned, setIsTaskbarPinned] = useState(() => localStorage.getItem('taxpro_taskbar_pinned') === 'true');
+
+  useEffect(() => {
+    const handlePinnedChange = (e) => {
+      if (e && e.detail !== undefined) {
+        setIsTaskbarPinned(Boolean(e.detail));
+      } else {
+        setIsTaskbarPinned(localStorage.getItem('taxpro_taskbar_pinned') === 'true');
+      }
+    };
+    window.addEventListener('taxpro_taskbar_pinned_changed', handlePinnedChange);
+    return () => window.removeEventListener('taxpro_taskbar_pinned_changed', handlePinnedChange);
+  }, []);
+
+  const toggleTaskbarPin = () => {
+    const next = !isTaskbarPinned;
+    setIsTaskbarPinned(next);
+    localStorage.setItem('taxpro_taskbar_pinned', String(next));
+    window.dispatchEvent(new CustomEvent('taxpro_taskbar_pinned_changed', { detail: next }));
+    if (onShowToast) onShowToast(next ? '📌 Taskbar fixed (locked in expanded view)' : 'Taskbar set to auto-collapse on hover', 'info');
+  };
 
   // Custom Sidebar / Taskbar Ordering
   const [customSidebarOrder, setCustomSidebarOrder] = useState(() => {
@@ -1446,8 +1471,23 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
 
       <div className="flex flex-1 relative overflow-hidden">
 
-        {/* LEFT NAVY SIDEBAR (Hover to expand) */}
-        <aside className="group w-16 hover:w-64 bg-[#181c32] text-gray-300 flex flex-col py-4 px-3 flex-shrink-0 h-full overflow-y-auto overflow-x-hidden transition-all duration-300 z-30 relative custom-scrollbar-hide print:hidden">
+        {/* LEFT NAVY SIDEBAR (Hover or Pinned to expand) */}
+        <aside className={`group ${isTaskbarPinned ? 'w-64' : 'w-16 hover:w-64'} bg-[#181c32] text-gray-300 flex flex-col py-4 px-3 flex-shrink-0 h-full overflow-y-auto overflow-x-hidden transition-all duration-300 z-30 relative custom-scrollbar-hide print:hidden`}>
+          {/* Header with Pin/Unpin button */}
+          <div className="flex items-center justify-between px-2 pb-2.5 mb-2 border-b border-white/10 w-full min-w-[36px]">
+            <span className={`text-[10px] font-black uppercase tracking-widest text-indigo-300 font-mono transition-opacity ${isTaskbarPinned ? 'block' : 'hidden group-hover:block'}`}>
+              {`📌 ${isTaskbarPinned ? 'Fixed Taskbar' : 'Navigation'}`}
+            </span>
+            <button
+              type="button"
+              onClick={toggleTaskbarPin}
+              title={isTaskbarPinned ? 'Unpin Taskbar (Auto-collapse on hover)' : 'Fix / Pin Taskbar (Keep permanently expanded)'}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${isTaskbarPinned ? 'bg-indigo-600/50 text-white border border-indigo-400 shadow-sm' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+            >
+              {isTaskbarPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+
           <div className="flex flex-col gap-1 w-56">
             {sidebarItems.map((item) => {
               const Icon = item.icon;
@@ -1464,12 +1504,18 @@ export default function MainPMSShell({ userRole, onLogout, onShowToast, onTrigge
                 >
                   <div className="flex items-center gap-3">
                     <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-gray-400'}`} />
-                    <span className="opacity-0 translate-x-4 invisible group-hover:visible group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap">
+                    <span className={`${
+                      isTaskbarPinned
+                        ? 'opacity-100 translate-x-0 visible'
+                        : 'opacity-0 translate-x-4 invisible group-hover:visible group-hover:translate-x-0 group-hover:opacity-100'
+                    } transition-all duration-300 whitespace-nowrap`}>
                       {item.label || item.name}
                     </span>
                   </div>
                   {item.hasSub && (
-                    <ChevronRight className="w-3.5 h-3.5 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap hidden group-hover:block" />
+                    <ChevronRight className={`w-3.5 h-3.5 text-gray-500 transition-opacity whitespace-nowrap ${
+                      isTaskbarPinned ? 'block opacity-100' : 'hidden group-hover:block opacity-0 group-hover:opacity-100'
+                    }`} />
                   )}
                 </button>
               );

@@ -126,7 +126,14 @@ export default function App() {
     }
   });
 
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      if (window.location.hash.includes('dashboard') || localStorage.getItem('taxpro_workspace_mode') === 'pms_workspace') {
+        return 'dashboard';
+      }
+    }
+    return 'home';
+  });
   const [pendingTab, setPendingTab] = useState(null);
 
   const [isOTPModalOpen, setIsOTPModalOpen] = useState(false);
@@ -405,12 +412,16 @@ export default function App() {
           setUserRole(role);
         }
         
-        if (localStorage.getItem('taxpro_profile_completed')) {
-          setUserRole(localStorage.getItem('taxpro_user_role') || 'Admin');
-          setIsAuthenticated(true);
-        } else {
-          setIsProfileSetupOpen(true);
-        }
+        localStorage.setItem('taxpro_profile_completed', 'true');
+        localStorage.setItem('taxpro_setup_completed', 'true');
+        localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+        setWorkspaceMode('pms_workspace');
+        localStorage.setItem('taxpro_active_nav', 'Dashboard');
+        window.location.hash = '#/dashboard';
+        setUserRole(localStorage.getItem('taxpro_user_role') || 'Admin');
+        setIsAuthenticated(true);
+        setActiveTab('dashboard');
+        setIsProfileSetupOpen(false);
 
         // Supabase often leaves a trailing '#' after parsing implicit OAuth hashes. Clean it up:
         if (window.location.href.endsWith('#')) {
@@ -541,7 +552,7 @@ export default function App() {
        );
     }
 
-    const isSetupCompleted = localStorage.getItem('taxpro_setup_completed') === 'true';
+    const isSetupCompleted = localStorage.getItem('taxpro_setup_completed') !== 'false';
 
     return (
       <div className="relative min-h-screen bg-[#f3f4f6]">

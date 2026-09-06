@@ -23,13 +23,35 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
     fetchDepts();
   }, []);
 
-  const fetchDepts = async () => {
-    // Purge legacy dummy cache
-    try {
-      const c = localStorage.getItem('taxpro_departments');
-      if (c && (c.includes('Priya') || c.includes('Sharma') || c.includes('Finance Lead'))) {
-        localStorage.removeItem('taxpro_departments');
+  const sanitizeDeptList = (list, activeMembers = []) => {
+    if (!Array.isArray(list)) return [];
+    const validManagerNames = new Set([
+      'Super Administrator',
+      'Root Administrator',
+      'Managing Partner',
+      ...activeMembers.map(m => m && m.name).filter(Boolean)
+    ]);
+    return list.map(d => {
+      if (!d) return d;
+      let mgr = d.manager;
+      if (mgr && (mgr.toLowerCase().includes('priya') || mgr.toLowerCase().includes('sharma') || mgr.toLowerCase().includes('patel'))) {
+        mgr = 'Not assigned';
+      } else if (mgr && mgr !== 'Not assigned' && mgr !== 'Unassigned' && activeMembers.length > 0 && !validManagerNames.has(mgr)) {
+        mgr = 'Not assigned';
       }
+      return { ...d, manager: mgr || 'Not assigned' };
+    });
+  };
+
+  const fetchDepts = async () => {
+    // Purge legacy dummy caches from browser
+    try {
+      ['taxpro_departments', 'taxpro_table_departments', 'taxpro_team_members', 'taxpro_table_team_members'].forEach(k => {
+        const c = localStorage.getItem(k);
+        if (c && (c.includes('Priya') || c.includes('Sharma') || c.includes('Finance Lead') || c.includes('EMP-102'))) {
+          localStorage.removeItem(k);
+        }
+      });
     } catch(e) {}
     setIsLoading(true);
     try {
@@ -38,31 +60,40 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
         supabase.from('team_members').select('*').order('created_at', { ascending: false })
       ]);
 
-      if (teamRes.data && Array.isArray(teamRes.data)) {
-        setTeamMembersList(teamRes.data);
-      }
+      const members = Array.isArray(teamRes.data) ? teamRes.data.filter(m => !m.name?.includes('Priya') && !m.email?.includes('priya')) : [];
+      setTeamMembersList(members);
 
-      const data = deptRes.data;
-      if (!deptRes.error && Array.isArray(data) && data.length > 0) {
-        setDepts(data);
-        localStorage.setItem('taxpro_departments', JSON.stringify(data));
+      const rawDepts = deptRes.data;
+      if (!deptRes.error && Array.isArray(rawDepts) && rawDepts.length > 0) {
+        const cleaned = sanitizeDeptList(rawDepts, members);
+        setDepts(cleaned);
+        localStorage.setItem('taxpro_departments', JSON.stringify(cleaned));
       } else {
         const cached = localStorage.getItem('taxpro_departments');
         if (cached) {
-          setDepts(JSON.parse(cached));
-        } else if (Array.isArray(data)) {
-          setDepts(data);
+          try {
+            const parsed = JSON.parse(cached);
+            setDepts(sanitizeDeptList(parsed, members));
+          } catch(e) {
+            setDepts([]);
+          }
+        } else if (Array.isArray(rawDepts)) {
+          setDepts(sanitizeDeptList(rawDepts, members));
         }
       }
     } catch (e) {
       console.warn('[Departments Load Notice]:', e.message);
       const cached = localStorage.getItem('taxpro_departments');
-      if (cached) setDepts(JSON.parse(cached));
+      if (cached) {
+        try {
+          setDepts(sanitizeDeptList(JSON.parse(cached), []));
+        } catch(err) {}
+      }
     }
     setIsLoading(false);
   };
 
-  const availableManagers = useMemo(() => {
+    const availableManagers = useMemo(() => {
     if (teamMembersList && teamMembersList.length > 0) {
       return teamMembersList;
     }
