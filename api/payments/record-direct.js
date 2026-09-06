@@ -81,8 +81,7 @@ export default async function handler(req, res) {
         '    </div>',
         '  </div>',
         '</div>'
-      ].join('
-');
+      ].join('');
 
       await transporter.sendMail({
         from: '"TaxPro Billing" <' + smtpUser + '>',
