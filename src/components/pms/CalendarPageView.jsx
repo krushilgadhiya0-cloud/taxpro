@@ -36,6 +36,7 @@ import {
 import { printHtml } from '../../lib/printHelper';
 import { logAuditActivity } from '../../lib/auditLogger';
 import { formatDate, formatDateWithWeekday } from '../../lib/dateUtils';
+import { useCurrency, formatCurrency } from '../../lib/currencyHelper';
 
 export const EXPENSE_CATEGORIES = [
   'Staff Salary & Payroll',
@@ -86,6 +87,7 @@ export const SUGGESTED_EXPENSE_PAYEES = [
 ];
 
 export default function CalendarPageView({ onShowToast }) {
+  const activeCurrency = useCurrency();
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
@@ -769,7 +771,7 @@ export default function CalendarPageView({ onShowToast }) {
           <td style="padding: 6px 8px; color: #475569;">${tx.category || '-'}</td>
           <td style="padding: 6px 8px; font-family: monospace; color: #334155;">${tx.mode || 'UPI'}</td>
           <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 700; color: ${tx.type === 'Income' ? '#059669' : '#dc2626'};">
-            ${tx.type === 'Income' ? '+' : '-'}₹${Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            ${tx.type === 'Income' ? '+' : '-'}${formatCurrency(tx.amount, 2)}
           </td>
         </tr>
       `).join('')
@@ -887,15 +889,15 @@ export default function CalendarPageView({ onShowToast }) {
         <div className="grid grid-cols-3 gap-3 mb-5 border border-gray-300 rounded p-3 bg-gray-50">
           <div>
             <div className="text-[10px] uppercase font-bold text-gray-600">Total Day Income</div>
-            <div className="text-base font-black font-mono text-gray-900">₹{selectedDayIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div className="text-base font-black font-mono text-gray-900">{formatCurrency(selectedDayIncome, 2)}</div>
           </div>
           <div>
             <div className="text-[10px] uppercase font-bold text-gray-600">Total Day Expenses</div>
-            <div className="text-base font-black font-mono text-gray-900">₹{selectedDayExpense.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div className="text-base font-black font-mono text-gray-900">{formatCurrency(selectedDayExpense, 2)}</div>
           </div>
           <div>
             <div className="text-[10px] uppercase font-bold text-gray-600">Net Daily Cashflow</div>
-            <div className="text-base font-black font-mono text-gray-900">₹{selectedDayNet.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+            <div className="text-base font-black font-mono text-gray-900">{formatCurrency(selectedDayNet, 2)}</div>
           </div>
         </div>
 
@@ -927,7 +929,7 @@ export default function CalendarPageView({ onShowToast }) {
                     <td className="py-1.5 px-3 border-r border-gray-200 text-gray-600">{tx.category}</td>
                     <td className="py-1.5 px-2 border-r border-gray-200 font-mono text-gray-700">{tx.mode}</td>
                     <td className="py-1.5 px-3 text-right font-mono font-bold">
-                      {tx.type === 'Income' ? '+' : '-'}₹{Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {tx.type === 'Income' ? '+' : '-'}{formatCurrency(tx.amount, 2)}
                     </td>
                   </tr>
                 ))}
@@ -1257,7 +1259,7 @@ export default function CalendarPageView({ onShowToast }) {
               <div className="text-right">
                 <div className="text-[10px] text-gray-500 uppercase font-bold">Month Net</div>
                 <div className={`text-xs font-mono font-black ${monthlyStats.net >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                  ₹{monthlyStats.net.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                  {formatCurrency(monthlyStats.net, 0)}
                 </div>
               </div>
             </div>
@@ -1360,7 +1362,7 @@ export default function CalendarPageView({ onShowToast }) {
                     <span className="text-[10px] bg-emerald-100 px-1.5 py-0.5 rounded font-mono">In</span>
                   </div>
                   <div className="text-xl font-black font-mono text-emerald-900 mt-2">
-                    ₹{selectedDayIncome.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {formatCurrency(selectedDayIncome, 2)}
                   </div>
                   <div className="text-[10px] text-emerald-700 font-medium mt-1">
                     {selectedDayTransactions.filter(t => t.type === 'Income').length} receipt(s)
@@ -1374,7 +1376,7 @@ export default function CalendarPageView({ onShowToast }) {
                     <span className="text-[10px] bg-rose-100 px-1.5 py-0.5 rounded font-mono">Out</span>
                   </div>
                   <div className="text-xl font-black font-mono text-rose-900 mt-2">
-                    ₹{selectedDayExpense.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {formatCurrency(selectedDayExpense, 2)}
                   </div>
                   <div className="text-[10px] text-rose-700 font-medium mt-1">
                     {selectedDayTransactions.filter(t => t.type === 'Expense').length} payment(s)
@@ -1390,7 +1392,7 @@ export default function CalendarPageView({ onShowToast }) {
                     <span className="text-[10px] bg-white/80 px-1.5 py-0.5 rounded font-mono">Day</span>
                   </div>
                   <div className={`text-xl font-black font-mono mt-2 ${selectedDayNet >= 0 ? 'text-indigo-900' : 'text-amber-900'}`}>
-                    ₹{selectedDayNet.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {formatCurrency(selectedDayNet, 2)}
                   </div>
                   <div className="text-[10px] text-gray-500 font-medium mt-1">
                     {selectedDayNet >= 0 ? '✓ Net Cash Positive' : 'Deficit / Inflow needed'}
@@ -1442,7 +1444,7 @@ export default function CalendarPageView({ onShowToast }) {
                         <span className={`text-xs font-mono font-black ${
                           tx.type === 'Income' ? 'text-emerald-700' : 'text-rose-700'
                         }`}>
-                          {tx.type === 'Income' ? '+' : '-'}₹{Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {tx.type === 'Income' ? '+' : '-'}{formatCurrency(tx.amount, 2)}
                         </span>
                         <button
                           onClick={() => handleDeleteTransaction(tx.id)}
@@ -1688,7 +1690,7 @@ export default function CalendarPageView({ onShowToast }) {
 
                 {/* Amount */}
                 <div>
-                  <label className="text-slate-700 block mb-1">Amount (₹) <span className="text-rose-500">*</span></label>
+                  <label className="text-slate-700 block mb-1">Amount ({activeCurrency.symbol}) <span className="text-rose-500">*</span></label>
                   <input
                     type="number"
                     required

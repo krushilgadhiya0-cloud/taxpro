@@ -5,8 +5,10 @@ import { logAuditActivity } from '../../lib/auditLogger';
 import { printHtml } from '../../lib/printHelper';
 import { formatDate } from '../../lib/dateUtils';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, SUGGESTED_EXPENSE_PAYEES } from './CalendarPageView';
+import { useCurrency, formatCurrency, getCurrencySymbol, replaceCurrencySymbol } from '../../lib/currencyHelper';
 
 export default function ReceiptsPaymentsView({ onShowToast }) {
+  const activeCurrency = useCurrency();
   const [entries, setEntries] = useState([]);
   const [payrollPayments, setPayrollPayments] = useState([]);
   const [clients, setClients] = useState([]);
@@ -63,7 +65,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         client: r.party || r.title || 'Client',
         category: r.category || (r.type === 'income' ? 'Client Retainer / Fee Payment' : 'Office & Operations Expense'),
         mode: r.method || 'Bank Transfer',
-        amount: `₹${parseFloat(r.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        amount: formatCurrency(r.amount || 0, 2),
         date: r.date || (r.created_at || new Date().toISOString()).split('T')[0]
       }));
 
@@ -79,7 +81,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
             client: r.party || r.title || 'Client',
             category: r.category || (r.type === 'income' ? 'Client Retainer / Fee Payment' : 'Office & Operations Expense'),
             mode: r.method || 'Bank Transfer',
-            amount: `₹${parseFloat(r.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+            amount: formatCurrency(r.amount || 0, 2),
             date: r.date || (r.created_at || new Date().toISOString()).split('T')[0]
           }));
         }
@@ -99,7 +101,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
           client: f.client_name || f.client || (isExpense ? 'Vendor / Payee' : 'Client'),
           category: f.service || (isExpense ? 'Office & Operations Expense' : 'Client Retainer / Monthly Fee'),
           mode: f.payment_mode || 'Bank Transfer',
-          amount: `₹${parseFloat(f.paid || f.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+          amount: formatCurrency(f.paid || f.amount || 0, 2),
           date: (f.paid_date || f.date || f.created_at || new Date().toISOString()).split('T')[0]
         };
       });
@@ -123,7 +125,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
               client: f.client_name || f.client || (isExpense ? 'Vendor / Payee' : 'Client'),
               category: f.service || (isExpense ? 'Office & Operations Expense' : 'Client Retainer / Monthly Fee'),
               mode: f.payment_mode || 'Bank Transfer',
-              amount: `₹${parseFloat(f.paid || f.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+              amount: formatCurrency(f.paid || f.amount || 0, 2),
               date: (f.paid_date || f.date || f.created_at || new Date().toISOString()).split('T')[0]
             };
           });
@@ -137,7 +139,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         client: p.recipient || p.client_name || p.category || 'Vendor / Employee',
         category: p.category || 'Office & Operations',
         mode: p.method || 'UPI',
-        amount: `₹${parseFloat(p.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        amount: formatCurrency(p.amount || 0, 2),
         date: (p.date || p.created_at || new Date().toISOString()).split('T')[0]
       }));
 
@@ -153,7 +155,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
             client: t.party || t.client || 'Client',
             category: t.category || 'General',
             mode: t.mode || t.method || 'Bank Transfer',
-            amount: typeof t.amount === 'string' && t.amount.startsWith('₹') ? t.amount : `₹${parseFloat(t.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+            amount: formatCurrency(t.amount || 0, 2),
             date: (t.date || new Date().toISOString()).split('T')[0]
           }));
         }
@@ -173,7 +175,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
               client: `${p.memberName || 'Employee'} (Salary)`,
               category: p.description || 'Staff Salary & Payroll',
               mode: p.method === 'Pending' ? 'Bank Transfer' : (p.method || 'Bank Transfer'),
-              amount: `₹${parseFloat(p.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+              amount: formatCurrency(p.amount || 0, 2),
               date: (p.date || new Date().toISOString()).split('T')[0]
             }));
         }
@@ -249,178 +251,6 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
   const totalOutflow = filteredLedgerEntries.filter(e => e.type === 'Payment').reduce((acc, e) => acc + (parseFloat(String(e.amount).replace(/[^0-9.]/g, '')) || 0), 0);
   const netPosition = totalInflow - totalOutflow;
 
-  // Selected Graph State ('inflow' | 'outflow' | 'netcash' | null)
-  const [activeMetricGraph, setActiveMetricGraph] = useState(null);
-  const [hoverPoint, setHoverPoint] = useState(null);
-  const [animKey, setAnimKey] = useState(0);
-
-  const handleSelectMetric = (metric) => {
-    setActiveMetricGraph(metric);
-    setAnimKey(prev => prev + 1);
-  };
-
-  // Smooth spline curve generator for SVG
-  const getSmoothSvgPath = (pts) => {
-    if (!pts || pts.length === 0) return '';
-    if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
-    let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[i === 0 ? 0 : i - 1];
-      const p1 = pts[i];
-      const p2 = pts[i + 1];
-      const p3 = pts[i + 2] || p2;
-      const cp1x = p1.x + (p2.x - p0.x) / 6;
-      const cp1y = p1.y + (p2.y - p0.y) / 6;
-      const cp2x = p2.x - (p3.x - p1.x) / 6;
-      const cp2y = p2.y - (p3.y - p1.y) / 6;
-      d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
-    }
-    return d;
-  };
-
-  const graphDetails = useMemo(() => {
-    if (!activeMetricGraph) return null;
-
-    let relevant = [...filteredLedgerEntries];
-    if (activeMetricGraph === 'inflow') {
-      relevant = relevant.filter(e => e.type === 'Receipt');
-    } else if (activeMetricGraph === 'outflow') {
-      relevant = relevant.filter(e => e.type === 'Payment');
-    }
-
-    relevant.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-
-    // Date grouping
-    const dateMap = {};
-    relevant.forEach(e => {
-      const d = e.date || new Date().toISOString().slice(0, 10);
-      const val = parseFloat(String(e.amount).replace(/[^0-9.]/g, '')) || 0;
-      if (!dateMap[d]) dateMap[d] = 0;
-      if (activeMetricGraph === 'netcash') {
-        dateMap[d] += (e.type === 'Receipt' ? val : -val);
-      } else {
-        dateMap[d] += val;
-      }
-    });
-
-    const dates = Object.keys(dateMap).sort();
-    let rawPoints = [];
-    let cum = 0;
-
-    if (dates.length >= 2) {
-      rawPoints = dates.map(d => {
-        cum += dateMap[d];
-        return {
-          date: d,
-          value: dateMap[d],
-          cumulative: cum,
-          formattedDate: formatDate(d)
-        };
-      });
-    } else if (dates.length === 1) {
-      const singleDate = dates[0];
-      const singleVal = dateMap[singleDate];
-      const p1 = Math.round(singleVal * 0.28);
-      const p2 = Math.round(singleVal * 0.55);
-      const p3 = Math.round(singleVal * 0.82);
-      rawPoints = [
-        { date: 'Initial', value: 0, cumulative: 0, formattedDate: 'Start' },
-        { date: 'Phase 1', value: p1, cumulative: p1, formattedDate: 'Phase 1' },
-        { date: 'Phase 2', value: p2 - p1, cumulative: p2, formattedDate: 'Phase 2' },
-        { date: 'Phase 3', value: p3 - p2, cumulative: p3, formattedDate: 'Phase 3' },
-        { date: singleDate, value: singleVal, cumulative: singleVal, formattedDate: formatDate(singleDate) }
-      ];
-    } else {
-      const base = activeMetricGraph === 'inflow' ? (totalInflow || 68450) : activeMetricGraph === 'outflow' ? (totalOutflow || 24200) : (netPosition || 44250);
-      rawPoints = [
-        { date: 'W1', value: Math.round(base * 0.2), cumulative: Math.round(base * 0.2), formattedDate: 'Week 1' },
-        { date: 'W2', value: Math.round(base * 0.18), cumulative: Math.round(base * 0.38), formattedDate: 'Week 2' },
-        { date: 'W3', value: Math.round(base * 0.24), cumulative: Math.round(base * 0.62), formattedDate: 'Week 3' },
-        { date: 'W4', value: Math.round(base * 0.21), cumulative: Math.round(base * 0.83), formattedDate: 'Week 4' },
-        { date: 'Latest', value: Math.round(base * 0.17), cumulative: base, formattedDate: 'Current' }
-      ];
-    }
-
-    // Proportioned for compact medium square widget
-    const chartWidth = 360;
-    const chartHeight = 180;
-    const padX = 20;
-    const padY = 25;
-
-    const values = rawPoints.map(p => p.cumulative);
-    const minVal = Math.min(0, ...values);
-    const maxVal = Math.max(...values, 100);
-    const range = maxVal - minVal || 1;
-
-    const plotPoints = rawPoints.map((pt, idx) => {
-      const x = padX + (idx / (rawPoints.length - 1)) * (chartWidth - padX * 2);
-      const y = chartHeight - padY - ((pt.cumulative - minVal) / range) * (chartHeight - padY * 2);
-      return {
-        ...pt,
-        x,
-        y
-      };
-    });
-
-    const linePathD = getSmoothSvgPath(plotPoints);
-    const lastPt = plotPoints[plotPoints.length - 1];
-    const prevPt = plotPoints[plotPoints.length - 2] || plotPoints[0];
-    const firstPt = plotPoints[0];
-    const areaPathD = linePathD ? `${linePathD} L ${lastPt.x.toFixed(1)} ${(chartHeight - padY).toFixed(1)} L ${firstPt.x.toFixed(1)} ${(chartHeight - padY).toFixed(1)} Z` : '';
-
-    // Calculate flow angle for the arrow at the end
-    const dx = lastPt && prevPt ? lastPt.x - prevPt.x : 1;
-    const dy = lastPt && prevPt ? lastPt.y - prevPt.y : 0;
-    const arrowAngle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-    let title = 'PORTFOLIO VALUE';
-    let val = 0;
-    let themeColor = '#38bdf8'; // Electric blue (matching screenshot)
-    let isPos = true;
-    let growth = '12.4';
-    let sub = '+4.8k this month';
-
-    if (activeMetricGraph === 'inflow') {
-      title = 'TOTAL INFLOW (RECEIPTS)';
-      val = totalInflow;
-      themeColor = '#38bdf8'; // Electric sky blue like screenshot
-      isPos = true;
-      growth = totalInflow > 0 ? '14.8' : '0.0';
-      sub = `Based on ${filteredLedgerEntries.filter(e => e.type === 'Receipt').length} received payments in period`;
-    } else if (activeMetricGraph === 'outflow') {
-      title = 'TOTAL OUTFLOW (EXPENSES)';
-      val = totalOutflow;
-      themeColor = '#f43f5e'; // Glowing coral rose
-      isPos = false;
-      growth = totalOutflow > 0 ? '8.2' : '0.0';
-      sub = `Based on ${filteredLedgerEntries.filter(e => e.type === 'Payment').length} recorded disbursements in period`;
-    } else {
-      title = 'NET CASH POSITION';
-      val = netPosition;
-      themeColor = netPosition >= 0 ? '#60a5fa' : '#fb7185';
-      isPos = netPosition >= 0;
-      growth = netPosition >= 0 ? '18.6' : '-12.0';
-      sub = `${netPosition >= 0 ? '+₹' : '-₹'}${Math.abs(netPosition).toLocaleString('en-IN')} net liquidity balance`;
-    }
-
-    return {
-      title,
-      val,
-      themeColor,
-      isPos,
-      growth,
-      sub,
-      chartWidth,
-      chartHeight,
-      padX,
-      padY,
-      plotPoints,
-      linePathD,
-      areaPathD,
-      lastPt,
-      arrowAngle
-    };
-  }, [activeMetricGraph, filteredLedgerEntries, totalInflow, totalOutflow, netPosition]);
 
   // UNDO PAYMENT AND RETURN RECORD BACK TO FEES TRACKING AS PENDING
   const handleUndoReturnToFees = async (entry) => {
@@ -533,7 +363,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
       client: newEntry.client,
       category: newEntry.category,
       mode: newEntry.mode,
-      amount: `₹${numAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+      amount: formatCurrency(numAmt, 2),
       date: new Date().toISOString().split('T')[0]
     };
     
@@ -743,7 +573,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
     logAuditActivity({
       action: 'PRINT_DOCUMENT',
       module: 'Receipts & Payments',
-      details: `Printed Receipts & Payments Ledger for ${printPeriodType === 'specific_day' ? printDay : `${printMonth}/${printYear}`} (${printSummary.count} entries, Net: ₹${printSummary.net.toLocaleString('en-IN')})`,
+      details: `Printed Receipts & Payments Ledger for ${printPeriodType === 'specific_day' ? printDay : `${printMonth}/${printYear}`} (${printSummary.count} entries, Net: ${formatCurrency(printSummary.net)})`,
       metadata: { count: printSummary.count, net: printSummary.net, period: printPeriodType }
     });
 
@@ -762,7 +592,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
           <td>${e.category || 'General'}</td>
           <td style="font-family: monospace;">${e.mode || 'UPI'}</td>
           <td style="font-family: monospace; text-align: right; font-weight: 800; color: ${e.type === 'Receipt' ? '#059669' : '#dc2626'};">
-            ${e.type === 'Receipt' ? '+' : '-'}₹${amt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            ${e.type === 'Receipt' ? '+' : '-'}${formatCurrency(amt, 2)}
           </td>
         </tr>
       `;
@@ -776,16 +606,16 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px;">
         <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px;">
           <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #16a34a;">Total Inflow (Receipts)</div>
-          <div style="font-size: 14px; font-weight: 900; color: #15803d; margin-top: 2px;">+₹${printSummary.totalIn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          <div style="font-size: 14px; font-weight: 900; color: #15803d; margin-top: 2px;">+${formatCurrency(printSummary.totalIn, 2)}</div>
         </div>
         <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 12px;">
           <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #dc2626;">Total Outflow (Payments)</div>
-          <div style="font-size: 14px; font-weight: 900; color: #b91c1c; margin-top: 2px;">-₹${printSummary.totalOut.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          <div style="font-size: 14px; font-weight: 900; color: #b91c1c; margin-top: 2px;">-${formatCurrency(printSummary.totalOut, 2)}</div>
         </div>
         <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
           <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #64748b;">Net Cash Flow</div>
           <div style="font-size: 14px; font-weight: 900; color: ${printSummary.net >= 0 ? '#059669' : '#dc2626'}; margin-top: 2px;">
-            ${printSummary.net >= 0 ? '+' : '-'}₹${Math.abs(printSummary.net).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            ${printSummary.net >= 0 ? '+' : '-'}${formatCurrency(Math.abs(printSummary.net), 2)}
           </div>
         </div>
       </div>
@@ -799,7 +629,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
             <th>Party / Client Name</th>
             <th>Category</th>
             <th style="width: 75px;">Mode</th>
-            <th style="width: 110px; text-align: right;">Amount (INR)</th>
+            <th style="width: 110px; text-align: right;">Amount (${activeCurrency.code})</th>
           </tr>
         </thead>
         <tbody>
@@ -848,449 +678,111 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         </div>
       </div>
 
-      {/* Metrics Row (Clickable to display glowing trend graph) */}
+      {/* Interactive Metric Filter Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3.5 print-hidden">
-        {/* Total Inflow Card */}
+        {/* Total Inflow Card - Clicking toggles Receipts filter */}
         <div 
           role="button"
           tabIndex={0}
-          onClick={() => handleSelectMetric('inflow')}
+          onClick={() => setFlowTypeFilter(prev => prev === 'Receipt' ? 'All' : 'Receipt')}
           className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none flex items-center justify-between ${
-            activeMetricGraph === 'inflow'
-              ? 'bg-emerald-50/50 border-emerald-400 shadow-md ring-2 ring-emerald-400/40 scale-[1.01]'
+            flowTypeFilter === 'Receipt'
+              ? 'bg-emerald-50 border-emerald-500 shadow-md ring-2 ring-emerald-500/30 scale-[1.01]'
               : 'bg-white border-gray-200 shadow-2xs hover:border-emerald-300 hover:shadow-xs'
           }`}
-          title="Click to view glowing analytics trend chart for Total Inflow"
+          title="Click to filter ledger by Receipts (Inflow)"
         >
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Total Inflow (Receipts)</span>
-              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.2 rounded-md">📈 Graph</span>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 transition-all ${
+                flowTypeFilter === 'Receipt' 
+                  ? 'bg-emerald-600 text-white shadow-2xs' 
+                  : 'text-emerald-700 bg-emerald-100/80 hover:bg-emerald-200/80'
+              }`}>
+                <Filter className="w-2.5 h-2.5" />
+                {flowTypeFilter === 'Receipt' ? 'Filtered ✓' : 'Click to Filter'}
+              </span>
             </div>
             <div className="text-xl font-black text-emerald-600 font-mono mt-0.5">
-              ₹{totalInflow.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {formatCurrency(totalInflow, 2)}
             </div>
           </div>
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-            activeMetricGraph === 'inflow' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-600'
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            flowTypeFilter === 'Receipt' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-emerald-50 text-emerald-600'
           }`}>
             <ArrowUpRight className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Total Outflow Card */}
+        {/* Total Outflow Card - Clicking toggles Payments filter */}
         <div 
           role="button"
           tabIndex={0}
-          onClick={() => handleSelectMetric('outflow')}
+          onClick={() => setFlowTypeFilter(prev => prev === 'Payment' ? 'All' : 'Payment')}
           className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none flex items-center justify-between ${
-            activeMetricGraph === 'outflow'
-              ? 'bg-rose-50/50 border-rose-400 shadow-md ring-2 ring-rose-400/40 scale-[1.01]'
+            flowTypeFilter === 'Payment'
+              ? 'bg-rose-50 border-rose-500 shadow-md ring-2 ring-rose-500/30 scale-[1.01]'
               : 'bg-white border-gray-200 shadow-2xs hover:border-rose-300 hover:shadow-xs'
           }`}
-          title="Click to view glowing analytics trend chart for Total Outflow"
+          title="Click to filter ledger by Payments (Outflow)"
         >
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Total Outflow (Expenses)</span>
-              <span className="text-[9px] font-bold text-rose-700 bg-rose-100/80 px-1.5 py-0.2 rounded-md">📈 Graph</span>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-1 transition-all ${
+                flowTypeFilter === 'Payment' 
+                  ? 'bg-rose-600 text-white shadow-2xs' 
+                  : 'text-rose-700 bg-rose-100/80 hover:bg-rose-200/80'
+              }`}>
+                <Filter className="w-2.5 h-2.5" />
+                {flowTypeFilter === 'Payment' ? 'Filtered ✓' : 'Click to Filter'}
+              </span>
             </div>
             <div className="text-xl font-black text-rose-600 font-mono mt-0.5">
-              ₹{totalOutflow.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {formatCurrency(totalOutflow, 2)}
             </div>
           </div>
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-            activeMetricGraph === 'outflow' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-600'
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            flowTypeFilter === 'Payment' ? 'bg-rose-600 text-white shadow-sm' : 'bg-rose-50 text-rose-600'
           }`}>
             <ArrowDownRight className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Net Cash Position Card */}
+        {/* Net Cash Position Card - Clicking resets filter to All */}
         <div 
           role="button"
           tabIndex={0}
-          onClick={() => handleSelectMetric('netcash')}
+          onClick={() => setFlowTypeFilter('All')}
           className={`p-3.5 rounded-2xl border transition-all cursor-pointer select-none flex items-center justify-between ${
-            activeMetricGraph === 'netcash'
-              ? 'bg-indigo-50/50 border-indigo-400 shadow-md ring-2 ring-indigo-400/40 scale-[1.01]'
+            flowTypeFilter === 'All'
+              ? 'bg-indigo-50/50 border-indigo-400 shadow-2xs ring-2 ring-indigo-400/20'
               : 'bg-white border-gray-200 shadow-2xs hover:border-indigo-300 hover:shadow-xs'
           }`}
-          title="Click to view glowing analytics trend chart for Net Cash"
+          title="Click to show all transactions (Reset Filter)"
         >
           <div>
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Net Cash Position</span>
-              <span className="text-[9px] font-bold text-indigo-700 bg-indigo-100/80 px-1.5 py-0.2 rounded-md">📈 Graph</span>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md transition-all ${
+                flowTypeFilter === 'All' ? 'bg-indigo-600 text-white shadow-2xs' : 'text-indigo-700 bg-indigo-100/80'
+              }`}>
+                {flowTypeFilter === 'All' ? 'Showing All' : 'Show All'}
+              </span>
             </div>
             <div className="text-xl font-black text-indigo-600 font-mono mt-0.5">
-              ₹{netPosition.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {formatCurrency(netPosition, 2)}
             </div>
           </div>
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-            activeMetricGraph === 'netcash' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+            flowTypeFilter === 'All' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-indigo-50 text-indigo-600'
           }`}>
             <DollarSign className="w-5 h-5" />
           </div>
         </div>
       </div>
 
-      {/* GLOWING ANALYTICS TREND GRAPH CARD (MEDIUM SQUARE FORMAT WITH DRAW-FROM-START & ARROW FLOW) */}
-      {graphDetails && (
-        <div className="flex justify-center my-4 print-hidden animate-fade-in">
-          <div 
-            key={animKey}
-            className="w-full max-w-[390px] sm:max-w-[410px] aspect-square flex flex-col justify-between bg-gradient-to-b from-[#0e1424] via-[#090d16] to-[#06080f] border border-cyan-500/30 rounded-3xl p-5 sm:p-6 shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden text-white group select-none"
-          >
-            {/* Scoped CSS animations for slow moving line, expanding area fill, and repeating arrow flow */}
-            <style>{`
-              @keyframes slowTraceAndRepeat {
-                0% {
-                  stroke-dashoffset: 1000;
-                  opacity: 0.2;
-                }
-                5% {
-                  opacity: 1;
-                }
-                76% {
-                  stroke-dashoffset: 0;
-                  opacity: 1;
-                }
-                90% {
-                  stroke-dashoffset: 0;
-                  opacity: 1;
-                }
-                96% {
-                  opacity: 0;
-                  stroke-dashoffset: 0;
-                }
-                100% {
-                  stroke-dashoffset: 1000;
-                  opacity: 0;
-                }
-              }
-              @keyframes slowAreaAndRepeat {
-                0% {
-                  opacity: 0;
-                  clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
-                }
-                5% {
-                  opacity: 0.75;
-                }
-                76% {
-                  opacity: 1;
-                  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-                }
-                90% {
-                  opacity: 1;
-                  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-                }
-                96% {
-                  opacity: 0;
-                  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-                }
-                100% {
-                  opacity: 0;
-                  clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
-                }
-              }
-              @keyframes arrowFlowHeadPulse {
-                0%, 100% {
-                  transform: scale(1);
-                }
-                50% {
-                  transform: scale(1.18);
-                }
-              }
-            `}</style>
-
-            {/* Subtle Top Cyan Glow Highlight Line */}
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400/80 to-transparent"></div>
-
-            {/* Top Header: Metric Title, Big Value, Growth Badge & Controls */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <div className="text-[10px] font-black uppercase tracking-widest font-mono text-slate-400 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: graphDetails.themeColor }}></span>
-                  {graphDetails.title}
-                </div>
-
-                {/* Top Right Mini Controls */}
-                <div className="flex items-center gap-1.5">
-                  <div className="flex items-center bg-slate-900/90 border border-slate-700/80 rounded-lg p-0.5 gap-0.5 shadow-inner">
-                    <button
-                      type="button"
-                      onClick={() => handleSelectMetric('inflow')}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
-                        activeMetricGraph === 'inflow' 
-                          ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400/40 shadow-xs' 
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                      title="Show Inflow"
-                    >
-                      In
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectMetric('outflow')}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
-                        activeMetricGraph === 'outflow' 
-                          ? 'bg-rose-500/30 text-rose-300 border border-rose-400/40 shadow-xs' 
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                      title="Show Outflow"
-                    >
-                      Out
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectMetric('netcash')}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
-                        activeMetricGraph === 'netcash' 
-                          ? 'bg-indigo-500/30 text-indigo-300 border border-indigo-400/40 shadow-xs' 
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                      title="Show Net Cash"
-                    >
-                      Net
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveMetricGraph(null)}
-                    className="p-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white transition-all cursor-pointer"
-                    title="Close Chart"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5 mt-1">
-                <span className="text-2xl sm:text-3xl font-black font-mono text-white tracking-tight">
-                  ₹{graphDetails.val.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </span>
-                <span className={`px-2 py-0.5 rounded-md text-[11px] font-black font-mono flex items-center gap-1 ${
-                  graphDetails.isPos
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                }`}>
-                  {graphDetails.isPos ? '+' : ''}{graphDetails.growth}%
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-400 mt-0.5 font-mono truncate">
-                {graphDetails.sub}
-              </p>
-            </div>
-
-            {/* SVG Glow Chart Canvas (Medium Square Proportions: 360 x 180) */}
-            <div className="relative w-full flex-1 my-1.5 select-none flex items-center">
-              <svg 
-                className="w-full h-full max-h-[190px] overflow-visible" 
-                viewBox={`0 0 ${graphDetails.chartWidth} ${graphDetails.chartHeight}`} 
-                preserveAspectRatio="none"
-                onMouseLeave={() => setHoverPoint(null)}
-              >
-                <defs>
-                  <linearGradient id="neonAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={graphDetails.themeColor} stopOpacity="0.4" />
-                    <stop offset="70%" stopColor={graphDetails.themeColor} stopOpacity="0.08" />
-                    <stop offset="100%" stopColor={graphDetails.themeColor} stopOpacity="0.0" />
-                  </linearGradient>
-
-                  <filter id="neonLineGlow" x="-20%" y="-20%" width="140%" height="140%">
-                    <feDropShadow dx="0" dy="0" stdDeviation="3.5" floodColor={graphDetails.themeColor} floodOpacity="0.85" />
-                  </filter>
-                </defs>
-
-                {/* Background Grid Guidelines */}
-                <line 
-                  x1={graphDetails.padX} 
-                  y1={graphDetails.padY} 
-                  x2={graphDetails.chartWidth - graphDetails.padX} 
-                  y2={graphDetails.padY} 
-                  stroke="#1e293b" 
-                  strokeDasharray="4 4" 
-                  strokeOpacity="0.6"
-                />
-                <line 
-                  x1={graphDetails.padX} 
-                  y1={graphDetails.chartHeight / 2} 
-                  x2={graphDetails.chartWidth - graphDetails.padX} 
-                  y2={graphDetails.chartHeight / 2} 
-                  stroke="#1e293b" 
-                  strokeDasharray="4 4" 
-                  strokeOpacity="0.6"
-                />
-                <line 
-                  x1={graphDetails.padX} 
-                  y1={graphDetails.chartHeight - graphDetails.padY} 
-                  x2={graphDetails.chartWidth - graphDetails.padX} 
-                  y2={graphDetails.chartHeight - graphDetails.padY} 
-                  stroke="#1e293b" 
-                  strokeOpacity="0.8"
-                />
-
-                {/* 1. Faint Base Track Curve (Always Visible Behind Flow) */}
-                <path 
-                  d={graphDetails.linePathD} 
-                  fill="none" 
-                  stroke={graphDetails.themeColor} 
-                  strokeWidth="1.6" 
-                  strokeOpacity="0.22" 
-                  strokeDasharray="4 4" 
-                />
-
-                {/* 2. Area Under Curve Fill (Expands and Repeats with Line) */}
-                {graphDetails.areaPathD && (
-                  <path 
-                    d={graphDetails.areaPathD} 
-                    fill="url(#neonAreaGradient)" 
-                    style={{ animation: 'slowAreaAndRepeat 4s cubic-bezier(0.35, 0, 0.25, 1) infinite' }}
-                  />
-                )}
-
-                {/* 3. Neon Glowing Spline Line (Moves Slowly and Repeats) */}
-                {graphDetails.linePathD && (
-                  <path 
-                    d={graphDetails.linePathD} 
-                    fill="none" 
-                    stroke={graphDetails.themeColor} 
-                    strokeWidth="3" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    filter="url(#neonLineGlow)" 
-                    pathLength="1000"
-                    style={{
-                      strokeDasharray: 1000,
-                      strokeDashoffset: 1000,
-                      animation: 'slowTraceAndRepeat 4s cubic-bezier(0.35, 0, 0.25, 1) infinite'
-                    }}
-                  />
-                )}
-
-                {/* 4. Interactive Data Points */}
-                {graphDetails.plotPoints.map((pt, idx) => (
-                  <g key={idx} onMouseEnter={() => setHoverPoint(pt)} className="cursor-pointer">
-                    <circle
-                      cx={pt.x}
-                      cy={pt.y}
-                      r={idx === graphDetails.plotPoints.length - 1 ? 3.5 : 2}
-                      fill={graphDetails.themeColor}
-                      fillOpacity="0.6"
-                      className="transition-all hover:scale-150"
-                    />
-                  </g>
-                ))}
-
-                {/* 5. ARROW FLOW CONTINUOUSLY TRAVELING WITH LINE & REPEATING */}
-                <g>
-                  <g style={{ animation: 'arrowFlowHeadPulse 1.2s ease-in-out infinite' }}>
-                    {/* Animated Pulsing Outer Halo Ping */}
-                    <circle
-                      r="12"
-                      fill={graphDetails.themeColor}
-                      fillOpacity="0.32"
-                      className="animate-ping"
-                    />
-                    
-                    {/* Glow halo behind arrow head */}
-                    <circle cx="2" cy="0" r="8" fill={graphDetails.themeColor} fillOpacity="0.45" filter="url(#neonLineGlow)" />
-                    
-                    {/* Sharp forward directional arrow head along path direction */}
-                    <path
-                      d="M -7 -6 L 8 0 L -7 6 L -3 0 Z"
-                      fill={graphDetails.themeColor}
-                      stroke="#ffffff"
-                      strokeWidth="0.8"
-                      filter="url(#neonLineGlow)"
-                    />
-
-                    {/* Arrow core highlight */}
-                    <polygon
-                      points="-2,-2 5,0 -2,2 0,0"
-                      fill="#ffffff"
-                    />
-
-                    {/* Bright Center Core Pivot */}
-                    <circle r="2.5" fill="#ffffff" />
-                  </g>
-
-                  {/* Native SVG Motion along the bezier curve */}
-                  <animateMotion
-                    path={graphDetails.linePathD}
-                    dur="4s"
-                    repeatCount="indefinite"
-                    rotate="auto"
-                    keyPoints="0; 1; 1; 0"
-                    keyTimes="0; 0.76; 0.90; 1"
-                    calcMode="spline"
-                    keySplines="0.35 0 0.25 1; 0 0 1 1; 0.35 0 0.25 1"
-                  />
-                  <animate
-                    attributeName="opacity"
-                    dur="4s"
-                    repeatCount="indefinite"
-                    values="0; 1; 1; 1; 0; 0"
-                    keyTimes="0; 0.05; 0.76; 0.90; 0.96; 1"
-                  />
-                </g>
-
-                {/* Hover Cursor Vertical Line */}
-                {hoverPoint && (
-                  <g>
-                    <line 
-                      x1={hoverPoint.x} 
-                      y1={graphDetails.padY} 
-                      x2={hoverPoint.x} 
-                      y2={graphDetails.chartHeight - graphDetails.padY} 
-                      stroke="#ffffff" 
-                      strokeOpacity="0.4" 
-                      strokeDasharray="2 2" 
-                    />
-                    <circle 
-                      cx={hoverPoint.x} 
-                      cy={hoverPoint.y} 
-                      r="5" 
-                      fill="#ffffff" 
-                      stroke={graphDetails.themeColor} 
-                      strokeWidth="2.5" 
-                    />
-                  </g>
-                )}
-              </svg>
-
-              {/* Hover Floating Tooltip Badge */}
-              {hoverPoint && (
-                <div 
-                  className="absolute pointer-events-none transform -translate-x-1/2 -translate-y-full px-2.5 py-1 rounded-xl bg-slate-950/95 border border-cyan-500/50 shadow-2xl text-center z-10"
-                  style={{
-                    left: `${(hoverPoint.x / graphDetails.chartWidth) * 100}%`,
-                    top: `${(hoverPoint.y / graphDetails.chartHeight) * 100}%`,
-                    marginTop: '-10px'
-                  }}
-                >
-                  <div className="text-[9px] text-slate-400 font-mono">{hoverPoint.formattedDate || hoverPoint.date}</div>
-                  <div className="text-[11px] font-black text-cyan-300 font-mono">
-                    ₹{Number(hoverPoint.cumulative || hoverPoint.value).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Bottom: Date Range Labels & Live Arrow Flow Badge */}
-            <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 pt-1 border-t border-white/5">
-              <span>{graphDetails.plotPoints[0]?.formattedDate || 'Start'}</span>
-              <span className="px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700/80 text-[9px] font-bold text-slate-300 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full animate-ping" style={{ backgroundColor: graphDetails.themeColor }}></span>
-                Flow ↗
-              </span>
-              <span>{graphDetails.lastPt?.formattedDate || 'Latest'}</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Interactive Day, Month & Year Period Filter Bar */}
       <div className="bg-white border border-gray-200 rounded-2xl p-3 mb-3.5 shadow-2xs flex flex-col gap-2.5 print-hidden">
@@ -1486,8 +978,24 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
 
       {/* Ledger Table */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-2xs overflow-hidden print-hidden">
-        <div className="p-3.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <h3 className="font-bold text-xs sm:text-sm text-gray-900">Live Transaction Book ({filteredLedgerEntries.length})</h3>
+        <div className="p-3.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-xs sm:text-sm text-gray-900">Live Transaction Book ({filteredLedgerEntries.length})</h3>
+            {flowTypeFilter !== 'All' && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold ${
+                flowTypeFilter === 'Receipt' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+              }`}>
+                Filter: {flowTypeFilter === 'Receipt' ? 'Receipts (IN)' : 'Payments (OUT)'}
+                <button 
+                  onClick={() => setFlowTypeFilter('All')}
+                  className="hover:opacity-75 cursor-pointer ml-0.5 text-xs font-black"
+                  title="Clear Filter"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </div>
           <span className="text-[11px] text-gray-400 font-medium">Real-time sync active</span>
         </div>
 
@@ -1525,14 +1033,14 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                     <td className="py-2.5 px-3.5 text-gray-600">{e.category || (e.type === 'Receipt' ? 'Client Fee' : 'Office Expense')}</td>
                     <td className="py-2.5 px-3.5 font-mono text-gray-700">{e.mode || 'UPI'}</td>
                     <td className={`py-2.5 px-3.5 text-right font-mono font-bold ${e.type === 'Receipt' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {e.type === 'Receipt' ? '+' : '-'}{e.amount}
+                      {e.type === 'Receipt' ? '+' : '-'}{replaceCurrencySymbol(e.amount)}
                     </td>
                     <td className="py-2.5 px-3.5 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button 
                           onClick={() => handleUndoReturnToFees(e)} 
                           className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-900 border border-amber-200 transition-all cursor-pointer inline-flex items-center justify-center shadow-2xs hover:scale-105"
-                          title={`Undo & Send back to Fees Tracking (${e.client} - ${e.amount})`}
+                          title={`Undo & Send back to Fees Tracking (${e.client} - ${replaceCurrencySymbol(e.amount)})`}
                         >
                           <Undo2 className="w-3.5 h-3.5 text-amber-600" />
                         </button>
@@ -1677,7 +1185,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                 <div className="text-right">
                   <span className="text-slate-500 block text-[10px] uppercase">Net Flow</span>
                   <span className={`font-mono font-black ${printSummary.net >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-                    ₹{printSummary.net.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {formatCurrency(printSummary.net, 2)}
                   </span>
                 </div>
               </div>
@@ -1731,19 +1239,19 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
           <div className="border border-gray-300 p-3 rounded-lg text-center">
             <span className="text-[10px] font-bold uppercase text-gray-600 block">Total Receipts (IN)</span>
             <span className="text-base font-black font-mono text-gray-900 block mt-0.5">
-              ₹{printSummary.totalIn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {formatCurrency(printSummary.totalIn, 2)}
             </span>
           </div>
           <div className="border border-gray-300 p-3 rounded-lg text-center">
             <span className="text-[10px] font-bold uppercase text-gray-600 block">Total Payments (OUT)</span>
             <span className="text-base font-black font-mono text-gray-900 block mt-0.5">
-              ₹{printSummary.totalOut.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {formatCurrency(printSummary.totalOut, 2)}
             </span>
           </div>
           <div className="border border-gray-300 p-3 rounded-lg text-center">
             <span className="text-[10px] font-bold uppercase text-gray-600 block">Net Position</span>
             <span className="text-base font-black font-mono text-gray-900 block mt-0.5">
-              ₹{printSummary.net.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {formatCurrency(printSummary.net, 2)}
             </span>
           </div>
         </div>
@@ -1861,7 +1369,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                 </div>
 
                 <div>
-                  <label className="text-slate-700 block mb-1">Amount (₹) <span className="text-rose-500">*</span></label>
+                  <label className="text-slate-700 block mb-1">Amount ({activeCurrency.symbol}) <span className="text-rose-500">*</span></label>
                   <input 
                     type="number" 
                     required 

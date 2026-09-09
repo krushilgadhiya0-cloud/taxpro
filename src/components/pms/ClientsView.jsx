@@ -12,6 +12,7 @@ import { requireFirmSetup } from '../../lib/firmGatekeeper';
 import { printHtml } from '../../lib/printHelper';
 import { formatDate } from '../../lib/dateUtils';
 import BulkClientsModal from './BulkClientsModal';
+import { useCurrency, formatCurrency } from '../../lib/currencyHelper';
 
 export default function ClientsView({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('Active');
@@ -38,7 +39,8 @@ export default function ClientsView({ onShowToast }) {
   const [allReceipts, setAllReceipts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const formatINR = (amount) => `₹${Number(amount || 0).toLocaleString('en-IN')}`;
+  const activeCurrency = useCurrency();
+  const formatINR = (amount) => formatCurrency(amount);
 
   const fetchClientsAndFinancials = async () => {
     setIsLoading(true);
@@ -1303,7 +1305,7 @@ export default function ClientsView({ onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-slate-700 block mb-1 text-xs font-bold">Retainer Amount (₹)</label>
+                    <label className="text-slate-700 block mb-1 text-xs font-bold">Retainer Amount ({activeCurrency.symbol})</label>
                     <input 
                       type="number" 
                       placeholder="e.g. 15000"
@@ -1491,7 +1493,7 @@ export default function ClientsView({ onShowToast }) {
                       </div>
 
                       <div>
-                        <label className="text-slate-700 block mb-1">Amount (₹)</label>
+                        <label className="text-slate-700 block mb-1">Amount ({activeCurrency.symbol})</label>
                         <input 
                           type="number" 
                           value={clientEditForm.feeAmount || ''}

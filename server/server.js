@@ -1,7 +1,14 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
 import { initDatabase } from './db.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '../dist');
 import authRoutes from './routes/auth.js';
 import otpRoutes from './routes/otp.js';
 import dashboardRoutes from './routes/dashboard.js';
@@ -142,10 +149,22 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Serve static frontend assets if built
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+
 // JSON 404 handler for unknown API routes (prevents HTML error pages)
 app.use('/api', (req, res) => {
   res.status(404).json({ success: false, error: `API route not found: ${req.method} ${req.originalUrl}` });
 });
+
+// SPA fallback for all non-API web routes
+if (fs.existsSync(distPath)) {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
 // Global Express JSON error handler (prevents any HTML error stack dump)
 app.use((err, req, res, next) => {

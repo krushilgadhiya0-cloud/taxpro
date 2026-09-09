@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, Shield, Printer, Mail, Phone, Lock, KeyRound, Building, CheckCircle2, Check, User, Globe, Moon, Sun, ArrowRight, Eye, EyeOff, AlertCircle, ShieldAlert, Sparkles, ShieldCheck, Key, ZoomIn, ZoomOut, Maximize2, Sliders, Tag, BadgeCheck, MapPin, RefreshCw, RotateCcw, Loader2, QrCode, IndianRupee, Edit3, Copy, ArrowUp, ArrowDown, ListOrdered, Pin, PinOff, ChevronsUp, ChevronsDown } from 'lucide-react';
+import { Settings, Save, Shield, Printer, Mail, Phone, Lock, KeyRound, Building, CheckCircle2, Check, User, Globe, Moon, Sun, ArrowRight, Eye, EyeOff, AlertCircle, ShieldAlert, Sparkles, ShieldCheck, Key, ZoomIn, ZoomOut, Maximize2, Sliders, Tag, BadgeCheck, MapPin, RefreshCw, RotateCcw, Loader2, QrCode, IndianRupee, Edit3, Copy, ArrowUp, ArrowDown, ListOrdered, Pin, PinOff, ChevronsUp, ChevronsDown, DollarSign, Coins } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { printHtml } from '../../lib/printHelper';
 import { formatDate } from '../../lib/dateUtils';
+import { SUPPORTED_CURRENCIES, getActiveCurrency, setGlobalCurrency, formatCurrency } from '../../lib/currencyHelper';
 import FirmProfileModal from './FirmProfileModal';
 
 export default function SettingsPMSView({ userRole: propUserRole, onShowToast }) {
@@ -13,6 +14,21 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
   });
   const [activeLang, setActiveLang] = useState('en');
   const [resetting, setResetting] = useState(false);
+
+  // Global Currency State
+  const [activeCurrency, setActiveCurrency] = useState(getActiveCurrency);
+
+  useEffect(() => {
+    const handleCurr = () => setActiveCurrency(getActiveCurrency());
+    window.addEventListener('taxpro_currency_updated', handleCurr);
+    return () => window.removeEventListener('taxpro_currency_updated', handleCurr);
+  }, []);
+
+  const handleChangeCurrency = (currCode) => {
+    const updated = setGlobalCurrency(currCode);
+    setActiveCurrency(updated);
+    if (onShowToast) onShowToast(`✓ Currency changed to ${updated.name} (${updated.symbol})! All financial records updated.`, 'success');
+  };
 
   const handleApplyZoom = (newZoom) => {
     const clamped = Math.max(70, Math.min(130, newZoom));
@@ -1038,7 +1054,86 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
           </div>
         </div>
 
-          {/* 5. DISPLAY SCALING & GLOBAL ZOOM */}
+        {/* 5. SYSTEM CURRENCY & FINANCIAL UNITS (IMPORTANT REGIONAL OPTION) */}
+        <div className={`border rounded-3xl p-6 shadow-xs ${
+          theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200/90 shadow-sm'
+        } smooth-card print:hidden`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3.5 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-100 dark:border-emerald-900/50 shadow-2xs">
+                <Coins className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className={`font-extrabold text-sm ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                  System Currency & Financial Units
+                </h3>
+                <p className="text-[11px] text-slate-400 font-medium">
+                  Select your practice base currency. All fees, receipts, payments, and invoices will adapt across the entire platform.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="px-3 py-1 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-xs font-black font-mono flex items-center gap-1.5 shadow-2xs">
+                <span>{activeCurrency.flag}</span>
+                <span>{activeCurrency.code} ({activeCurrency.symbol})</span>
+              </span>
+              <span className="text-[11px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+                Preview: <strong className="text-slate-900 dark:text-white font-black">{formatCurrency(25000)}</strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+            {SUPPORTED_CURRENCIES.map((c) => {
+              const isSelected = activeCurrency.code === c.code;
+              return (
+                <button
+                  key={c.code}
+                  type="button"
+                  onClick={() => handleChangeCurrency(c.code)}
+                  className={`p-3.5 rounded-2xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-2 relative ${
+                    isSelected
+                      ? 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-500 ring-4 ring-emerald-500/15 shadow-sm scale-[1.02]'
+                      : theme === 'dark'
+                      ? 'bg-slate-800/40 border-slate-700/80 hover:bg-slate-800 text-slate-300'
+                      : 'bg-slate-50 border-slate-200/90 hover:bg-white text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl">{c.flag}</span>
+                    <span className={`text-xs font-mono font-black px-2 py-0.5 rounded-lg ${
+                      isSelected 
+                        ? 'bg-emerald-600 text-white shadow-2xs' 
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}>
+                      {c.symbol}
+                    </span>
+                  </div>
+                  <div>
+                    <div className={`text-xs font-black ${isSelected ? 'text-emerald-800 dark:text-emerald-300' : theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                      {c.code}
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-semibold truncate">
+                      {c.name}
+                    </div>
+                  </div>
+                  {isSelected ? (
+                    <div className="text-[10px] font-extrabold text-emerald-700 dark:text-emerald-400 flex items-center gap-1 mt-0.5">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Active System Currency
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                      {c.country}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+          {/* 6. DISPLAY SCALING & GLOBAL ZOOM */}
           <div className={`border rounded-3xl p-6 shadow-xs ${
             theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200/90 shadow-sm'
           } smooth-card print:hidden`}>

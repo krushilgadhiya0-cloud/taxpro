@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
 import { printHtml } from '../../lib/printHelper';
 import { formatDate } from '../../lib/dateUtils';
+import { formatCurrency } from '../../lib/currencyHelper';
 
 export default function ReportsPMSView({ onShowToast }) {
   const [selectedReport, setSelectedReport] = useState(null);
@@ -220,7 +221,7 @@ export default function ReportsPMSView({ onShowToast }) {
           'PAN': c.pan || 'N/A',
           'File No': c.file_no || 'N/A',
           'Phone': c.phone || 'N/A',
-          'Fee Plan': c.fee_amount ? `₹${Number(c.fee_amount).toLocaleString('en-IN')} (${c.billing_cycle || 'Monthly'})` : 'None',
+          'Fee Plan': c.fee_amount ? `${formatCurrency(c.fee_amount, 0)} (${c.billing_cycle || 'Monthly'})` : 'None',
           'Status': c.status || 'Active',
           'Registered Date': formatDate(c.created_at)
         }));

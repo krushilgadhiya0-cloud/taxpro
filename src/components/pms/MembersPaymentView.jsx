@@ -44,8 +44,10 @@ import { logAuditActivity } from '../../lib/auditLogger';
 import { printHtml } from '../../lib/printHelper';
 import { formatDate } from '../../lib/dateUtils';
 import MemberAttendanceDossierModal from './MemberAttendanceDossierModal';
+import { useCurrency, formatCurrency } from '../../lib/currencyHelper';
 
 export default function MembersPaymentView({ onShowToast }) {
+  const activeCurrency = useCurrency();
   // Main View Mode: 'monthly_disbursal' | 'all_records' | 'member_statement'
   const [viewMode, setViewMode] = useState('monthly_disbursal');
   
@@ -758,7 +760,7 @@ export default function MembersPaymentView({ onShowToast }) {
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
                 <div className="text-[10px] uppercase font-black tracking-wider text-gray-400">Total Monthly Payroll Due</div>
                 <div className="text-2xl sm:text-3xl font-black font-mono text-white mt-1">
-                  ₹{monthlyMetrics.totalObligation.toLocaleString('en-IN')}
+                  {formatCurrency(monthlyMetrics.totalObligation, 0)}
                 </div>
                 <div className="text-[11px] text-gray-400 mt-1">Across {monthlyMetrics.totalCount} active team members</div>
               </div>
@@ -766,7 +768,7 @@ export default function MembersPaymentView({ onShowToast }) {
               <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4">
                 <div className="text-[10px] uppercase font-black tracking-wider text-emerald-300">Total Disbursed This Month</div>
                 <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-400 mt-1">
-                  ₹{monthlyMetrics.totalDisbursed.toLocaleString('en-IN')}
+                  {formatCurrency(monthlyMetrics.totalDisbursed, 0)}
                 </div>
                 <div className="text-[11px] text-emerald-300/80 mt-1 flex items-center gap-1">
                   <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> {monthlyMetrics.paidCount} of {monthlyMetrics.totalCount} staff members paid
@@ -776,7 +778,7 @@ export default function MembersPaymentView({ onShowToast }) {
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4">
                 <div className="text-[10px] uppercase font-black tracking-wider text-amber-300">Remaining Pending Payouts</div>
                 <div className="text-2xl sm:text-3xl font-black font-mono text-amber-400 mt-1">
-                  ₹{monthlyMetrics.pendingAmount.toLocaleString('en-IN')}
+                  {formatCurrency(monthlyMetrics.pendingAmount, 0)}
                 </div>
                 <div className="text-[11px] text-amber-300/80 mt-1 flex items-center gap-1">
                   <AlertCircle className="w-3.5 h-3.5 text-amber-400" /> {monthlyMetrics.pendingCount} staff awaiting payment
@@ -920,7 +922,7 @@ export default function MembersPaymentView({ onShowToast }) {
                         <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-200/80">
                           <span className="text-[10px] uppercase font-bold text-gray-400 block">Monthly Base</span>
                           <span className="font-mono font-black text-sm text-gray-900">
-                            ₹{item.baseSalary.toLocaleString('en-IN')}
+                            {formatCurrency(item.baseSalary, 0)}
                           </span>
                         </div>
 
@@ -933,7 +935,7 @@ export default function MembersPaymentView({ onShowToast }) {
                           <span className={`font-mono font-black text-sm ${
                             isPaid ? 'text-emerald-700' : 'text-indigo-700'
                           }`}>
-                            ₹{Number(isPaid ? (paidRec?.amount || item.netSalary) : item.netSalary).toLocaleString('en-IN')}
+                            {formatCurrency(isPaid ? (paidRec?.amount || item.netSalary) : item.netSalary, 0)}
                           </span>
                         </div>
                       </div>
@@ -946,14 +948,14 @@ export default function MembersPaymentView({ onShowToast }) {
                         </div>
                         {item.leaveDeduction > 0 ? (
                           <span className="font-mono font-black text-rose-600 text-xs flex items-center gap-1">
-                            -₹{item.leaveDeduction.toLocaleString('en-IN')}
+                            -{formatCurrency(item.leaveDeduction, 0)}
                             <span className="px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 text-[9px] font-black font-mono">
                               {item.absentCount > 0 ? `${item.absentCount}A ` : ''}{item.halfDayCount > 0 ? `${item.halfDayCount}HD` : ''}
                             </span>
                           </span>
                         ) : (
                           <span className="font-mono font-bold text-emerald-700 text-[11px] flex items-center gap-1">
-                            <Check className="w-3 h-3 text-emerald-600" /> ₹0 (Fully Paid)
+                            <Check className="w-3 h-3 text-emerald-600" /> {activeCurrency.symbol}0 (Fully Paid)
                           </span>
                         )}
                       </div>
@@ -1097,7 +1099,7 @@ export default function MembersPaymentView({ onShowToast }) {
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-gray-500">Filtered Total:</span>
                 <span className="font-mono font-black text-base text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-200">
-                  ₹{totalFilteredRecordsAmount.toLocaleString('en-IN')}
+                  {formatCurrency(totalFilteredRecordsAmount, 0)}
                 </span>
               </div>
             </div>
@@ -1195,7 +1197,7 @@ export default function MembersPaymentView({ onShowToast }) {
                     <th className="p-4">Employee / Role</th>
                     <th className="p-4">Salary Cycle</th>
                     <th className="p-4">Payment Method</th>
-                    <th className="p-4 text-right">Amount (₹)</th>
+                    <th className="p-4 text-right">Amount ({activeCurrency.symbol})</th>
                     <th className="p-4 text-center">Status</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
@@ -1234,7 +1236,7 @@ export default function MembersPaymentView({ onShowToast }) {
                           {rec.upiId && <div className="text-[10px] text-emerald-600 font-mono truncate max-w-[140px]">{rec.upiId}</div>}
                         </td>
                         <td className="p-4 text-right font-mono font-black text-sm text-gray-900">
-                          ₹{Number(rec.amount || 0).toLocaleString('en-IN')}
+                          {formatCurrency(rec.amount || 0, 0)}
                         </td>
                         <td className="p-4 text-center">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black font-mono ${
@@ -1337,7 +1339,7 @@ export default function MembersPaymentView({ onShowToast }) {
                 <tr className="bg-gray-100 text-gray-800 font-extrabold uppercase text-[10px]">
                   <th className="p-3 border border-gray-300">Earnings Description</th>
                   <th className="p-3 border border-gray-300">Payment Channel</th>
-                  <th className="p-3 border border-gray-300 text-right">Amount (₹)</th>
+                  <th className="p-3 border border-gray-300 text-right">Amount ({activeCurrency.symbol})</th>
                 </tr>
               </thead>
               <tbody>
@@ -1345,7 +1347,7 @@ export default function MembersPaymentView({ onShowToast }) {
                   <td className="p-3 border border-gray-300 font-bold">{singleVoucherData.description || 'Monthly Salary Disbursement'}</td>
                   <td className="p-3 border border-gray-300 font-mono">{singleVoucherData.method || 'UPI Instant Transfer'}</td>
                   <td className="p-3 border border-gray-300 font-mono font-black text-right text-sm">
-                    ₹{Number(singleVoucherData.amount).toLocaleString('en-IN')}
+                    {formatCurrency(singleVoucherData.amount, 0)}
                   </td>
                 </tr>
               </tbody>
@@ -1355,7 +1357,7 @@ export default function MembersPaymentView({ onShowToast }) {
               <div className="border border-gray-300 p-3 rounded-lg w-64 text-right bg-gray-50">
                 <span className="text-[10px] text-gray-600 uppercase font-bold block">Net Salary Paid</span>
                 <span className="text-xl font-black font-mono text-gray-900 block mt-0.5">
-                  ₹{Number(singleVoucherData.amount).toLocaleString('en-IN')}
+                  {formatCurrency(singleVoucherData.amount, 0)}
                 </span>
               </div>
             </div>
@@ -1373,7 +1375,7 @@ export default function MembersPaymentView({ onShowToast }) {
                   <th className="p-2.5 border border-gray-300">Employee Name</th>
                   <th className="p-2.5 border border-gray-300">Cycle</th>
                   <th className="p-2.5 border border-gray-300">Channel</th>
-                  <th className="p-2.5 border border-gray-300 text-right">Amount (₹)</th>
+                  <th className="p-2.5 border border-gray-300 text-right">Amount ({activeCurrency.symbol})</th>
                   <th className="p-2.5 border border-gray-300 text-center">Status</th>
                 </tr>
               </thead>
@@ -1389,7 +1391,7 @@ export default function MembersPaymentView({ onShowToast }) {
                     <td className="p-2 border border-gray-300 font-mono text-[10px]">{r.cycleName || r.cycle}</td>
                     <td className="p-2 border border-gray-300 font-mono">{r.method}</td>
                     <td className="p-2 border border-gray-300 font-mono font-bold text-right">
-                      ₹{Number(r.amount).toLocaleString('en-IN')}
+                      {formatCurrency(r.amount, 0)}
                     </td>
                     <td className="p-2 border border-gray-300 text-center font-bold text-[10px]">{r.status || 'Paid'}</td>
                   </tr>
@@ -1401,7 +1403,7 @@ export default function MembersPaymentView({ onShowToast }) {
               <div className="border border-gray-300 p-3 rounded-lg w-64 text-right bg-gray-50">
                 <span className="text-[10px] text-gray-600 uppercase font-bold block">Total Disbursed Outflow</span>
                 <span className="text-xl font-black font-mono text-gray-900 block mt-0.5">
-                  ₹{(printDocType === 'monthly_register' ? monthlyMetrics.totalDisbursed : totalFilteredRecordsAmount).toLocaleString('en-IN')}
+                  {formatCurrency(printDocType === 'monthly_register' ? monthlyMetrics.totalDisbursed : totalFilteredRecordsAmount, 0)}
                 </span>
               </div>
             </div>
@@ -1463,7 +1465,7 @@ export default function MembersPaymentView({ onShowToast }) {
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 shadow-2xs">
                   <div className="flex justify-between text-slate-600 font-bold">
                     <span>Base Monthly Salary:</span>
-                    <span className="font-mono text-slate-900 font-black">₹{payTargetItem.baseSalary.toLocaleString('en-IN')}</span>
+                    <span className="font-mono text-slate-900 font-black">{formatCurrency(payTargetItem.baseSalary, 0)}</span>
                   </div>
 
                   <div className="flex justify-between text-rose-600 font-bold">
@@ -1472,21 +1474,21 @@ export default function MembersPaymentView({ onShowToast }) {
                       Attendance Salary Deductions ({payTargetItem.absentCount} Absents, {payTargetItem.halfDayCount} Half Days):
                     </span>
                     <span className="font-mono font-black">
-                      {payTargetItem.leaveDeduction > 0 ? `-₹${payTargetItem.leaveDeduction.toLocaleString('en-IN')}` : '₹0'}
+                      {payTargetItem.leaveDeduction > 0 ? `-${formatCurrency(payTargetItem.leaveDeduction, 0)}` : `${activeCurrency.symbol}0`}
                     </span>
                   </div>
 
                   <div className="flex justify-between text-emerald-800 font-black pt-2 border-t border-slate-200 text-sm">
                     <span>Net Disbursal Amount:</span>
-                    <span className="font-mono">₹{payTargetItem.netSalary.toLocaleString('en-IN')}</span>
+                    <span className="font-mono">{formatCurrency(payTargetItem.netSalary, 0)}</span>
                   </div>
                 </div>
               )}
 
               <div>
-                <label className="text-slate-700 block mb-1">Disbursement Amount (₹) <span className="text-rose-500">*</span></label>
+                <label className="text-slate-700 block mb-1">Disbursement Amount ({activeCurrency.symbol}) <span className="text-rose-500">*</span></label>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">₹</span>
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">{activeCurrency.symbol}</span>
                   <input
                     type="number"
                     required
@@ -1740,7 +1742,7 @@ export default function MembersPaymentView({ onShowToast }) {
 
             <div className="space-y-3 text-xs font-semibold">
               <div>
-                <label className="text-slate-700 block mb-1">Monthly Base Salary (₹)</label>
+                <label className="text-slate-700 block mb-1">Monthly Base Salary ({activeCurrency.symbol})</label>
                 <input
                   type="number"
                   value={configForm.salary}
@@ -1750,7 +1752,7 @@ export default function MembersPaymentView({ onShowToast }) {
                 />
               </div>
               <div>
-                <label className="text-slate-700 block mb-1">Fixed Monthly Bonus (₹)</label>
+                <label className="text-slate-700 block mb-1">Fixed Monthly Bonus ({activeCurrency.symbol})</label>
                 <input
                   type="number"
                   value={configForm.bonus}
@@ -1791,7 +1793,7 @@ export default function MembersPaymentView({ onShowToast }) {
 
             <div className="space-y-3 text-xs font-semibold">
               <div>
-                <label className="text-slate-700 block mb-1">Bonus Amount (₹)</label>
+                <label className="text-slate-700 block mb-1">Bonus Amount ({activeCurrency.symbol})</label>
                 <input 
                   type="number" 
                   value={bonusForm.amount} 

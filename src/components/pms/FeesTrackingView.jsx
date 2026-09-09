@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
 import { printHtml } from '../../lib/printHelper';
 import { formatDate } from '../../lib/dateUtils';
+import { useCurrency, formatCurrency, getCurrencySymbol } from '../../lib/currencyHelper';
 
 const DEFAULT_CYCLIC_BILLS = [
   { id: 'CYC-RENT', name: 'Office Premises Rent', vendor: 'Office Landlord / Estate', amount: 25000, category: 'Office Rent', dueDay: 1, method: 'Bank Transfer', frequency: 'Monthly', isActive: true },
@@ -85,7 +86,8 @@ export default function FeesTrackingView({ onShowToast }) {
   const [printStatusFilter, setPrintStatusFilter] = useState('All'); // 'All', 'Paid', 'Pending'
   const [isPrinting, setIsPrinting] = useState(false);
 
-  const formatINR = (amount) => `₹${Number(amount || 0).toLocaleString('en-IN')}`;
+  const activeCurrency = useCurrency();
+  const formatINR = (amount) => formatCurrency(amount);
 
   const calculatePending = (total, paid) => Math.max(0, Number(total) - Number(paid));
   
@@ -832,7 +834,7 @@ export default function FeesTrackingView({ onShowToast }) {
     logAuditActivity({
       action: 'PRINT_DOCUMENT',
       module: 'Fees Tracking',
-      details: `Printed Financial Ledger for ${printPeriodType === 'specific_day' ? printDay : `${printMonth}/${printYear}`} (${printTotals.count} entries, Net: ₹${printTotals.net.toLocaleString('en-IN')})`,
+      details: `Printed Financial Ledger for ${printPeriodType === 'specific_day' ? printDay : `${printMonth}/${printYear}`} (${printTotals.count} entries, Net: ${formatCurrency(printTotals.net)})`,
       metadata: { count: printTotals.count, net: printTotals.net, period: printPeriodType }
     });
 
@@ -851,7 +853,7 @@ export default function FeesTrackingView({ onShowToast }) {
         </td>
         <td>${r.category || 'General'}</td>
         <td style="font-family: monospace; text-align: right; font-weight: 800; color: ${r.flowType === 'IN' ? '#059669' : '#dc2626'};">
-          ${r.flowType === 'IN' ? '+' : '-'}₹${Number(r.totalFee || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          ${r.flowType === 'IN' ? '+' : '-'}${formatCurrency(r.totalFee, 2)}
         </td>
         <td style="text-align: right;">
           <span class="status-pill ${r.status === 'Paid' ? 'status-completed' : 'status-pending'}">
@@ -869,16 +871,16 @@ export default function FeesTrackingView({ onShowToast }) {
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px;">
         <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px;">
           <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #16a34a;">Total Inflow (Receipts)</div>
-          <div style="font-size: 14px; font-weight: 900; color: #15803d; margin-top: 2px;">+₹${printTotals.totalIn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          <div style="font-size: 14px; font-weight: 900; color: #15803d; margin-top: 2px;">+${formatCurrency(printTotals.totalIn, 2)}</div>
         </div>
         <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 12px;">
           <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #dc2626;">Total Outflow (Expenses)</div>
-          <div style="font-size: 14px; font-weight: 900; color: #b91c1c; margin-top: 2px;">-₹${printTotals.totalOut.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          <div style="font-size: 14px; font-weight: 900; color: #b91c1c; margin-top: 2px;">-${formatCurrency(printTotals.totalOut, 2)}</div>
         </div>
         <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
           <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #64748b;">Net Cash Position</div>
           <div style="font-size: 14px; font-weight: 900; color: ${printTotals.net >= 0 ? '#059669' : '#dc2626'}; margin-top: 2px;">
-            ${printTotals.net >= 0 ? '+' : '-'}₹${Math.abs(printTotals.net).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            ${printTotals.net >= 0 ? '+' : '-'}${formatCurrency(Math.abs(printTotals.net), 2)}
           </div>
         </div>
       </div>
@@ -891,7 +893,7 @@ export default function FeesTrackingView({ onShowToast }) {
             <th style="width: 100px;">Flow Type</th>
             <th>Party / Client Name</th>
             <th>Category</th>
-            <th style="width: 110px; text-align: right;">Amount (INR)</th>
+            <th style="width: 110px; text-align: right;">Amount (${activeCurrency.code})</th>
             <th style="width: 70px; text-align: right;">Status</th>
           </tr>
         </thead>
@@ -1102,7 +1104,7 @@ export default function FeesTrackingView({ onShowToast }) {
                       </td>
 
                       <td className="p-4 font-mono font-black text-rose-600">
-                        {isPaid ? <span className="text-gray-400 font-normal">₹0</span> : formatINR(f.pending)}
+                        {isPaid ? <span className="text-gray-400 font-normal">{activeCurrency.symbol}0</span> : formatINR(f.pending)}
                       </td>
 
                       <td className="p-4">
@@ -1668,7 +1670,7 @@ export default function FeesTrackingView({ onShowToast }) {
                   >
                     <option value="">-- Quick Select from Client Directory --</option>
                     {clients.map(c => (
-                      <option key={c.id} value={c.name}>{c.name} {c.fee_amount ? `(Plan: ₹${c.fee_amount})` : ''}</option>
+                      <option key={c.id} value={c.name}>{c.name} {c.fee_amount ? `(Plan: ${formatCurrency(c.fee_amount)})` : ''}</option>
                     ))}
                   </select>
                 )}
@@ -1699,10 +1701,10 @@ export default function FeesTrackingView({ onShowToast }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block mb-1">
-                    Total Billing / Payout (₹) <span className="text-rose-500">*</span>
+                    Total Billing / Payout ({activeCurrency.symbol}) <span className="text-rose-500">*</span>
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-2 text-slate-400 font-bold">₹</span>
+                    <span className="absolute left-3 top-2 text-slate-400 font-bold">{activeCurrency.symbol}</span>
                     <input 
                       type="number" 
                       placeholder="e.g. 25000"
@@ -1715,9 +1717,9 @@ export default function FeesTrackingView({ onShowToast }) {
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block mb-1">Initial Settled / Paid (₹)</label>
+                  <label className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider block mb-1">Initial Settled / Paid ({activeCurrency.symbol})</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-2 text-slate-400 font-bold">₹</span>
+                    <span className="absolute left-3 top-2 text-slate-400 font-bold">{activeCurrency.symbol}</span>
                     <input 
                       type="number" 
                       placeholder="0"
@@ -1991,7 +1993,7 @@ export default function FeesTrackingView({ onShowToast }) {
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="text-slate-700 block mb-1">Amount (₹ / Cycle) <span className="text-rose-500">*</span></label>
+                  <label className="text-slate-700 block mb-1">Amount ({activeCurrency.symbol} / Cycle) <span className="text-rose-500">*</span></label>
                   <input 
                     type="number"
                     placeholder="e.g. 25000"

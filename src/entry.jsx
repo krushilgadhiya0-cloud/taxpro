@@ -16,11 +16,35 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>
 );
 
-// Register PWA Service Worker
+// PWA Service Worker handling
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((reg) => console.log('[TaxPro PWA] Service Worker registered successfully:', reg.scope))
-      .catch((err) => console.log('[TaxPro PWA] Service Worker registration failed:', err));
-  });
+  const isLocalhost = Boolean(
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '[::1]' ||
+    window.location.hostname.match(/^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/)
+  );
+
+  if (isLocalhost) {
+    // In local development, unregister old service workers and purge caches to prevent stale bundles
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (let reg of registrations) {
+        reg.unregister().catch(() => {});
+      }
+    });
+    if ('caches' in window) {
+      caches.keys().then((keys) => {
+        for (let key of keys) {
+          caches.delete(key).catch(() => {});
+        }
+      });
+    }
+  } else {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then((reg) => {
+          reg.update().catch(() => {});
+        })
+        .catch((err) => console.log('[TaxPro PWA] Registration notice:', err));
+    });
+  }
 }
