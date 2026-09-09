@@ -105,7 +105,7 @@ export default function ForgotPasswordModal({ isOpen, initialEmail, onClose, onS
 
       // 2. Client-side query fallback
       if (!matchedAccount) {
-        const superAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'superadmin@taxpro.com'];
+        const superAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com', 'superadmin@taxpro.com'];
         const savedSuperAdmin = localStorage.getItem('taxpro_secret_superadmin');
         const savedUserEmail = localStorage.getItem('taxpro_user_email');
         

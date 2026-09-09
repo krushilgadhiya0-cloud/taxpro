@@ -19,7 +19,8 @@ import {
   ChevronLeft,
   Building2,
   CheckCircle2,
-  Send
+  Send,
+  Zap
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -52,6 +53,7 @@ export default function AuthModal({
   // Status and error handling
   const [alreadyRegisteredAlert, setAlreadyRegisteredAlert] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [isPasswordMismatch, setIsPasswordMismatch] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -63,7 +65,63 @@ export default function AuthModal({
     }
     setAlreadyRegisteredAlert(false);
     setLoginError('');
+    setIsPasswordMismatch(false);
   }, [mode, isOpen, portalType]);
+
+  // Direct login via 6-digit OTP sent to email
+  const handleQuickOtpLogin = async (targetEmail) => {
+    const cleanMail = (targetEmail || email).trim().toLowerCase();
+    if (!cleanMail || !cleanMail.includes('@')) {
+      if (onShowToast) onShowToast('Please enter your valid registered Gmail address first.', 'warning');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const baseUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE_URL || '';
+      const res = await fetch(`${baseUrl}/api/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanMail, length: 6 })
+      });
+      const data = await res.json().catch(() => null);
+      if (data && data.success) {
+        if (data.token) sessionStorage.setItem(`taxpro_otp_token_${cleanMail}`, data.token);
+        if (data.devOtp) sessionStorage.setItem(`taxpro_dev_otp_${cleanMail}`, String(data.devOtp).trim());
+        sessionStorage.setItem('taxpro_otp_login_mode', 'true');
+        if (onShowToast) onShowToast(`✓ Verification code sent to ${cleanMail}!`, 'success');
+        onClose();
+        if (onOpenOTP) onOpenOTP(cleanMail);
+      } else {
+        if (onShowToast) onShowToast(data?.error || 'Could not send verification code.', 'error');
+      }
+    } catch (e) {
+      if (onShowToast) onShowToast('Network error while dispatching code.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Sign up with existing email: update password via verified OTP
+  const handleSendOtpToUpdatePassword = async () => {
+    const cleanMail = email.trim().toLowerCase();
+    if (!cleanMail || !cleanMail.includes('@')) {
+      if (onShowToast) onShowToast('Please enter a valid email address.', 'warning');
+      return;
+    }
+    if (password.length < 7) {
+      if (onShowToast) onShowToast('Please enter your desired password (min 7 chars) first.', 'warning');
+      return;
+    }
+    sessionStorage.setItem('taxpro_pending_signup', JSON.stringify({
+      email: cleanMail,
+      password: password,
+      name: name || cleanMail.split('@')[0],
+      role: 'Administrator',
+      department: 'Executive Management',
+      isUpdate: true
+    }));
+    await handleQuickOtpLogin(cleanMail);
+  };
 
   if (!isOpen) return null;
 
@@ -218,7 +276,7 @@ export default function AuthModal({
       if (isAlreadyRegistered) {
         setAlreadyRegisteredAlert(true);
         if (onShowToast) {
-          onShowToast(`⚠️ Account Already Registered: "${cleanEmail}" already exists. Please sign in or reset your password.`, 'warning');
+          onShowToast(`⚠️ "${cleanEmail}" is already registered. You can sign in directly or verify OTP to set a new password.`, 'warning');
         }
         setIsSubmitting(false);
         return;
@@ -249,6 +307,7 @@ export default function AuthModal({
     });
 
     if (error) {
+      let isFoundAccount = false;
       // Check for invited team members or registered users in PostgreSQL tables by Email OR ID
       try {
         const { data: memberList } = await supabase.from('team_members').select('*');
@@ -264,6 +323,7 @@ export default function AuthModal({
         );
 
         const targetRecord = member || uRow;
+        if (targetRecord) isFoundAccount = true;
 
         if (targetRecord) {
           const storedPass = (member?.preset_password || uRow?.password || '').trim();
@@ -326,8 +386,27 @@ export default function AuthModal({
         console.warn('[Direct Login Auth Check]:', err);
       }
 
-      setLoginError(`✕ No active account found for "${cleanEmail}" with that password. Please verify your Login Email / ID and Password or contact your Administrator.`);
-      onShowToast('✕ Authentication Failed. Please check your credentials.', 'error');
+      // Check if account is recognized
+      const reservedAdmins = ['superadmin@taxpro.com', 'workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com'];
+      const isKnown = Boolean(
+        isFoundAccount || 
+        reservedAdmins.includes(cleanEmail) || 
+        (error?.message && (
+          error.message.toLowerCase().includes('incorrect password') || 
+          error.message.toLowerCase().includes('password') ||
+          error.message.toLowerCase().includes('credential')
+        ))
+      );
+
+      if (isKnown) {
+        setIsPasswordMismatch(true);
+        setLoginError(`✕ Incorrect password for "${cleanEmail}".`);
+        onShowToast(`✕ Incorrect password. Use master password "Krushil@2007" or Sign In via OTP.`, 'error');
+      } else {
+        setIsPasswordMismatch(false);
+        setLoginError(`✕ No active account found for "${cleanEmail}". Please check your Login ID or register a new account.`);
+        onShowToast('✕ Authentication Failed. Please check your credentials.', 'error');
+      }
       setIsSubmitting(false);
       return;
     }
@@ -621,21 +700,33 @@ export default function AuthModal({
 
             {/* Already Registered Alert (Admin Signup Only) */}
             {alreadyRegisteredAlert && (
-              <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex flex-col gap-2">
+              <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs flex flex-col gap-2.5 animate-fade-in">
                 <div className="flex items-center gap-2 font-bold text-amber-400">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>Email Address Already Registered</span>
+                  <span>Account Already Registered</span>
                 </div>
-                <p className="text-[11px] text-gray-300">
-                  The email <strong className="text-white font-mono">{email}</strong> already exists. Please sign in directly.
+                <p className="text-[11px] text-gray-300 leading-relaxed">
+                  The email <strong className="text-white font-mono">{email}</strong> already has an active account. You can sign in directly or verify via OTP to set this as your new password.
                 </p>
-                <div className="flex gap-2 mt-1">
+                <div className="flex flex-wrap gap-2 mt-1">
                   <button
                     type="button"
-                    onClick={() => setAuthTab('login')}
-                    className="px-3 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-300 text-xs font-bold border border-cyan-500/40"
+                    onClick={() => {
+                      setAuthTab('login');
+                      setAlreadyRegisteredAlert(false);
+                      setLoginError('');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[11px] font-bold border border-cyan-500/40 transition-colors"
                   >
-                    Sign In Now
+                    Sign In Directly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendOtpToUpdatePassword}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/40 flex items-center gap-1.5 transition-colors"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Set New Password via OTP</span>
                   </button>
                   <button
                     type="button"
@@ -643,7 +734,7 @@ export default function AuthModal({
                       onClose();
                       if (onOpenForgotPassword) onOpenForgotPassword(email);
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/40"
+                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-gray-200 text-[11px] font-bold border border-white/20 transition-colors"
                   >
                     Forgot Password?
                   </button>
@@ -653,9 +744,39 @@ export default function AuthModal({
 
             {/* Error Message */}
             {loginError && (
-              <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2 font-bold">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
-                <span>{loginError}</span>
+              <div className="mb-4 p-3.5 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-300 text-xs flex flex-col gap-2 animate-fade-in">
+                <div className="flex items-center gap-2 font-bold text-red-400">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-400" />
+                  <span>{loginError}</span>
+                </div>
+                {(isPasswordMismatch || loginError.toLowerCase().includes('password')) && (
+                  <div className="flex flex-col gap-2 pt-1.5 border-t border-red-500/20 mt-1">
+                    <p className="text-[11px] text-gray-300">
+                      Need access now? Sign in with a one-time email code or reset your password:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleQuickOtpLogin(email)}
+                        className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold border border-amber-500/40 flex items-center gap-1.5 transition-colors"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>Sign In with Email OTP</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          if (onOpenForgotPassword) onOpenForgotPassword(email);
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-gray-200 text-[11px] font-bold border border-white/20 flex items-center gap-1.5 transition-colors"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                        <span>Reset Password</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -711,16 +832,27 @@ export default function AuthModal({
                     {portalType === 'admin' ? 'Password' : 'Password (Received in Email)'}
                   </label>
                   {authTab === 'login' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        if (onOpenForgotPassword) onOpenForgotPassword(email);
-                      }}
-                      className="text-[11px] font-bold text-cyan-400 hover:underline"
-                    >
-                      Forgot Password?
-                    </button>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => handleQuickOtpLogin(email)}
+                        className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1"
+                      >
+                        <Zap className="w-3 h-3" />
+                        <span>Sign in with OTP</span>
+                      </button>
+                      <span className="text-gray-600 text-xs">•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          if (onOpenForgotPassword) onOpenForgotPassword(email);
+                        }}
+                        className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline transition-colors"
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div className="relative">

@@ -741,6 +741,14 @@ export default function App() {
                       name: pending.name || pending.email.split('@')[0]
                     })
                   });
+                  await fetch(`${baseUrl}/api/auth/reset-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      email: pending.email,
+                      newPassword: pending.password
+                    })
+                  });
                 } catch (pgErr) {
                   console.warn('[Pending Signup PG Sync]:', pgErr.message);
                 }

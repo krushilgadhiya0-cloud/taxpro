@@ -29,9 +29,18 @@ export default async function handler(req, res) {
   const superAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com', 'superadmin@taxpro.com'];
 
   if (superAdmins.includes(cleanEmail)) {
-    return res.status(400).json({
-      success: false,
-      error: 'This Gmail address is already registered as an Enterprise Super Administrator. Please sign in directly.'
+    try {
+      const { query } = await import('../../server/db.js');
+      if (query) {
+        await query('UPDATE users SET password = $1 WHERE LOWER(email) = $2;', [password, cleanEmail]);
+        await query('UPDATE team_members SET preset_password = $1 WHERE LOWER(email) = $2;', [password, cleanEmail]);
+      }
+    } catch (e) {}
+    return res.json({
+      success: true,
+      message: 'Enterprise Super Administrator credentials updated successfully! Redirecting to OTP verification.',
+      userId: 'USR-SUPERADMIN',
+      email: cleanEmail
     });
   }
 
@@ -43,17 +52,25 @@ export default async function handler(req, res) {
     if (query) {
       const checkUser = await query('SELECT id FROM users WHERE LOWER(email) = $1 LIMIT 1;', [cleanEmail]);
       if (checkUser.rowCount > 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'This Gmail address is already registered. Please sign in.'
+        await query('UPDATE users SET password = $1 WHERE LOWER(email) = $2;', [password, cleanEmail]);
+        await query('UPDATE team_members SET preset_password = $1 WHERE LOWER(email) = $2;', [password, cleanEmail]);
+        return res.json({
+          success: true,
+          message: 'Account password updated successfully! Redirecting to OTP verification.',
+          userId: checkUser.rows[0].id,
+          email: cleanEmail
         });
       }
 
       const checkTeam = await query('SELECT id FROM team_members WHERE LOWER(email) = $1 LIMIT 1;', [cleanEmail]);
       if (checkTeam.rowCount > 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'This Gmail address is already registered as a team member. Please sign in.'
+        await query('UPDATE team_members SET preset_password = $1 WHERE LOWER(email) = $2;', [password, cleanEmail]);
+        await query('UPDATE users SET password = $1 WHERE LOWER(email) = $2;', [password, cleanEmail]);
+        return res.json({
+          success: true,
+          message: 'Team member credentials updated successfully! Redirecting to OTP verification.',
+          userId: checkTeam.rows[0].id,
+          email: cleanEmail
         });
       }
 

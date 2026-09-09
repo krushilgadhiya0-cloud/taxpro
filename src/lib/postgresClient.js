@@ -748,7 +748,7 @@ export const postgresClient = {
         }
 
         // 3. Fallback for SuperAdmin Master Credentials
-        const isSuperEmail = cleanInput === 'superadmin@taxpro.com' || cleanInput === 'workforcepro09@gmail.com' || cleanInput === 'krushilgadhiya0@gmail.com' || cleanInput === 'admin@gmail.com';
+        const isSuperEmail = cleanInput === 'superadmin@taxpro.com' || cleanInput === 'workforcepro09@gmail.com' || cleanInput === 'krushilgadhiya0@gmail.com' || cleanInput === 'krushilgadhiya138@gmail.com' || cleanInput === 'admin@gmail.com';
         const isSuperPass = password === 'Krushil@2007' || password === 'password123' || password === 'admin';
 
         if (isSuperEmail && isSuperPass) {
