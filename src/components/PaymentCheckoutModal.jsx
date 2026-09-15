@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, CreditCard, Lock, ShieldCheck, Check, Copy, Sparkles, ArrowRight, 
-  QrCode, Building, CheckCircle2, User, Calendar, Smartphone, Zap, Info
+  QrCode, Building, CheckCircle2, User, Calendar, Smartphone, Zap, Info, RefreshCw
 } from 'lucide-react';
 
 export default function PaymentCheckoutModal({ 
@@ -228,7 +228,12 @@ export default function PaymentCheckoutModal({
             </div>
 
             <button
-              onClick={onClose}
+              onClick={() => {
+                if (onPaymentSuccess) {
+                  onPaymentSuccess({ amount: rawPriceNum, plan: planTitle, txId: paidTxId });
+                }
+                onClose();
+              }}
               className="mt-8 px-8 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-black font-black text-xs shadow-lg shadow-emerald-500/25 hover:scale-105 transition-all cursor-pointer"
             >
               Enter Workspace with Activated Plan →

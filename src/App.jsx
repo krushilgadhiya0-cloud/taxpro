@@ -307,12 +307,20 @@ export default function App() {
         const { data: memberCheck } = await supabase.from('team_members').select('id, role, status, permissions').ilike('email', userMail).single();
         
         // Strict Authorization Layer (Securing firm from disabled accounts & revoked access)
-        const allowedAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'superadmin@taxpro.com'];
+        const allowedAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com', 'superadmin@taxpro.com'];
         const isAuthorizedAdmin = allowedAdmins.includes(userMail) || localStorage.getItem('taxpro_secret_superadmin') === userMail;
 
-        const isRevoked = memberCheck && (memberCheck.status === 'Past' || memberCheck.status === 'Access Revoked' || memberCheck.status === 'Suspended');
+        let member = memberCheck;
+        if (!member) {
+          try {
+            const { data: userFallback } = await supabase.from('users').select('id, role, name').ilike('email', userMail).single();
+            if (userFallback) member = userFallback;
+          } catch (e) {}
+        }
 
-        if ((!memberCheck && !isAuthorizedAdmin) || (isRevoked && !isAuthorizedAdmin)) {
+        const isRevoked = member && (member.status === 'Past' || member.status === 'Access Revoked' || member.status === 'Suspended');
+
+        if ((!member && !isAuthorizedAdmin) || (isRevoked && !isAuthorizedAdmin)) {
            await supabase.auth.signOut();
            localStorage.removeItem('taxpro_pg_session');
            localStorage.removeItem('taxpro_user_role');
@@ -322,24 +330,31 @@ export default function App() {
            return;
         }
 
-        if (memberCheck?.permissions) {
-          localStorage.setItem('taxpro_user_permissions', typeof memberCheck.permissions === 'string' ? memberCheck.permissions : JSON.stringify(memberCheck.permissions));
+        if (member?.permissions) {
+          localStorage.setItem('taxpro_user_permissions', typeof member.permissions === 'string' ? member.permissions : JSON.stringify(member.permissions));
         }
 
         const isNewUser = session.user?.created_at 
            ? (new Date() - new Date(session.user.created_at)) < (5 * 60 * 1000) 
            : false;
            
-        if (memberCheck || session.user?.user_metadata?.profile_completed || !isNewUser) {
+        if (member || session.user?.user_metadata?.profile_completed || !isNewUser) {
           localStorage.setItem('taxpro_profile_completed', 'true');
           
           let role = localStorage.getItem('taxpro_user_role') || 'Employee';
           if (isAuthorizedAdmin) {
             role = 'Admin';
-          } else if (memberCheck) {
-            role = memberCheck.role === 'Administrator' ? 'Admin' : (memberCheck.role === 'Manager' ? 'Manager' : (localStorage.getItem('taxpro_user_role') || 'Employee'));
-            if (memberCheck.status === 'Active') {
-              await supabase.from('team_members').update({ status: 'Active' }).ilike('email', userMail);
+          } else if (member) {
+            const rawRole = (member.role || '').toLowerCase();
+            if (rawRole.includes('admin') || rawRole.includes('owner') || rawRole.includes('principal')) {
+              role = 'Admin';
+            } else if (rawRole.includes('manager') || rawRole.includes('head') || rawRole.includes('lead')) {
+              role = 'Manager';
+            } else {
+              role = 'Employee';
+            }
+            if (member.status === 'Active' || member.status === 'Pending Invite') {
+              try { await supabase.from('team_members').update({ status: 'Active' }).ilike('email', userMail); } catch (e) {}
             }
           }
           
@@ -381,10 +396,18 @@ export default function App() {
         const { data: memberCheck } = await supabase.from('team_members').select('id, role, status').ilike('email', userMail).single();
         
         // Strict Authorization Layer (Securing firm from deleted employees & randoms)
-        const allowedAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com'];
+        const allowedAdmins = ['workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com', 'superadmin@taxpro.com'];
         const isAuthorizedAdmin = allowedAdmins.includes(userMail) || localStorage.getItem('taxpro_secret_superadmin') === userMail;
 
-        if ((!memberCheck && !isAuthorizedAdmin) || (memberCheck && memberCheck.status === 'Past')) {
+        let member = memberCheck;
+        if (!member) {
+          try {
+            const { data: userFallback } = await supabase.from('users').select('id, role').ilike('email', userMail).single();
+            if (userFallback) member = userFallback;
+          } catch (e) {}
+        }
+
+        if ((!member && !isAuthorizedAdmin) || (member && (member.status === 'Past' || member.status === 'Access Revoked' || member.status === 'Suspended'))) {
            await supabase.auth.signOut();
            showToast('Access Revoked: Your account has been disabled. You are no longer authorized to enter the firm.', 'error');
            setIsAuthenticated(false);
@@ -395,16 +418,23 @@ export default function App() {
            ? (new Date() - new Date(session.user.created_at)) < (5 * 60 * 1000) 
            : false;
            
-        if (memberCheck || session?.user?.user_metadata?.profile_completed || !isNewUser) {
+        if (member || session?.user?.user_metadata?.profile_completed || !isNewUser) {
           localStorage.setItem('taxpro_profile_completed', 'true');
           
           let role = 'Employee';
           if (isAuthorizedAdmin) {
              role = 'Admin';
-          } else if (memberCheck) {
-             role = memberCheck.role === 'Administrator' ? 'Admin' : 'Employee';
+          } else if (member) {
+             const rawRole = (member.role || '').toLowerCase();
+             if (rawRole.includes('admin') || rawRole.includes('owner') || rawRole.includes('principal')) {
+               role = 'Admin';
+             } else if (rawRole.includes('manager') || rawRole.includes('head') || rawRole.includes('lead')) {
+               role = 'Manager';
+             } else {
+               role = 'Employee';
+             }
              if (event === 'SIGNED_IN') {
-                 await supabase.from('team_members').update({ status: 'Active' }).ilike('email', userMail);
+                 try { await supabase.from('team_members').update({ status: 'Active' }).ilike('email', userMail); } catch (e) {}
              }
           }
           

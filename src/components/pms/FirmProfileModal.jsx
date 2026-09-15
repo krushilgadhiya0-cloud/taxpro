@@ -81,6 +81,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
 
   const [isSaving, setIsSaving] = useState(false);
   const [authAgreement, setAuthAgreement] = useState(true);
+  const [isProfileCompleted, setIsProfileCompleted] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -92,6 +93,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
       setFormData(currentData);
       setCurrentStep(3);
       setEnteredOtp('');
+      setIsProfileCompleted(false);
     }
   }, [isOpen]);
 
@@ -231,6 +233,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
       localStorage.setItem('taxpro_firm_address', cleanAddress);
       localStorage.setItem('taxpro_firm_tagline', cleanTagline);
       localStorage.setItem('taxpro_firm_configured', 'true');
+      localStorage.setItem('taxpro_profile_completed', 'true');
 
       // 2. Try to sync with Supabase / Cloud Postgres
       try {
@@ -282,7 +285,13 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
         onShowToast(`✓ Firm Profile & Company Tag [${cleanTag}] successfully saved!`, 'success');
       }
 
-      onClose();
+      setIsProfileCompleted(true);
+      setCurrentStep(4);
+      if (typeof window !== 'undefined' && window.confetti) {
+        try {
+          window.confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        } catch (e) {}
+      }
     } catch (e) {
       if (onShowToast) onShowToast('Failed to save firm details. Please try again.', 'error');
     } finally {
@@ -291,11 +300,11 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
   };
 
   const stepTitles = isDirectSetup ? [
-    { num: 1, title: 'Firm Identity & Legal Details', desc: 'Company & Tag Setup' }
+    { num: 1, title: isProfileCompleted ? 'Profile Completed' : 'Firm Identity & Legal Details', desc: 'Company & Tag Setup' }
   ] : [
     { num: 1, title: 'Verify Email', desc: 'Admin Security Check' },
     { num: 2, title: 'Enter OTP', desc: '6-Digit Code' },
-    { num: 3, title: 'Firm Identity & Legal Details', desc: 'Company & Tag Setup' }
+    { num: 3, title: isProfileCompleted ? 'Profile Completed' : 'Firm Identity & Legal Details', desc: 'Company & Tag Setup' }
   ];
 
   return (
@@ -310,11 +319,18 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                 <Building2 className="w-5 h-5 text-teal-300" />
               </div>
             </div>
-            <h2 className="text-base sm:text-lg font-black font-outfit">
-              Firm Identity & Legal Details
+            <h2 className="text-base sm:text-lg font-black font-outfit flex items-center justify-center gap-2">
+              <span>{isProfileCompleted ? 'Practice Profile Completed' : 'Firm Identity & Legal Details'}</span>
+              {isProfileCompleted && (
+                <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-bold font-mono flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-300" /> ACTIVE
+                </span>
+              )}
             </h2>
             <p className="text-[11px] text-gray-300 mt-0.5 max-w-md">
-              Configure official practice legal name, PAN, GSTIN, company tags, and office contact info
+              {isProfileCompleted 
+                ? 'Official practice legal identity, PAN, GSTIN, and company tags are active and configured.' 
+                : 'Configure official practice legal name, PAN, GSTIN, company tags, and office contact info'}
             </p>
           </div>
 
@@ -366,35 +382,38 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
                   {/* Connecting Bar */}
                   <div className="absolute top-[18px] left-[18px] right-[18px] -translate-y-1/2 h-1 bg-gray-200 z-0 rounded-full overflow-hidden">
                     <div 
-                      className="h-full bg-[#5b52e0] transition-all duration-300 rounded-full" 
+                      className={`h-full transition-all duration-500 rounded-full ${isProfileCompleted ? 'bg-emerald-500' : 'bg-[#5b52e0]'}`} 
                       style={{ 
-                        width: `${stepTitles.length > 1 ? Math.min(100, Math.max(0, ((currentStep - 1) / (stepTitles.length - 1)) * 100)) : 100}%` 
+                        width: `${isProfileCompleted ? 100 : (stepTitles.length > 1 ? Math.min(100, Math.max(0, ((currentStep - 1) / (stepTitles.length - 1)) * 100)) : 100)}%` 
                       }} 
                     />
                   </div>
 
                   {/* 4 Step Dots */}
                   {stepTitles.map(step => {
-                    const isPassed = currentStep > step.num;
-                    const isCurrent = currentStep === step.num;
+                    const isPassed = isProfileCompleted || currentStep > step.num;
+                    const isCurrent = !isProfileCompleted && currentStep === step.num;
 
                     return (
                       <div key={step.num} className="relative z-10 flex flex-col items-center">
                         <div 
                           className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-xs transition-all duration-300 shadow-sm ${
                             isPassed 
-                              ? 'bg-emerald-500 text-white ring-4 ring-emerald-100' 
+                              ? 'bg-emerald-500 text-white ring-4 ring-emerald-100 shadow-emerald-500/20' 
                               : isCurrent 
-                              ? 'bg-[#5b52e0] text-white ring-4 ring-indigo-100 scale-110' 
+                              ? 'bg-[#5b52e0] text-white ring-4 ring-indigo-100 scale-110 shadow-indigo-500/20' 
                               : 'bg-white text-gray-400 border-2 border-gray-300'
                           }`}
                         >
                           {isPassed ? <Check className="w-4 h-4 stroke-[3]" /> : step.num}
                         </div>
-                        <span className={`text-[10px] font-black uppercase tracking-wider mt-1.5 whitespace-nowrap ${
-                          isCurrent ? 'text-[#5b52e0]' : isPassed ? 'text-emerald-700' : 'text-gray-400'
+                        <span className={`text-[10px] font-black uppercase tracking-wider mt-1.5 whitespace-nowrap flex items-center gap-1 ${
+                          isPassed ? 'text-emerald-700 font-bold' : isCurrent ? 'text-[#5b52e0]' : 'text-gray-400'
                         }`}>
                           {step.title}
+                          {isProfileCompleted && step.num === (isDirectSetup ? 1 : 3) && (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600 inline" />
+                          )}
                         </span>
                       </div>
                     );
@@ -527,7 +546,7 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
           {/* ========================================================================= */}
           {/* STEP 3: EDIT FIRM / COMPANY DETAILS */}
           {/* ========================================================================= */}
-          {currentStep === 3 && (
+          {currentStep === 3 && !isProfileCompleted && (
             <form onSubmit={handleProceedToConfirm} className="space-y-5 animate-fade-in">
               
               {/* Centered Section Title */}
@@ -710,10 +729,98 @@ export default function FirmProfileModal({ isOpen, onClose, onShowToast, initial
             </form>
           )}
 
+          {/* ========================================================================= */}
+          {/* STEP 4: PROFILE COMPLETED CONFIRMATION SCREEN */}
+          {/* ========================================================================= */}
+          {(currentStep === 4 || isProfileCompleted) && (
+            <div className="space-y-6 animate-fade-in text-center py-2 max-w-lg mx-auto">
+              <div className="w-16 h-16 rounded-3xl bg-emerald-50 border-2 border-emerald-300 flex items-center justify-center mx-auto text-emerald-600 shadow-xl shadow-emerald-500/20 animate-bounce">
+                <Check className="w-9 h-9 stroke-[3]" />
+              </div>
+
+              <div>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-black uppercase tracking-widest font-mono">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> PROFILE COMPLETED &amp; ACTIVE
+                </span>
+                <h3 className="text-xl font-black text-gray-900 font-outfit mt-2">
+                  Practice Profile Successfully Completed!
+                </h3>
+                <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto leading-relaxed">
+                  Official practice identity, legal registration, GSTIN, PAN, and corporate tags are verified and active across all enterprise modules.
+                </p>
+              </div>
+
+              {/* Summary Card */}
+              <div className="p-5 rounded-2xl bg-gray-50 border border-gray-200 text-left font-sans text-xs space-y-3 shadow-xs">
+                <div className="flex items-center justify-between border-b border-gray-200 pb-2.5">
+                  <div>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">Official Firm Name</span>
+                    <span className="font-black text-gray-900 text-sm">{cleanFirmValue(formData.name) || 'TaxPro Practice'}</span>
+                  </div>
+                  <span className="px-3 py-1 rounded-full bg-[#5b52e0] text-white text-xs font-black font-mono shadow-xs flex items-center gap-1">
+                    🏢 {cleanFirmValue(formData.tag, 'TaxPro')}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">GSTIN Number</span>
+                    <span className="font-mono font-bold text-gray-800 text-[11px]">{cleanFirmValue(formData.gst) || 'Verified on File'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">Income Tax PAN</span>
+                    <span className="font-mono font-bold text-gray-800 text-[11px]">{cleanFirmValue(formData.pan) || 'Verified on File'}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-gray-200/60">
+                  <div>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">Official Email</span>
+                    <span className="font-medium text-gray-700 text-[11px] truncate block">{cleanFirmValue(formData.email) || adminEmail}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">Official Phone</span>
+                    <span className="font-mono font-bold text-gray-700 text-[11px]">{cleanFirmValue(formData.phone) || 'N/A'}</span>
+                  </div>
+                </div>
+
+                {cleanFirmValue(formData.address) && (
+                  <div className="pt-1 border-t border-gray-200/60">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">Registered Office</span>
+                    <span className="font-medium text-gray-600 text-[11px] line-clamp-2">{cleanFirmValue(formData.address)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProfileCompleted(false);
+                    setCurrentStep(3);
+                  }}
+                  className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                >
+                  Edit Details
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-7 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/20 transition-all cursor-pointer flex items-center gap-2 hover:scale-102"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>Enter Workspace (Profile Completed)</span>
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
-            </>
-          );
-        })()}
+      </>
+    );
+  })()}
 
       </div>
     </div>

@@ -373,6 +373,21 @@ export default function AuthModal({
             localStorage.removeItem('taxpro_secret_superadmin');
             localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
 
+            const fallbackSession = {
+              access_token: 'pg_session_token_' + Date.now(),
+              user: {
+                id: targetRecord.id || 'USR-' + Date.now(),
+                email: effectiveEmail,
+                role: resolvedRole,
+                user_metadata: {
+                  name: targetRecord.name || effectiveEmail.split('@')[0],
+                  role: resolvedRole,
+                  profile_completed: true
+                }
+              }
+            };
+            localStorage.setItem('taxpro_pg_session', JSON.stringify(fallbackSession));
+
             onShowToast(`✓ Welcome ${targetRecord.name || effectiveEmail}! Direct Login authorized as ${resolvedRole}.`, 'success');
             setTimeout(() => {
               onClose();
@@ -418,7 +433,11 @@ export default function AuthModal({
       
       try {
         const { data: memberList } = await supabase.from('team_members').select('*');
-        const member = memberList?.find(m => (m.email && m.email.toLowerCase() === cleanEmail) || (m.id && m.id.toLowerCase() === cleanEmail));
+        const member = memberList?.find(m => 
+          (m.email && m.email.toLowerCase() === cleanEmail) || 
+          (m.id && m.id.toLowerCase() === cleanEmail) ||
+          (user?.email && m.email && m.email.toLowerCase() === user.email.toLowerCase())
+        );
         if (member) {
           if (member.status === 'Access Revoked' || member.status === 'Past' || member.status === 'Suspended') {
             setLoginError('🔒 Access Denied: An Administrator has revoked your workspace access.');

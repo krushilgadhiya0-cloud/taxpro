@@ -26,19 +26,42 @@ export default async function handler(req, res) {
   const rawPass = (generatedPassword || password || '').trim() || `TaxPro@${Math.floor(1000 + Math.random() * 9000)}`;
   const userRole = role || 'Employee';
   const userDept = department || 'General Practice';
-  const loginUrl = origin || req.headers.origin || 'https://taxpro-nine.vercel.app';
-
-  if (!recipientEmail || !recipientEmail.includes('@')) {
-    return res.status(400).json({ success: false, error: 'Valid recipient email is required.' });
-  }
-
-  // Resolve SMTP credentials
-  const smtpUser = smtpConfig?.user || process.env.SMTP_USER || 'krushilgadhiya138@gmail.com';
-  const smtpPass = (smtpConfig?.pass || process.env.SMTP_PASS || 'zxzqedanapymshgm').replace(/\s+/g, '');
-  const smtpHost = smtpConfig?.host || process.env.SMTP_HOST || 'smtp.gmail.com';
-  const smtpPort = parseInt(smtpConfig?.port || process.env.SMTP_PORT || 587);
-
   const portalName = userRole === 'Manager' ? 'Manager Portal' : (userRole === 'Administrator' ? 'Administrator Portal' : 'Employee Portal');
+  const loginUrl = origin || req.headers.origin || process.env.APP_URL || 'http://localhost:3000';
+
+  const memberId = req.body?.id || req.body?.employeeId || `EMP-${Date.now().toString().slice(-6)}`;
+  const userId = `USR-${Date.now().toString().slice(-6)}`;
+
+  // 1. Immediately persist to PostgreSQL (team_members and users tables)
+  try {
+    const { query } = await import('../../server/db.js');
+    if (query) {
+      await query(`
+        INSERT INTO team_members (id, name, email, role, department, status, preset_password, online, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, 'Active', $6, TRUE, NOW(), NOW())
+        ON CONFLICT (email) DO UPDATE SET
+          name = EXCLUDED.name,
+          role = EXCLUDED.role,
+          department = EXCLUDED.department,
+          preset_password = EXCLUDED.preset_password,
+          status = 'Active',
+          updated_at = NOW();
+      `, [memberId, recipientName, recipientEmail, userRole, userDept, rawPass]);
+
+      await query(`
+        INSERT INTO users (id, email, password, name, role, company, phone_verified, lock_pin, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, 'TaxPro Enterprise', TRUE, '1234', NOW(), NOW())
+        ON CONFLICT (email) DO UPDATE SET
+          password = EXCLUDED.password,
+          name = EXCLUDED.name,
+          role = EXCLUDED.role,
+          updated_at = NOW();
+      `, [userId, recipientEmail, rawPass, recipientName, userRole]);
+      console.log(`[Vercel Serverless Invite] ✓ Persisted ${recipientEmail} to team_members and users tables.`);
+    }
+  } catch (dbErr) {
+    console.warn('[Vercel Serverless Invite DB Warning]:', dbErr.message);
+  }
 
   try {
     const transporter = nodemailer.createTransport({
