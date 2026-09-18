@@ -148,6 +148,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login');
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
+  const [loginTransition, setLoginTransition] = useState(null);
 
   // DYNAMIC ROLE URL SYNCHRONIZATION LISTENER (?role=superadmin, ?role=admin, ?role=manager, ?role=employee)
   useEffect(() => {
@@ -221,6 +222,7 @@ export default function App() {
       setUserEmail('superadmin@taxpro.com');
       setWorkspaceMode('superadmin_core');
       setIsAuthenticated(true);
+      setLoginTransition({ role: 'Super Admin', firmName: 'TaxPro Global Core' });
     };
     window.addEventListener('taxpro_superadmin_login', handleSuperAdminLoginEvent);
 
@@ -564,6 +566,13 @@ export default function App() {
     if (isMasterAdmin && workspaceMode !== 'pms_workspace') {
        return (
          <>
+           {loginTransition && (
+             <LoadingScreen
+               targetRole={loginTransition.role}
+               firmName={loginTransition.firmName}
+               onFinished={() => setLoginTransition(null)}
+             />
+           )}
            <SuperAdminShell 
              onLogout={handleLogout} 
              onShowToast={showToast} 
@@ -586,6 +595,13 @@ export default function App() {
 
     return (
       <div className="relative min-h-screen bg-[#f3f4f6]">
+        {loginTransition && (
+          <LoadingScreen
+            targetRole={loginTransition.role}
+            firmName={loginTransition.firmName}
+            onFinished={() => setLoginTransition(null)}
+          />
+        )}
         <ToastContainer toasts={toasts} onCloseToast={closeToast} />
         
         {/* MANDATORY PRACTICE & FIRM SETUP GATEKEEPER */}
@@ -877,13 +893,36 @@ export default function App() {
 
             if (finalEmail) {
               try {
-                const { data: memberCheck } = await supabase.from('team_members').select('id, role, status').ilike('email', finalEmail).single();
+                const { data: memberCheck } = await supabase.from('team_members').select('id, role, status, company, company_id').ilike('email', finalEmail).single();
                 if (memberCheck) {
                   if (memberCheck.role === 'Administrator') targetRole = 'Admin';
                   else if (memberCheck.role === 'Manager') targetRole = 'Manager';
                   else if (!roleOverride) targetRole = 'Employee';
                   
+                  if (memberCheck.company) {
+                    localStorage.setItem('taxpro_firm_name', memberCheck.company);
+                    if (memberCheck.company_id) {
+                      localStorage.setItem('taxpro_firm_tag', memberCheck.company_id);
+                    }
+                    localStorage.setItem('taxpro_firm_configured', 'true');
+                    window.dispatchEvent(new CustomEvent('taxpro_firm_updated', {
+                      detail: { name: memberCheck.company, tag: memberCheck.company_id || 'TaxPro' }
+                    }));
+                  }
+
                   await supabase.from('team_members').update({ status: 'Active' }).ilike('email', finalEmail);
+                } else {
+                  const { data: userRow } = await supabase.from('users').select('role, company, company_id').ilike('email', finalEmail).single();
+                  if (userRow?.company) {
+                    localStorage.setItem('taxpro_firm_name', userRow.company);
+                    if (userRow.company_id) {
+                      localStorage.setItem('taxpro_firm_tag', userRow.company_id);
+                    }
+                    localStorage.setItem('taxpro_firm_configured', 'true');
+                    window.dispatchEvent(new CustomEvent('taxpro_firm_updated', {
+                      detail: { name: userRow.company, tag: userRow.company_id || 'TaxPro' }
+                    }));
+                  }
                 }
               } catch (err) {}
             }
@@ -892,6 +931,12 @@ export default function App() {
           localStorage.setItem('taxpro_user_role', targetRole);
           setUserRole(targetRole);
           setIsAuthenticated(true);
+
+          // Trigger smooth role workspace transition
+          setLoginTransition({
+            role: targetRole,
+            firmName: localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory Practice'
+          });
 
           // Direct jump to Practice PMS Dashboard
           localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');

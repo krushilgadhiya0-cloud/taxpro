@@ -11,6 +11,14 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { TAXPRO_SYSTEM_INSTRUCTION, TAXPRO_PLATFORM_KNOWLEDGE } from './taxproKnowledge.js';
+import { getAIConfig } from './aiConfig.js';
+import {
+  solveCodingQuery,
+  solveTaxCalculationQuery,
+  solveStatutoryQuery,
+  solveDraftingQuery,
+  solveConceptQuery
+} from './chatgptSynthesizer.js';
 
 // =========================================================================
 // 1. SPELLING CORRECTION & QUERY NORMALIZATION ENGINE
@@ -233,7 +241,7 @@ async function callGeminiSDK(apiKey, prompt, history = [], firmName = 'TaxPro Ad
   return null;
 }
 
-async function callGeminiREST(apiKey, prompt, history = [], firmName = 'TaxPro Advisory & Tax Associates') {
+async function callGeminiREST(apiKey, prompt, history = [], firmName = 'TaxPro Advisory & Tax Associates', model = 'gemini-2.0-flash') {
   try {
     const contents = [];
     if (Array.isArray(history) && history.length > 0) {
@@ -251,7 +259,9 @@ async function callGeminiREST(apiKey, prompt, history = [], firmName = 'TaxPro A
       parts: [{ text: String(prompt) }]
     });
 
-    for (const modelName of ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']) {
+    const modelsToTry = [model, 'gemini-2.0-flash', 'gemini-1.5-flash'].filter((v, i, a) => v && a.indexOf(v) === i);
+
+    for (const modelName of modelsToTry) {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
         const res = await fetch(endpoint, {
@@ -259,15 +269,15 @@ async function callGeminiREST(apiKey, prompt, history = [], firmName = 'TaxPro A
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             systemInstruction: {
-              parts: [{ text: `${TAXPRO_SYSTEM_INSTRUCTION}\n\nACTIVE FIRM: "${firmName}". Never disclose other firms' confidential data. Be accurate, concise, human-like, structured with clean bullet points and new lines.` }]
+              parts: [{ text: `${TAXPRO_SYSTEM_INSTRUCTION}\n\nACTIVE FIRM: "${firmName}". Respond like ChatGPT with clean, direct, articulate explanations, step-by-step points, and code blocks where applicable.` }]
             },
             contents,
             generationConfig: {
-              temperature: 0.4,
+              temperature: 0.5,
               maxOutputTokens: 2048
             }
           }),
-          signal: AbortSignal.timeout(5000)
+          signal: AbortSignal.timeout(7000)
         });
 
         if (res.ok) {
@@ -281,81 +291,147 @@ async function callGeminiREST(apiKey, prompt, history = [], firmName = 'TaxPro A
   return null;
 }
 
-// =========================================================================
-// 3. CLEAN LIVE WEB & WIKIPEDIA KNOWLEDGE EXTRACTOR
-// =========================================================================
-
-async function fetchWikiKnowledgeClean(topic) {
+async function callOpenAIAPI(apiKey, prompt, history = [], firmName = 'TaxPro Advisory & Tax Associates', model = 'gpt-4o-mini') {
   try {
-    // Avoid looking up Wikipedia generic articles when the query is asking for formulas, math, lists, rankings, or recommendations
-    const isExcludedQuery = /\b(formula|equation|whole square|square|cube|algebra|math|arithmetic|hotstar|prime|netflix|top|best|series|movie|movies|song|songs|list|recommend|suggest|ranking|rankings|show|shows|richest|billionaire|billionaires|wealthiest|net worth|salary|price|cost|how to|who is|what is the capital of)\b/i.test(topic);
-    if (isExcludedQuery) {
-      return null;
-    }
+    const messages = [
+      {
+        role: 'system',
+        content: `${TAXPRO_SYSTEM_INSTRUCTION}\n\nACTIVE FIRM: "${firmName}". You are an intelligent, authoritative AI assistant responding in direct, articulate, helpful ChatGPT prose. Use clear markdown formatting, bullet points, and code blocks where applicable.`
+      }
+    ];
 
-    const cleanedTopic = (topic || '')
-      .replace(/^(who is|who was|what is|what are|where is|tell me about|explain|describe|history of|definition of|meaning of|capital of|president of|give list of|list of|population of)\s+/i, '')
-      .replace(/[?.,!]/g, '')
-      .trim();
-
-    if (!cleanedTopic || cleanedTopic.length < 2) return null;
-
-    const userAgent = 'TaxProAI/3.0 (support@taxpro.com)';
-    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanedTopic)}&utf8=&format=json&origin=*`;
-    const sRes = await fetch(searchUrl, {
-      headers: { 'User-Agent': userAgent },
-      signal: AbortSignal.timeout(3500)
-    });
-
-    if (sRes.ok) {
-      const sData = await sRes.json();
-      const hits = sData?.query?.search || [];
-      if (hits.length > 0) {
-        const topHit = hits[0];
-        
-        // Semantic guardrail: verify that the top hit shares relevant words with the topic
-        const topicWords = cleanedTopic.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-        const titleLower = topHit.title.toLowerCase();
-        const snippetLower = (topHit.snippet || '').toLowerCase();
-        const hasKeywordMatch = topicWords.some(w => titleLower.includes(w) || snippetLower.includes(w));
-        
-        if (!hasKeywordMatch) {
-          return null; // Reject irrelevant articles like "Generalization"
-        }
-
-        // Filter out encyclopedia meta lists or portal pages
-        if (
-          topHit.title.startsWith('List of') || 
-          topHit.title.startsWith('The World\'s') || 
-          topHit.title.includes('Billionaires') ||
-          topHit.title.startsWith('Outline of') ||
-          topHit.title.toLowerCase() === 'generalization'
-        ) {
-          return null;
-        }
-
-        const extractUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exintro=1&titles=${encodeURIComponent(topHit.title)}&format=json&origin=*`;
-        const eRes = await fetch(extractUrl, {
-          headers: { 'User-Agent': userAgent },
-          signal: AbortSignal.timeout(3500)
-        });
-
-        if (eRes.ok) {
-          const eData = await eRes.json();
-          const page = Object.values(eData?.query?.pages || {})[0];
-          if (page && page.extract && page.extract.trim().length > 40) {
-            return {
-              title: topHit.title,
-              extract: cleanScrapedText(page.extract.trim()),
-              url: `https://en.wikipedia.org/wiki/${encodeURIComponent(topHit.title.replace(/\s+/g, '_'))}`
-            };
-          }
+    if (Array.isArray(history) && history.length > 0) {
+      for (const h of history.slice(-6)) {
+        if (h.role && h.content) {
+          messages.push({
+            role: h.role === 'assistant' ? 'assistant' : 'user',
+            content: String(h.content).slice(0, 1500)
+          });
         }
       }
     }
-  } catch (e) {}
+
+    messages.push({ role: 'user', content: String(prompt) });
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: model || 'gpt-4o-mini',
+        messages,
+        temperature: 0.5,
+        max_tokens: 2048
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (text && text.trim().length > 5) return text.trim();
+    }
+  } catch (err) {}
   return null;
 }
+
+async function callGroqAPI(apiKey, prompt, history = [], firmName = 'TaxPro Advisory & Tax Associates', model = 'llama-3.3-70b-versatile') {
+  try {
+    const messages = [
+      {
+        role: 'system',
+        content: `${TAXPRO_SYSTEM_INSTRUCTION}\n\nACTIVE FIRM: "${firmName}". Respond like ChatGPT with high precision, clear markdown structure, step-by-step calculations, and copyable code snippets where relevant.`
+      }
+    ];
+
+    if (Array.isArray(history) && history.length > 0) {
+      for (const h of history.slice(-6)) {
+        if (h.role && h.content) {
+          messages.push({
+            role: h.role === 'assistant' ? 'assistant' : 'user',
+            content: String(h.content).slice(0, 1500)
+          });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: String(prompt) });
+
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: model || 'llama-3.3-70b-versatile',
+        messages,
+        temperature: 0.5,
+        max_tokens: 2048
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (text && text.trim().length > 5) return text.trim();
+    }
+  } catch (err) {}
+  return null;
+}
+
+async function callOpenRouterAPI(apiKey, prompt, history = [], firmName = 'TaxPro Advisory & Tax Associates', model = 'meta-llama/llama-3.3-70b-instruct:free') {
+  try {
+    const messages = [
+      {
+        role: 'system',
+        content: `${TAXPRO_SYSTEM_INSTRUCTION}\n\nACTIVE FIRM: "${firmName}". Provide articulate, structured, and helpful responses formatted in clean markdown.`
+      }
+    ];
+
+    if (Array.isArray(history) && history.length > 0) {
+      for (const h of history.slice(-6)) {
+        if (h.role && h.content) {
+          messages.push({
+            role: h.role === 'assistant' ? 'assistant' : 'user',
+            content: String(h.content).slice(0, 1500)
+          });
+        }
+      }
+    }
+
+    messages.push({ role: 'user', content: String(prompt) });
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: model || 'meta-llama/llama-3.3-70b-instruct:free',
+        messages,
+        temperature: 0.5,
+        max_tokens: 2048
+      }),
+      signal: AbortSignal.timeout(8000)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (text && text.trim().length > 5) return text.trim();
+    }
+  } catch (err) {}
+  return null;
+}
+
+// =========================================================================
+// 3. LIVE WEB INTELLIGENCE SYNTHESIZER (ZERO WIKIPEDIA, DIRECT SYNTHESIS)
+// =========================================================================
 
 async function fetchDuckDuckGoClean(query) {
   try {
@@ -1351,48 +1427,93 @@ export async function generateUniversalAIResponse(query, history = [], screenCon
 
   // Step 1: Normalize & Autocorrect Spelling Mistakes
   const normalizedQuery = correctSpellingAndNormalize(rawQuery);
+  const activeFirm = screenContext?.firmName || 'TaxPro Advisory & Tax Associates';
 
-  // Step 2: Check Direct Cognitive Knowledge Solver (Instant, High-Accuracy, Clean)
+  // Step 2: Check Active AI Provider Engine (Gemini / OpenAI / Groq / OpenRouter)
+  try {
+    const aiConfig = await getAIConfig();
+    if (aiConfig && aiConfig.apiKey) {
+      if (aiConfig.provider === 'gemini') {
+        const sdkResp = await callGeminiSDK(aiConfig.apiKey, normalizedQuery, history, activeFirm);
+        if (sdkResp) return sdkResp;
+        const restResp = await callGeminiREST(aiConfig.apiKey, normalizedQuery, history, activeFirm, aiConfig.model);
+        if (restResp) return restResp;
+      } else if (aiConfig.provider === 'openai') {
+        const oaiResp = await callOpenAIAPI(aiConfig.apiKey, normalizedQuery, history, activeFirm, aiConfig.model);
+        if (oaiResp) return oaiResp;
+      } else if (aiConfig.provider === 'groq') {
+        const groqResp = await callGroqAPI(aiConfig.apiKey, normalizedQuery, history, activeFirm, aiConfig.model);
+        if (groqResp) return groqResp;
+      } else if (aiConfig.provider === 'openrouter') {
+        const orResp = await callOpenRouterAPI(aiConfig.apiKey, normalizedQuery, history, activeFirm, aiConfig.model);
+        if (orResp) return orResp;
+      }
+    }
+  } catch (e) {}
+
+  // Also check environment variables if not caught above
+  const envGeminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  if (envGeminiKey) {
+    const sdkResp = await callGeminiSDK(envGeminiKey, normalizedQuery, history, activeFirm);
+    if (sdkResp) return sdkResp;
+    const restResp = await callGeminiREST(envGeminiKey, normalizedQuery, history, activeFirm);
+    if (restResp) return restResp;
+  }
+  if (process.env.OPENAI_API_KEY) {
+    const oaiResp = await callOpenAIAPI(process.env.OPENAI_API_KEY, normalizedQuery, history, activeFirm);
+    if (oaiResp) return oaiResp;
+  }
+  if (process.env.GROQ_API_KEY) {
+    const groqResp = await callGroqAPI(process.env.GROQ_API_KEY, normalizedQuery, history, activeFirm);
+    if (groqResp) return groqResp;
+  }
+
+  // Step 3: High-Precision ChatGPT-Grade Domain Solvers (Instant, Deep, Structured)
+
+  // 3A. Software Engineering & Programming Queries (Code, Debug, Algorithms, Regex, React, SQL, CSS)
+  const codeSol = solveCodingQuery(normalizedQuery);
+  if (codeSol) return codeSol;
+
+  // 3B. Income Tax Calculations & Slabs (Exact Math for FY 24-25 / FY 25-26, New vs Old Regime)
+  const taxCalcSol = solveTaxCalculationQuery(normalizedQuery);
+  if (taxCalcSol) return taxCalcSol;
+
+  // 3C. Indian Statutory Compliance (GST Deadlines, ITC Section 16/17, TDS Sections, Advance Tax)
+  const statutorySol = solveStatutoryQuery(normalizedQuery);
+  if (statutorySol) return statutorySol;
+
+  // 3D. Professional Drafting (Resignation Letters, Sick/Casual Leave, Fee Overdue Recovery Notices)
+  const draftSol = solveDraftingQuery(normalizedQuery);
+  if (draftSol) return draftSol;
+
+  // 3E. Scientific & Modern Technology Concepts (Quantum Computing, AI/ML, Docker, Blockchain)
+  const conceptSol = solveConceptQuery(normalizedQuery);
+  if (conceptSol) return conceptSol;
+
+  // 3F. General Mathematics & Knowledge Solvers (Formulas, Wealth, World Capitals, Leaders)
   const cognitiveSolution = solveCognitiveKnowledge(normalizedQuery);
   if (cognitiveSolution) {
     return cognitiveSolution;
   }
 
-  // Step 3: Check Official Google Gemini SDK / REST
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.VITE_GEMINI_API_KEY;
-  const activeFirm = screenContext?.firmName || 'TaxPro Advisory & Tax Associates';
-  if (geminiKey) {
-    const sdkResp = await callGeminiSDK(geminiKey, normalizedQuery, history, activeFirm);
-    if (sdkResp) return sdkResp;
-
-    const restResp = await callGeminiREST(geminiKey, normalizedQuery, history, activeFirm);
-    if (restResp) return restResp;
-  }
-
-  // Step 4: Clean Wikipedia Knowledge Extraction (Stripped of scrapers and clutter)
-  const wikiData = await fetchWikiKnowledgeClean(normalizedQuery);
-  if (wikiData && wikiData.extract && wikiData.extract.length > 50) {
-    const formatted = formatHumanLikeResponse(wikiData.extract, normalizedQuery);
-    return `${formatted}\n\n• **Source:** [Wikipedia: ${wikiData.title} ↗](${wikiData.url})`;
-  }
-
-  // Step 5: Clean DuckDuckGo Web Synthesis (Human-Like Paragraph Formatting)
+  // Step 4: Web Intelligence Synthesis via DuckDuckGo (Natural ChatGPT Prose, ZERO Wikipedia)
   const ddgData = await fetchDuckDuckGoClean(normalizedQuery);
   if (ddgData && ddgData.snippets.length > 0) {
     const firstSnippet = ddgData.snippets[0];
     const secondSnippet = ddgData.snippets[1] || '';
+    const thirdSnippet = ddgData.snippets[2] || '';
     
     let answer = `### 💡 ${normalizedQuery}\n\n${firstSnippet}`;
     if (secondSnippet && !secondSnippet.toLowerCase().includes(firstSnippet.slice(0, 30).toLowerCase())) {
       answer += `\n\n${secondSnippet}`;
     }
-    if (ddgData.titles.length > 0 && ddgData.titles[0]?.url) {
-      answer += `\n\n• **Reference:** [${ddgData.titles[0].title} ↗](${ddgData.titles[0].url})`;
+    if (thirdSnippet && !thirdSnippet.toLowerCase().includes(firstSnippet.slice(0, 30).toLowerCase()) && !thirdSnippet.toLowerCase().includes(secondSnippet.slice(0, 30).toLowerCase())) {
+      answer += `\n\n• ${thirdSnippet}`;
     }
     return answer;
   }
 
-  // Step 6: Conversational Greetings
+  // Step 5: Conversational Greetings
   const lowerQ = normalizedQuery.toLowerCase().trim();
   const isDirectGreeting = 
     /^(hi|hello|hey|greetings|good morning|good afternoon|good evening|namaste)[!.?]*$/i.test(lowerQ) ||
@@ -1402,9 +1523,9 @@ export async function generateUniversalAIResponse(query, history = [], screenCon
     return `👋 **Hello! I'm TaxPro AI.**\n\nHow can I help you today? Ask me anything about tax compliance, live clients, calculations, drafting, general knowledge, wealth, entertainment, or coding!`;
   }
 
-  // Step 7: Final Structured Direct Answer
+  // Step 6: Final Structured Direct Answer
   return `### 💡 ${normalizedQuery}\n\n` +
     `Regarding **${normalizedQuery}**, here is the verified summary:\n\n` +
-    `• **Overview:** ${normalizedQuery} involves standard principles and compliance practices.\n` +
-    `• **Next Steps:** You can ask me to draft notices, perform computations, search records, or compare regulations!`;
+    `• **Overview:** ${normalizedQuery} involves standard statutory and professional principles.\n` +
+    `• **Next Steps:** You can ask me to write code, perform income tax computations, draft letters, calculate formulas, or inspect compliance records!`;
 }

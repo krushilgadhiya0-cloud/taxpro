@@ -196,88 +196,197 @@ export default function CalendarPageView({ onShowToast }) {
       if (clientsRes.data) setClients(clientsRes.data.map(c => c.name));
       if (memRes.data) setTeamMembers(memRes.data.map(m => m.name).filter(Boolean));
 
-      // 1. Direct receipts and payments from receipts_payments
-      const dbDirectTxs = (recRes.data || []).map(r => {
-        const isIncome = r.type === 'income' || r.type === 'Receipt';
-        return {
-          id: `RP-${r.id}`,
+      // 1. Direct canonical receipts and payments
+      const canonicalCalTxs = [];
+      const seenCalIds = new Set();
+      const seenCalRefs = new Set();
+      const seenCalSigs = new Set();
+
+      const registerCalTx = (item) => {
+        if (!item || !item.id) return;
+        const normId = String(item.id).replace(/^(RP-|PAY-|FEE-|PAYROLL-)/, '').trim();
+        if (seenCalIds.has(normId)) return;
+        seenCalIds.add(normId);
+
+        if (item.reference) {
+          const refStr = String(item.reference).trim().toLowerCase();
+          if (refStr) seenCalRefs.add(refStr);
+        }
+
+        const amt = Number(item.amount || 0);
+        const partyNorm = String(item.party || '').trim().toLowerCase();
+        const d = normalizeToYMD(item.date);
+        const sig = `${item.type}_${partyNorm}_${amt}_${d}`;
+        seenCalSigs.add(sig);
+
+        const simplifiedParty = partyNorm.replace(/\s*\([^)]*\)/g, '').trim();
+        if (simplifiedParty !== partyNorm) {
+          seenCalSigs.add(`${item.type}_${simplifiedParty}_${amt}_${d}`);
+        }
+
+        canonicalCalTxs.push({
+          ...item,
+          id: normId,
+          date: d,
+          amount: amt
+        });
+      };
+
+      // Direct receipts_payments from DB
+      (recRes.data || []).forEach(r => {
+        const isIncome = r.type === 'income' || r.type === 'Receipt' || r.type === 'Income';
+        registerCalTx({
+          id: r.id,
           type: isIncome ? 'Income' : 'Expense',
           party: r.party || r.title || (isIncome ? 'Client' : 'Vendor / Expense'),
           category: r.category || (isIncome ? 'Client Retainer / Fee Payment' : 'Office & Operations'),
           mode: r.method || 'Bank Transfer',
           amount: Number(r.amount || 0),
-          date: normalizeToYMD(r.date || r.created_at),
+          date: r.date || r.created_at,
+          reference: r.reference,
           notes: r.notes || r.reference || ''
-        };
+        });
       });
 
-      // 2. Build entries from Supabase fees (Distinguishing between Inflow Fees & Outflow Expenses)
-      const dbFeeTxs = (feesRes.data || []).filter(f => Number(f.paid || 0) > 0).map(f => {
+      // Local custom calendar transactions
+      try {
+        const rawLocal = localStorage.getItem('taxpro_calendar_transactions');
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal);
+          (parsed || []).forEach(t => {
+            registerCalTx({
+              id: t.id,
+              type: t.type || 'Expense',
+              party: t.party || 'Party',
+              category: t.category || 'General',
+              mode: t.mode || t.method || 'Bank Transfer',
+              amount: Number(t.amount || 0),
+              date: t.date,
+              reference: t.reference,
+              notes: t.notes || ''
+            });
+          });
+        }
+      } catch (e) {}
+
+      // Payroll disbursements
+      try {
+        const rawPayroll = localStorage.getItem('taxpro_payroll_history');
+        if (rawPayroll) {
+          const parsedPayroll = JSON.parse(rawPayroll);
+          (parsedPayroll || [])
+            .filter(item => item.status === 'Paid' && Number(item.amount || 0) > 0)
+            .forEach(p => {
+              const payId = String(p.id || '').trim();
+              const recStaffId = `REC-STAFF-${payId}`;
+              const refNo = String(p.reference || '').trim().toLowerCase();
+              const amt = Number(p.amount || 0);
+              const partyNorm = (p.memberName || 'Staff').trim().toLowerCase();
+              const d = normalizeToYMD(p.date);
+
+              if (
+                seenCalIds.has(payId) ||
+                seenCalIds.has(recStaffId) ||
+                (refNo && seenCalRefs.has(refNo)) ||
+                seenCalSigs.has(`Expense_${partyNorm}_${amt}_${d}`) ||
+                seenCalSigs.has(`Expense_${partyNorm} (staff salary)_${amt}_${d}`)
+              ) {
+                return;
+              }
+
+              registerCalTx({
+                id: recStaffId,
+                type: 'Expense',
+                party: `${p.memberName || 'Staff'} (Staff Salary)`,
+                category: p.description || 'Staff Salary & Payroll',
+                mode: p.method === 'Pending' ? 'Bank Transfer' : (p.method || 'Bank Transfer'),
+                amount: amt,
+                date: d,
+                reference: p.reference || p.id,
+                notes: `Payroll: ${p.description || 'Monthly Salary'}`
+              });
+            });
+        }
+      } catch (e) {}
+
+      // Payments table
+      (payRes.data || []).forEach(p => {
+        const pId = String(p.id || '').trim();
+        const pRef = String(p.reference || p.payment_id || '').trim().toLowerCase();
+        const amt = Number(p.numeric_amount || p.amount || 0);
+        const partyNorm = String(p.recipient || p.client_name || '').trim().toLowerCase();
+        const d = normalizeToYMD(p.date || p.created_at);
+
+        if (
+          seenCalIds.has(pId) ||
+          (pRef && seenCalRefs.has(pRef)) ||
+          seenCalRefs.has(pId.toLowerCase()) ||
+          seenCalSigs.has(`Expense_${partyNorm}_${amt}_${d}`)
+        ) {
+          return;
+        }
+
+        const isSubscription = p.category && p.category.toLowerCase().includes('subscription');
+        if (isSubscription && (
+          seenCalSigs.has(`Expense_taxpro platform subscription (owner)_${amt}_${d}`) ||
+          seenCalSigs.has(`Expense_taxpro platform subscription_${amt}_${d}`)
+        )) {
+          return;
+        }
+
+        registerCalTx({
+          id: pId,
+          type: 'Expense',
+          party: p.recipient || p.category || 'Vendor / Employee',
+          category: p.category || 'Office & Operations',
+          mode: p.method || 'UPI',
+          amount: amt,
+          date: d,
+          reference: p.reference || p.payment_id || p.id,
+          notes: p.status ? `Status: ${p.status}` : ''
+        });
+      });
+
+      // Fees table
+      (feesRes.data || []).filter(f => Number(f.paid || 0) > 0).forEach(f => {
+        const feeId = String(f.id || '').trim();
+        const feeNormId = `FEE-${feeId}`;
+        const invNo = String(f.invoice_no || '').trim().toLowerCase();
+        const amt = Number(f.paid || 0);
+        const clientNorm = String(f.client_name || '').trim().toLowerCase();
+        const d = normalizeToYMD(f.paid_date || f.date || f.created_at);
+
         const isExpense = (f.invoice_no || '').startsWith('PAY') || 
                           (f.service || '').toUpperCase().includes('OUT_') || 
                           (f.service || '').toLowerCase().includes('expense') || 
                           (f.service || '').toLowerCase().includes('salary') ||
                           (f.service || '').toLowerCase().includes('rent');
-        return {
-          id: `FEE-${f.id}`,
-          type: isExpense ? 'Expense' : 'Income',
+        const fType = isExpense ? 'Expense' : 'Income';
+
+        if (
+          seenCalIds.has(feeId) ||
+          seenCalIds.has(feeNormId) ||
+          (invNo && seenCalRefs.has(invNo)) ||
+          seenCalSigs.has(`${fType}_${clientNorm}_${amt}_${d}`)
+        ) {
+          return;
+        }
+
+        registerCalTx({
+          id: feeNormId,
+          type: fType,
           party: f.client_name || (isExpense ? 'Vendor / Payee' : 'Client'),
           category: f.service || (isExpense ? 'Office & Operations Expense' : 'Client Retainer / Monthly Fee'),
           mode: f.payment_mode || 'Bank Transfer',
-          amount: Number(f.paid || 0),
-          date: normalizeToYMD(f.paid_date || f.date || f.created_at),
+          amount: amt,
+          date: d,
+          reference: f.invoice_no || feeId,
           notes: f.invoice_no ? `Invoice: ${f.invoice_no}` : 'Automated Fee Sync'
-        };
+        });
       });
 
-      // 3. Build Expense Payments from Supabase payments
-      const dbPayments = (payRes.data || []).map(p => ({
-        id: `PAY-${p.id}`,
-        type: 'Expense',
-        party: p.recipient || p.category || 'Vendor / Employee',
-        category: p.category || 'Office & Operations',
-        mode: p.method || 'UPI',
-        amount: Number(p.amount || 0),
-        date: normalizeToYMD(p.created_at || p.date),
-        notes: p.status ? `Status: ${p.status}` : ''
-      }));
-
-      // 4. Build Payroll Disbursements from local payroll history (Salaries / Bonuses)
-      let payrollTxs = [];
-      try {
-        const rawPayroll = localStorage.getItem('taxpro_payroll_history');
-        if (rawPayroll) {
-          const parsedPayroll = JSON.parse(rawPayroll);
-          payrollTxs = (parsedPayroll || [])
-            .filter(item => item.status === 'Paid' && Number(item.amount || 0) > 0)
-            .map(p => ({
-              id: `PAYROLL-${p.id || p.memberId + '-' + (p.date || '').slice(0, 10)}`,
-              type: 'Expense',
-              party: `${p.memberName || 'Employee'} (Salary)`,
-              category: p.description || 'Staff Salary & Payroll',
-              mode: p.method === 'Pending' ? 'Bank Transfer' : (p.method || 'Bank Transfer'),
-              amount: Number(p.amount || 0),
-              date: normalizeToYMD(p.date),
-              notes: `Payroll: ${p.description || 'Monthly Salary'}`
-            }));
-        }
-      } catch (e) {}
-
-      // 5. Merge with custom local transactions
-      let localTxs = [];
-      try {
-        const rawLocal = localStorage.getItem('taxpro_calendar_transactions');
-        if (rawLocal) localTxs = JSON.parse(rawLocal);
-      } catch (e) {}
-
-      const allMerged = [...dbDirectTxs, ...localTxs, ...dbFeeTxs, ...dbPayments, ...payrollTxs];
-      // Deduplicate by ID
-      const uniqueMap = new Map();
-      allMerged.forEach(item => {
-        if (!uniqueMap.has(item.id)) uniqueMap.set(item.id, item);
-      });
-
-      setTransactions(Array.from(uniqueMap.values()));
+      canonicalCalTxs.sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0));
+      setTransactions(canonicalCalTxs);
     } catch (err) {
       console.warn('[CalendarPageView Fetch]:', err);
     } finally {

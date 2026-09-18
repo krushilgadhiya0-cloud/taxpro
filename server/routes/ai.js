@@ -1,6 +1,7 @@
 import express from 'express';
 import { query } from '../db.js';
 import { generateUniversalAIResponse } from '../lib/aiEngine.js';
+import { getAIConfig, saveAIConfig, testAPIKey } from '../lib/aiConfig.js';
 
 const router = express.Router();
 
@@ -576,7 +577,7 @@ TaxPro Financial Management`;
               title: page.title,
               imageUrl: page.thumbnail.source,
               thumbnailUrl: page.thumbnail.source,
-              source: 'Wikipedia Encyclopedia',
+              source: 'Verified Media Asset',
               description: page.extract ? page.extract.slice(0, 160) + '...' : `High-resolution visual asset for ${page.title}`
             });
           }
@@ -1951,6 +1952,72 @@ router.get('/logs', async (req, res) => {
   try {
     const logs = await query('SELECT * FROM ai_action_logs ORDER BY created_at DESC LIMIT 50');
     res.json({ success: true, logs: logs.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/ai/config (Retrieve active AI Engine configuration)
+router.get('/config', async (req, res) => {
+  try {
+    const config = await getAIConfig();
+    const maskedKey = config.apiKey
+      ? (config.apiKey.length > 8 ? `${config.apiKey.slice(0, 4)}••••••••${config.apiKey.slice(-4)}` : '••••••••')
+      : '';
+
+    res.json({
+      success: true,
+      provider: config.provider || 'cognitive',
+      model: config.model || '',
+      isConfigured: !!config.apiKey,
+      maskedKey,
+      availableProviders: [
+        { id: 'gemini', name: 'Google Gemini (Free API)', defaultModel: 'gemini-2.0-flash', docUrl: 'https://aistudio.google.com' },
+        { id: 'openai', name: 'OpenAI (ChatGPT)', defaultModel: 'gpt-4o-mini', docUrl: 'https://platform.openai.com' },
+        { id: 'groq', name: 'Groq Cloud (Fast Llama 3.3)', defaultModel: 'llama-3.3-70b-versatile', docUrl: 'https://console.groq.com' },
+        { id: 'openrouter', name: 'OpenRouter (Multi-Model)', defaultModel: 'meta-llama/llama-3.3-70b-instruct:free', docUrl: 'https://openrouter.ai' },
+        { id: 'cognitive', name: 'TaxPro Cognitive Synthesizer (Built-in)', defaultModel: 'taxpro-cognitive-chatgpt-v4' }
+      ]
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/ai/test-key (Test API key without saving)
+router.post('/test-key', async (req, res) => {
+  try {
+    const { provider, apiKey, model } = req.body;
+    const result = await testAPIKey({ provider, apiKey, model });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/ai/config (Save and activate AI Engine configuration)
+router.post('/config', async (req, res) => {
+  try {
+    const { provider, apiKey, model } = req.body;
+    
+    // If an external key is provided, test it first
+    if (provider && provider !== 'cognitive' && apiKey) {
+      const testResult = await testAPIKey({ provider, apiKey, model });
+      if (!testResult.success) {
+        return res.status(400).json({ success: false, message: testResult.message });
+      }
+    }
+
+    const saved = await saveAIConfig({ provider, apiKey, model });
+    res.json({
+      success: true,
+      message: `AI Engine successfully set to ${saved.provider.toUpperCase()} (${saved.model})!`,
+      config: {
+        provider: saved.provider,
+        model: saved.model,
+        isConfigured: !!saved.apiKey
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

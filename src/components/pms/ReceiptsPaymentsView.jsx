@@ -55,152 +55,224 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
         supabase.from('receipts_payments').select('*').order('created_at', { ascending: false })
       ]);
 
-      if (cliRes.data) setClients(cliRes.data.map(c => c.name));
+      if (cliRes.data) setClients(cliRes.data.map(c => c.name).filter(Boolean));
       if (memRes.data) setTeamMembers(memRes.data.map(m => m.name).filter(Boolean));
 
-      // 1. Direct receipts_payments entries from DB
-      const directReceipts = (recRes.data || []).map(r => ({
-        id: r.id,
-        type: (r.type === 'income' || r.type === 'Receipt') ? 'Receipt' : 'Payment',
-        client: r.party || r.title || 'Client',
-        category: r.category || (r.type === 'income' ? 'Client Retainer / Fee Payment' : 'Office & Operations Expense'),
-        mode: r.method || 'Bank Transfer',
-        amount: formatCurrency(r.amount || 0, 2),
-        date: r.date || (r.created_at || new Date().toISOString()).split('T')[0]
-      }));
+      const canonicalList = [];
+      const seenIds = new Set();
+      const seenRefs = new Set();
+      const seenSignatures = new Set(); // composite: `${type}_${party.toLowerCase()}_${amount}_${date}`
 
-      // 2. Local storage receipts_payments (Vercel offline & instant sync)
-      let localRecs = [];
+      const registerEntry = (entry) => {
+        if (!entry || !entry.id) return;
+        const normId = String(entry.id).trim();
+        if (seenIds.has(normId)) return;
+        seenIds.add(normId);
+
+        if (entry.reference) {
+          const refStr = String(entry.reference).trim().toLowerCase();
+          if (refStr) seenRefs.add(refStr);
+        }
+
+        const amt = parseFloat(String(entry.amount).replace(/[^0-9.]/g, '')) || 0;
+        const partyNorm = String(entry.party || entry.client || '').trim().toLowerCase();
+        const fType = (entry.type === 'income' || entry.type === 'Receipt' || entry.type === 'Income') ? 'Receipt' : 'Payment';
+        const d = entry.date || (entry.created_at || new Date().toISOString()).split('T')[0];
+        
+        const sig = `${fType}_${partyNorm}_${amt}_${d}`;
+        seenSignatures.add(sig);
+
+        // Also register simplified party name (e.g. without "(Staff Salary)" or "(Owner)")
+        const simplifiedParty = partyNorm.replace(/\s*\([^)]*\)/g, '').trim();
+        if (simplifiedParty !== partyNorm) {
+          seenSignatures.add(`${fType}_${simplifiedParty}_${amt}_${d}`);
+        }
+
+        canonicalList.push({
+          id: normId,
+          rawId: entry.id,
+          reference: entry.reference || '',
+          type: fType,
+          client: entry.party || entry.client || entry.title || 'Party',
+          category: entry.category || (fType === 'Receipt' ? 'Client Retainer / Fee Payment' : 'Office & Operations Expense'),
+          mode: entry.mode || entry.method || 'Bank Transfer',
+          amount: formatCurrency(amt, 2),
+          numericAmount: amt,
+          date: d,
+          notes: entry.notes || entry.title || ''
+        });
+      };
+
+      // 1. Direct receipts_payments entries from Database (Master Ledger Journal)
+      (recRes.data || []).forEach(r => {
+        registerEntry({
+          id: r.id,
+          type: r.type,
+          party: r.party || r.title,
+          category: r.category,
+          mode: r.method,
+          amount: r.amount,
+          date: r.date || (r.created_at ? r.created_at.split('T')[0] : null),
+          reference: r.reference,
+          notes: r.notes
+        });
+      });
+
+      // 2. Local storage receipts_payments (Instant zero-latency mirror)
       try {
         const rawRec = localStorage.getItem('taxpro_receipts_payments');
         if (rawRec) {
           const parsed = JSON.parse(rawRec);
-          localRecs = (parsed || []).map(r => ({
-            id: r.id,
-            type: (r.type === 'income' || r.type === 'Receipt') ? 'Receipt' : 'Payment',
-            client: r.party || r.title || 'Client',
-            category: r.category || (r.type === 'income' ? 'Client Retainer / Fee Payment' : 'Office & Operations Expense'),
-            mode: r.method || 'Bank Transfer',
-            amount: formatCurrency(r.amount || 0, 2),
-            date: r.date || (r.created_at || new Date().toISOString()).split('T')[0]
-          }));
+          (parsed || []).forEach(r => {
+            registerEntry({
+              id: r.id,
+              type: r.type,
+              party: r.party || r.title,
+              category: r.category,
+              mode: r.method || r.mode,
+              amount: r.amount,
+              date: r.date || (r.created_at ? r.created_at.split('T')[0] : null),
+              reference: r.reference,
+              notes: r.notes
+            });
+          });
         }
       } catch (e) {}
 
-      // 3. Database fees (Paid items settled from Fees Tracking)
-      const dbReceipts = (feeRes.data || []).filter(f => Number(f.paid || 0) > 0 || f.status === 'Paid').map(f => {
+      // 3. Member Payments / Staff Salary from Local Payroll History
+      // Only include if NOT already captured in canonical receipts_payments
+      try {
+        const rawPayroll = localStorage.getItem('taxpro_payroll_history');
+        if (rawPayroll) {
+          const parsedPayroll = JSON.parse(rawPayroll);
+          (parsedPayroll || [])
+            .filter(item => item.status === 'Paid' && Number(item.amount || 0) > 0)
+            .forEach(p => {
+              const payId = String(p.id || '').trim();
+              const recStaffId = `REC-STAFF-${payId}`;
+              const refNo = String(p.reference || '').trim().toLowerCase();
+              const amt = parseFloat(String(p.amount).replace(/[^0-9.]/g, '')) || 0;
+              const partyNorm = (p.memberName || 'Staff').trim().toLowerCase();
+              const pDate = (p.date || new Date().toISOString()).split('T')[0];
+
+              const sig1 = `Payment_${partyNorm}_${amt}_${pDate}`;
+              const sig2 = `Payment_${partyNorm} (staff salary)_${amt}_${pDate}`;
+
+              if (
+                seenIds.has(payId) || 
+                seenIds.has(recStaffId) || 
+                (refNo && seenRefs.has(refNo)) || 
+                seenSignatures.has(sig1) || 
+                seenSignatures.has(sig2)
+              ) {
+                return; // Already present in canonical receipts_payments
+              }
+
+              registerEntry({
+                id: recStaffId,
+                type: 'Payment',
+                party: `${p.memberName || 'Staff'} (Staff Salary)`,
+                category: p.description || 'Staff Salary & Payroll',
+                mode: p.method === 'Pending' ? 'Bank Transfer' : (p.method || 'UPI'),
+                amount: amt,
+                date: pDate,
+                reference: p.reference || p.id,
+                notes: `Salary Disbursement - ${p.cycleName || p.cycle || ''}`
+              });
+            });
+        }
+      } catch (e) {}
+
+      // 4. Database payments table (Platform licenses, subscriptions)
+      (payRes.data || []).forEach(p => {
+        const pId = String(p.id || '').trim();
+        const pRef = String(p.reference || p.payment_id || '').trim().toLowerCase();
+        const amt = parseFloat(String(p.numeric_amount || p.amount).replace(/[^0-9.]/g, '')) || 0;
+        const partyNorm = String(p.recipient || p.client_name || '').trim().toLowerCase();
+        const pDate = (p.date || p.created_at || new Date().toISOString()).split('T')[0];
+        const sig = `Payment_${partyNorm}_${amt}_${pDate}`;
+
+        if (
+          seenIds.has(pId) || 
+          (pRef && seenRefs.has(pRef)) || 
+          seenRefs.has(pId.toLowerCase()) || 
+          seenSignatures.has(sig)
+        ) {
+          return;
+        }
+
+        // Deduplicate Owner Subscription payment if already in receipts_payments
+        const isSubscription = p.category && p.category.toLowerCase().includes('subscription');
+        if (isSubscription && (
+          seenSignatures.has(`Payment_taxpro platform subscription (owner)_${amt}_${pDate}`) ||
+          seenSignatures.has(`Payment_taxpro platform subscription_${amt}_${pDate}`)
+        )) {
+          return;
+        }
+
+        registerEntry({
+          id: pId,
+          type: 'Payment',
+          party: p.recipient || p.client_name || 'Vendor / Payee',
+          category: p.category || 'Office & Operations',
+          mode: p.method || 'UPI',
+          amount: amt,
+          date: pDate,
+          reference: p.reference || p.payment_id || p.id,
+          notes: p.notes || ''
+        });
+      });
+
+      // 5. Database & Local fees table (Paid client fee invoices)
+      const allFees = [
+        ...(feeRes.data || []),
+        ...(() => {
+          try { return JSON.parse(localStorage.getItem('taxpro_fees') || '[]'); } catch(e) { return []; }
+        })()
+      ];
+
+      allFees.filter(f => Number(f.paid || 0) > 0 || f.status === 'Paid').forEach(f => {
+        const feeId = String(f.id || '').trim();
+        const feeNormId = `FEE-${feeId}`;
+        const invNo = String(f.invoice_no || '').trim().toLowerCase();
+        const amt = parseFloat(String(f.paid || f.amount || 0).replace(/[^0-9.]/g, '')) || 0;
+        const clientNorm = String(f.client_name || f.client || '').trim().toLowerCase();
+        const fDate = (f.paid_date || f.date || f.created_at || new Date().toISOString()).split('T')[0];
+
         const isExpense = (f.invoice_no || '').startsWith('PAY') || 
                           (f.service || '').toUpperCase().includes('OUT_') || 
                           (f.service || '').toLowerCase().includes('expense') || 
                           (f.service || '').toLowerCase().includes('salary') ||
                           (f.service || '').toLowerCase().includes('rent');
-        return {
-          id: `FEE-${f.id}`,
-          rawFeeId: f.id,
-          type: isExpense ? 'Payment' : 'Receipt',
-          client: f.client_name || f.client || (isExpense ? 'Vendor / Payee' : 'Client'),
+        const fType = isExpense ? 'Payment' : 'Receipt';
+        const sig = `${fType}_${clientNorm}_${amt}_${fDate}`;
+
+        if (
+          seenIds.has(feeId) || 
+          seenIds.has(feeNormId) || 
+          (invNo && seenRefs.has(invNo)) || 
+          seenSignatures.has(sig)
+        ) {
+          return;
+        }
+
+        registerEntry({
+          id: feeNormId,
+          rawFeeId: feeId,
+          type: fType,
+          party: f.client_name || f.client || (isExpense ? 'Vendor / Payee' : 'Client'),
           category: f.service || (isExpense ? 'Office & Operations Expense' : 'Client Retainer / Monthly Fee'),
           mode: f.payment_mode || 'Bank Transfer',
-          amount: formatCurrency(f.paid || f.amount || 0, 2),
-          date: (f.paid_date || f.date || f.created_at || new Date().toISOString()).split('T')[0]
-        };
+          amount: amt,
+          date: fDate,
+          reference: f.invoice_no || feeId,
+          notes: f.notes || ''
+        });
       });
 
-      // 4. Local storage fees history where paid > 0
-      let localPaidFees = [];
-      try {
-        const rawFees = localStorage.getItem('taxpro_fees');
-        if (rawFees) {
-          const parsed = JSON.parse(rawFees);
-          localPaidFees = (parsed || []).filter(f => Number(f.paid || 0) > 0 || f.status === 'Paid').map(f => {
-            const isExpense = (f.invoice_no || '').startsWith('PAY') || 
-                              (f.service || '').toUpperCase().includes('OUT_') || 
-                              (f.service || '').toLowerCase().includes('expense') || 
-                              (f.service || '').toLowerCase().includes('salary') ||
-                              (f.service || '').toLowerCase().includes('rent');
-            return {
-              id: `FEE-${f.id}`,
-              rawFeeId: f.id,
-              type: isExpense ? 'Payment' : 'Receipt',
-              client: f.client_name || f.client || (isExpense ? 'Vendor / Payee' : 'Client'),
-              category: f.service || (isExpense ? 'Office & Operations Expense' : 'Client Retainer / Monthly Fee'),
-              mode: f.payment_mode || 'Bank Transfer',
-              amount: formatCurrency(f.paid || f.amount || 0, 2),
-              date: (f.paid_date || f.date || f.created_at || new Date().toISOString()).split('T')[0]
-            };
-          });
-        }
-      } catch (e) {}
-
-      // 5. Database payments
-      const dbPayments = (payRes.data || []).map(p => ({
-        id: p.id,
-        type: 'Payment',
-        client: p.recipient || p.client_name || p.category || 'Vendor / Employee',
-        category: p.category || 'Office & Operations',
-        mode: p.method || 'UPI',
-        amount: formatCurrency(p.amount || 0, 2),
-        date: (p.date || p.created_at || new Date().toISOString()).split('T')[0]
-      }));
-
-      // 6. Local custom calendar transactions
-      let localTxs = [];
-      try {
-        const rawLocal = localStorage.getItem('taxpro_calendar_transactions');
-        if (rawLocal) {
-          const parsed = JSON.parse(rawLocal);
-          localTxs = (parsed || []).map(t => ({
-            id: t.id,
-            type: (t.type === 'Income' || t.type === 'income' || t.type === 'Receipt') ? 'Receipt' : 'Payment',
-            client: t.party || t.client || 'Client',
-            category: t.category || 'General',
-            mode: t.mode || t.method || 'Bank Transfer',
-            amount: formatCurrency(t.amount || 0, 2),
-            date: (t.date || new Date().toISOString()).split('T')[0]
-          }));
-        }
-      } catch (e) {}
-
-      // 7. Local payroll history
-      let localPayroll = [];
-      try {
-        const rawPayroll = localStorage.getItem('taxpro_payroll_history');
-        if (rawPayroll) {
-          const parsedPayroll = JSON.parse(rawPayroll);
-          localPayroll = (parsedPayroll || [])
-            .filter(item => item.status === 'Paid' && Number(item.amount || 0) > 0)
-            .map(p => ({
-              id: `PAYROLL-${p.id || p.memberId}`,
-              type: 'Payment',
-              client: `${p.memberName || 'Employee'} (Salary)`,
-              category: p.description || 'Staff Salary & Payroll',
-              mode: p.method === 'Pending' ? 'Bank Transfer' : (p.method || 'Bank Transfer'),
-              amount: formatCurrency(p.amount || 0, 2),
-              date: (p.date || new Date().toISOString()).split('T')[0]
-            }));
-        }
-      } catch (e) {}
-
-      const allMerged = [
-        ...directReceipts, 
-        ...localRecs, 
-        ...localTxs, 
-        ...localPayroll, 
-        ...dbReceipts, 
-        ...localPaidFees, 
-        ...dbPayments
-      ];
-
-      const uniqueMap = new Map();
-      allMerged.forEach(item => {
-        if (!item || !item.id) return;
-        const normKey = String(item.id).replace('FEE-', '').replace('RP-', '');
-        if (!uniqueMap.has(normKey)) {
-          uniqueMap.set(normKey, item);
-        }
-      });
-
-      setEntries(Array.from(uniqueMap.values()).sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0)));
+      // Sort chronological descending
+      canonicalList.sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0));
+      setEntries(canonicalList);
     } catch (e) {
       console.error('[Ledger Fetch Error]:', e);
     }
@@ -221,15 +293,30 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
     };
   }, []);
 
+  // Dynamic party list for the client/payee dropdown filter
+  const allPartiesList = useMemo(() => {
+    const partySet = new Set();
+    clients.forEach(c => c && partySet.add(c.trim()));
+    teamMembers.forEach(m => m && partySet.add(m.trim()));
+    entries.forEach(e => {
+      if (e.client) partySet.add(e.client.trim());
+    });
+    return Array.from(partySet).filter(Boolean).sort((a,b) => a.localeCompare(b));
+  }, [clients, teamMembers, entries]);
+
   const filteredLedgerEntries = useMemo(() => {
     return entries.filter(item => {
-      const matchesClient = clientFilter === 'All' || item.client === clientFilter;
+      const matchesClient = clientFilter === 'All' || 
+        item.client === clientFilter || 
+        (item.client && item.client.startsWith(clientFilter)) ||
+        (item.client && clientFilter.startsWith(item.client));
       const matchesFlow = flowTypeFilter === 'All' || item.type === flowTypeFilter;
       const matchesSearch = !searchTerm || 
         (item.client && item.client.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (item.category && item.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (item.mode && item.mode.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (item.amount && item.amount.toLowerCase().includes(searchTerm.toLowerCase()));
+        (item.amount && item.amount.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.reference && item.reference.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const d = item.date || '';
       let matchesPeriod = true;
@@ -252,91 +339,95 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
   const netPosition = totalInflow - totalOutflow;
 
 
-  // UNDO PAYMENT AND RETURN RECORD BACK TO FEES TRACKING AS PENDING
+  // SMART UNDO / REVERT PAYMENT OR RECEIPT
   const handleUndoReturnToFees = async (entry) => {
     if (!entry) return;
 
     const rawAmt = parseFloat(String(entry.amount).replace(/[^0-9.]/g, '')) || 0;
-    const isConfirmed = window.confirm(
-      `Are you sure you want to send this transaction of ₹${rawAmt.toLocaleString('en-IN')} for "${entry.client}" back to Fees Tracking as Pending?`
-    );
-    if (!isConfirmed) return;
+    const isSalary = (entry.category || '').toLowerCase().includes('salary') || 
+                     (entry.client || '').toLowerCase().includes('salary') || 
+                     entry.id.startsWith('REC-STAFF-');
+    const isOwnerPay = (entry.client || '').toLowerCase().includes('taxpro platform') || 
+                       (entry.category || '').toLowerCase().includes('license') || 
+                       (entry.category || '').toLowerCase().includes('subscription');
+
+    let confirmMsg = `Are you sure you want to revert this ${entry.type} of ₹${rawAmt.toLocaleString('en-IN')} for "${entry.client}"?`;
+    if (isSalary) {
+      confirmMsg = `Revert salary disbursement of ₹${rawAmt.toLocaleString('en-IN')} for "${entry.client}"? This will return the staff member's salary status to Pending in Members Payment.`;
+    } else if (isOwnerPay) {
+      confirmMsg = `Remove this subscription payment voucher of ₹${rawAmt.toLocaleString('en-IN')} from the ledger?`;
+    } else if (entry.type === 'Receipt') {
+      confirmMsg = `Send this receipt of ₹${rawAmt.toLocaleString('en-IN')} for "${entry.client}" back to Fees Tracking as Pending?`;
+    }
+
+    if (!window.confirm(confirmMsg)) return;
 
     const entryId = entry.id;
-
-    // 1. Remove from local entries state
     setEntries(prev => prev.filter(e => e.id !== entryId));
 
-    // 2. Remove from receipts_payments / payments table
+    // 1. If salary, reset in taxpro_payroll_history
+    if (isSalary) {
+      try {
+        const rawPayroll = localStorage.getItem('taxpro_payroll_history');
+        if (rawPayroll) {
+          const parsedPayroll = JSON.parse(rawPayroll);
+          const cleanName = entry.client.replace(' (Staff Salary)', '').replace(' (Salary)', '').trim();
+          const updatedPayroll = parsedPayroll.filter(h => {
+            if (entry.reference && h.reference === entry.reference) return false;
+            if (h.id && entryId.includes(h.id)) return false;
+            if (h.memberName === cleanName && Number(h.amount) === rawAmt) return false;
+            return true;
+          });
+          localStorage.setItem('taxpro_payroll_history', JSON.stringify(updatedPayroll));
+        }
+      } catch (e) {}
+    }
+
+    // 2. Remove from receipts_payments & payments in DB
     try {
       await supabase.from('receipts_payments').delete().eq('id', entryId);
+      if (entry.reference) {
+        await supabase.from('receipts_payments').delete().eq('reference', entry.reference);
+        await supabase.from('payments').delete().eq('id', entry.reference);
+        await supabase.from('payments').delete().eq('payment_id', entry.reference);
+      }
       await supabase.from('payments').delete().eq('id', entryId);
     } catch (e) {}
 
-    // 3. Revert in fees table to Pending:
-    try {
-      let targetFeeId = entryId.startsWith('REC-') ? entryId.replace('REC-', '') : entryId;
-      
-      const { data: matchedFee } = await supabase.from('fees').select('*').eq('id', targetFeeId).single();
-      if (matchedFee) {
-        await supabase.from('fees').update({
-          paid: 0,
-          pending: matchedFee.amount,
-          status: 'Pending',
-          paid_date: null
-        }).eq('id', matchedFee.id);
-      } else {
-        const { data: feesByClient } = await supabase.from('fees')
-          .select('*')
-          .eq('client_name', entry.client)
-          .eq('status', 'Paid')
-          .order('created_at', { ascending: false })
-          .limit(1);
-
-        if (feesByClient && feesByClient.length > 0) {
-          await supabase.from('fees').update({
-            paid: 0,
-            pending: feesByClient[0].amount,
-            status: 'Pending',
-            paid_date: null
-          }).eq('id', feesByClient[0].id);
+    // 3. Revert in fees table if it's a client fee receipt
+    if (!isSalary && !isOwnerPay && entry.type === 'Receipt') {
+      try {
+        let targetFeeId = entryId.startsWith('FEE-') ? entryId.replace('FEE-', '') : (entryId.startsWith('REC-') ? entryId.replace('REC-', '') : entryId);
+        const { data: matchedFee } = await supabase.from('fees').select('*').eq('id', targetFeeId).single();
+        if (matchedFee) {
+          await supabase.from('fees').update({ paid: 0, pending: matchedFee.amount, status: 'Pending', paid_date: null }).eq('id', matchedFee.id);
+        } else {
+          const { data: feesByClient } = await supabase.from('fees').select('*').eq('client_name', entry.client).eq('status', 'Paid').order('created_at', { ascending: false }).limit(1);
+          if (feesByClient && feesByClient.length > 0) {
+            await supabase.from('fees').update({ paid: 0, pending: feesByClient[0].amount, status: 'Pending', paid_date: null }).eq('id', feesByClient[0].id);
+          }
         }
-      }
-    } catch (err) {}
+      } catch (err) {}
+    }
 
-    // Also remove from calendar transactions and receipts_payments, revert fees in localStorage
+    // 4. Remove from localStorage mirrors
     try {
-      const rawLocal = localStorage.getItem('taxpro_calendar_transactions');
-      if (rawLocal) {
-        const parsed = JSON.parse(rawLocal).filter(t => t.id !== entryId);
-        localStorage.setItem('taxpro_calendar_transactions', JSON.stringify(parsed));
-      }
-
       const rawRec = localStorage.getItem('taxpro_receipts_payments');
       if (rawRec) {
-        const parsedRec = JSON.parse(rawRec).filter(r => r.id !== entryId);
+        const parsedRec = JSON.parse(rawRec).filter(r => r.id !== entryId && (!entry.reference || r.reference !== entry.reference));
         localStorage.setItem('taxpro_receipts_payments', JSON.stringify(parsedRec));
       }
-
-      const rawFees = localStorage.getItem('taxpro_fees');
-      if (rawFees) {
-        let parsedFees = JSON.parse(rawFees);
-        let targetFeeId = entryId.startsWith('REC-') ? entryId.replace('REC-', '') : entryId;
-        parsedFees = parsedFees.map(f => {
-          if (f.id === targetFeeId || f.client_name === entry.client || f.client === entry.client) {
-            return { ...f, paid: 0, pending: Number(f.amount || rawAmt), status: 'Pending', paid_date: null };
-          }
-          return f;
-        });
-        localStorage.setItem('taxpro_fees', JSON.stringify(parsedFees));
+      const rawLocal = localStorage.getItem('taxpro_calendar_transactions');
+      if (rawLocal) {
+        const parsed = JSON.parse(rawLocal).filter(t => t.id !== entryId && (!entry.reference || t.reference !== entry.reference));
+        localStorage.setItem('taxpro_calendar_transactions', JSON.stringify(parsed));
       }
     } catch (e) {}
 
-    // 4. Log Audit Activity
     logAuditActivity({
-      action: 'UNDO_PAYMENT',
+      action: 'REVERT_TRANSACTION',
       module: 'Receipts & Payments',
-      details: `Undid ${entry.type} of ₹${rawAmt.toLocaleString('en-IN')} for "${entry.client}" and returned record to Fees Tracking as Pending`,
+      details: `Reverted ${entry.type} of ₹${rawAmt.toLocaleString('en-IN')} for "${entry.client}"`,
       metadata: { party: entry.client, amount: rawAmt, type: entry.type }
     });
 
@@ -344,7 +435,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
     if (onShowToast) {
-      onShowToast(`✓ ${entry.type} of ₹${rawAmt.toLocaleString('en-IN')} undone and returned to Fees Tracking as Pending!`, 'success');
+      onShowToast(`✓ ${entry.type} of ₹${rawAmt.toLocaleString('en-IN')} reverted successfully!`, 'success');
     }
   };
 
@@ -944,10 +1035,10 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
               <select
                 value={clientFilter}
                 onChange={e => setClientFilter(e.target.value)}
-                className="px-2.5 py-1 bg-gray-50 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-indigo-500 cursor-pointer"
+                className="px-2.5 py-1 bg-gray-50 border border-gray-300 rounded-xl text-xs font-bold text-gray-800 outline-none focus:border-indigo-500 cursor-pointer max-w-[200px]"
               >
                 <option value="All">All Clients & Payees</option>
-                {clients.map(c => (
+                {allPartiesList.map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -1029,9 +1120,52 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                         {e.type}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3.5 font-semibold text-gray-900">{e.client}</td>
-                    <td className="py-2.5 px-3.5 text-gray-600">{e.category || (e.type === 'Receipt' ? 'Client Fee' : 'Office Expense')}</td>
-                    <td className="py-2.5 px-3.5 font-mono text-gray-700">{e.mode || 'UPI'}</td>
+                    <td className="py-2.5 px-3.5 font-semibold text-gray-900">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span>{e.client}</span>
+                        {e.client && e.client.includes('(Owner)') && (
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                            Owner
+                          </span>
+                        )}
+                        {e.client && e.client.includes('(Staff Salary)') && (
+                          <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                            Staff
+                          </span>
+                        )}
+                      </div>
+                      {e.reference && (
+                        <div className="text-[10px] font-mono font-normal text-gray-400 mt-0.5">
+                          Ref: {e.reference}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3.5">
+                      {e.category === 'Staff Salary & Payroll' || (e.category || '').toLowerCase().includes('salary') ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                          {e.category}
+                        </span>
+                      ) : e.category === 'Software Licenses & Cloud (AWS/SaaS)' || (e.category || '').toLowerCase().includes('license') || (e.category || '').toLowerCase().includes('subscription') ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                          {e.category}
+                        </span>
+                      ) : e.type === 'Receipt' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {e.category || 'Client Fee'}
+                        </span>
+                      ) : (
+                        <span className="text-gray-600 font-medium">{e.category || 'Office Expense'}</span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3.5">
+                      {e.mode === 'Razorpay' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-950 text-white shadow-2xs">
+                          ⚡ Razorpay
+                        </span>
+                      ) : (
+                        <span className="font-mono text-gray-700 font-medium">{e.mode || 'UPI'}</span>
+                      )}
+                    </td>
                     <td className={`py-2.5 px-3.5 text-right font-mono font-bold ${e.type === 'Receipt' ? 'text-emerald-600' : 'text-rose-600'}`}>
                       {e.type === 'Receipt' ? '+' : '-'}{replaceCurrencySymbol(e.amount)}
                     </td>
@@ -1040,7 +1174,7 @@ export default function ReceiptsPaymentsView({ onShowToast }) {
                         <button 
                           onClick={() => handleUndoReturnToFees(e)} 
                           className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-900 border border-amber-200 transition-all cursor-pointer inline-flex items-center justify-center shadow-2xs hover:scale-105"
-                          title={`Undo & Send back to Fees Tracking (${e.client} - ${replaceCurrencySymbol(e.amount)})`}
+                          title={`Undo / Revert Transaction (${e.client} - ${replaceCurrencySymbol(e.amount)})`}
                         >
                           <Undo2 className="w-3.5 h-3.5 text-amber-600" />
                         </button>

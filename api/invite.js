@@ -20,6 +20,8 @@ export default async function handler(req, res) {
   }
 
   const { memberName, name, targetEmail, email, generatedPassword, password, role, department, origin, smtpConfig } = req.body || {};
+  const company = req.body?.company || req.body?.firmName || 'TaxPro Enterprise';
+  const companyId = req.body?.company_id || req.body?.firmTag || null;
 
   const recipientEmail = (targetEmail || email || '').trim().toLowerCase();
   const recipientName = (memberName || name || recipientEmail.split('@')[0]).trim();
@@ -37,26 +39,30 @@ export default async function handler(req, res) {
     const { query } = await import('../../server/db.js');
     if (query) {
       await query(`
-        INSERT INTO team_members (id, name, email, role, department, status, preset_password, online, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, 'Active', $6, TRUE, NOW(), NOW())
+        INSERT INTO team_members (id, name, email, role, department, status, preset_password, company, company_id, online, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, 'Active', $6, $7, $8, TRUE, NOW(), NOW())
         ON CONFLICT (email) DO UPDATE SET
           name = EXCLUDED.name,
           role = EXCLUDED.role,
           department = EXCLUDED.department,
           preset_password = EXCLUDED.preset_password,
+          company = EXCLUDED.company,
+          company_id = EXCLUDED.company_id,
           status = 'Active',
           updated_at = NOW();
-      `, [memberId, recipientName, recipientEmail, userRole, userDept, rawPass]);
+      `, [memberId, recipientName, recipientEmail, userRole, userDept, rawPass, company, companyId]);
 
       await query(`
-        INSERT INTO users (id, email, password, name, role, company, phone_verified, lock_pin, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, 'TaxPro Enterprise', TRUE, '1234', NOW(), NOW())
+        INSERT INTO users (id, email, password, name, role, company, company_id, phone_verified, lock_pin, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, '1234', NOW(), NOW())
         ON CONFLICT (email) DO UPDATE SET
           password = EXCLUDED.password,
           name = EXCLUDED.name,
           role = EXCLUDED.role,
+          company = EXCLUDED.company,
+          company_id = EXCLUDED.company_id,
           updated_at = NOW();
-      `, [userId, recipientEmail, rawPass, recipientName, userRole]);
+      `, [userId, recipientEmail, rawPass, recipientName, userRole, company, companyId]);
       console.log(`[Vercel Serverless Invite] ✓ Persisted ${recipientEmail} to team_members and users tables.`);
     }
   } catch (dbErr) {

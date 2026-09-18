@@ -51,7 +51,10 @@ const SYNCED_STORAGE_KEYS = [
   'taxpro_user_department',
   'taxpro_complaints',
   'taxpro_communication_logs',
-  'taxpro_theme'
+  'taxpro_theme',
+  'taxpro_subscription_plan',
+  'taxpro_subscription_days',
+  'taxpro_subscription_status'
 ];
 
 // Fast in-memory query cache for instant responses
@@ -135,8 +138,26 @@ if (typeof window !== 'undefined') {
     }
   } catch (e) {}
 
-  // 1. Initial hydration: Pull down remote state from PostgreSQL in ONE single fast batch call
-  const hydrateFromPostgres = async () => {
+  // Cross-Tab Instant Real-Time Synchronization Channel
+  const realtimeChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+    ? new BroadcastChannel('taxpro_realtime_sync')
+    : null;
+
+  if (realtimeChannel) {
+    realtimeChannel.onmessage = (event) => {
+      const data = event.data;
+      if (data?.type === 'STORAGE_MUTATION' && data.key && data.value !== undefined) {
+        originalSetItem(data.key, data.value);
+        if (data.key.includes('firm')) {
+          window.dispatchEvent(new CustomEvent('taxpro_firm_updated', { detail: { key: data.key, value: data.value } }));
+        }
+      }
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated', { detail: data }));
+    };
+  }
+
+  // 1. Hydration Engine: Pull down remote state from PostgreSQL
+  const hydrateFromPostgres = async (forceUpdate = false) => {
     try {
       const res = await fetch(`${API_BASE}/api/db/storage-all`);
       if (res.ok) {
@@ -153,14 +174,9 @@ if (typeof window !== 'undefined') {
                 ? String(val)
                 : JSON.stringify(val);
 
-              if (isEmpty) {
+              // Update if empty, corrupted, or forced by remote mutation
+              if (isEmpty || isCorrupted || forceUpdate) {
                 originalSetItem(key, remoteStr);
-              } else if (isCorrupted) {
-                const cleaned = unwrapStorageValue(currentLocal);
-                const cleanStr = (typeof cleaned === 'string' || typeof cleaned === 'number' || typeof cleaned === 'boolean') 
-                  ? String(cleaned) 
-                  : JSON.stringify(cleaned);
-                originalSetItem(key, cleanStr);
               }
             }
           });
@@ -171,14 +187,50 @@ if (typeof window !== 'undefined') {
     }
   };
 
-  // Immediate non-blocking hydration
+  // Immediate non-blocking initial hydration
   hydrateFromPostgres();
+
+  // Active Background Real-Time Heartbeat (Every 3.5s across separate browsers/devices)
+  let lastKnownMutation = null;
+  const startHeartbeatSync = () => {
+    setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/db/sync-heartbeat`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.lastMutatedAt) {
+            if (!lastKnownMutation) {
+              lastKnownMutation = json.lastMutatedAt;
+              return;
+            }
+            if (json.lastMutatedAt !== lastKnownMutation) {
+              lastKnownMutation = json.lastMutatedAt;
+              // Remote mutation detected: Pull fresh data and notify all components
+              await hydrateFromPostgres(true);
+              window.dispatchEvent(new CustomEvent('taxpro_db_updated', { detail: { table: json.table, key: json.key, remote: true } }));
+              if (json.table === 'app_storage' || json.key?.includes('firm') || json.table === 'firm_profile') {
+                window.dispatchEvent(new CustomEvent('taxpro_firm_updated', { detail: { key: json.key } }));
+              }
+            }
+          }
+        }
+      } catch (e) {}
+    }, 3500);
+  };
+  startHeartbeatSync();
 
   // 2. Sync localStorage mutations directly to PostgreSQL app_storage table (debounced)
   const debounceTimers = {};
 
   localStorage.setItem = function(key, value) {
     originalSetItem(key, value);
+
+    // Broadcast immediately across all open tabs of this browser
+    if (realtimeChannel && (key.startsWith('taxpro_') || SYNCED_STORAGE_KEYS.includes(key))) {
+      try {
+        realtimeChannel.postMessage({ type: 'STORAGE_MUTATION', key, value, timestamp: Date.now() });
+      } catch (e) {}
+    }
 
     // Sync any taxpro-related key to PostgreSQL app_storage
     if (key.startsWith('taxpro_') || SYNCED_STORAGE_KEYS.includes(key)) {

@@ -356,6 +356,20 @@ export default function AuthModal({
             localStorage.setItem('taxpro_user_role', resolvedRole);
             localStorage.setItem('taxpro_user_email', effectiveEmail);
             localStorage.setItem('taxpro_user_name', targetRecord.name || effectiveEmail.split('@')[0]);
+
+            // Link firm/company across all roles
+            const targetCompany = targetRecord.company || uRow?.company || member?.company;
+            const targetCompanyId = targetRecord.company_id || uRow?.company_id || member?.company_id;
+            if (targetCompany) {
+              localStorage.setItem('taxpro_firm_name', targetCompany);
+              if (targetCompanyId) {
+                localStorage.setItem('taxpro_firm_tag', targetCompanyId);
+              }
+              localStorage.setItem('taxpro_firm_configured', 'true');
+              window.dispatchEvent(new CustomEvent('taxpro_firm_updated', {
+                detail: { name: targetCompany, tag: targetCompanyId || 'TaxPro' }
+              }));
+            }
             
             if (member?.permissions) {
               localStorage.setItem('taxpro_user_permissions', typeof member.permissions === 'string' ? member.permissions : JSON.stringify(member.permissions));
@@ -452,6 +466,16 @@ export default function AuthModal({
           }
           if (member.permissions) {
             localStorage.setItem('taxpro_user_permissions', typeof member.permissions === 'string' ? member.permissions : JSON.stringify(member.permissions));
+          }
+          if (member.company) {
+            localStorage.setItem('taxpro_firm_name', member.company);
+            if (member.company_id) {
+              localStorage.setItem('taxpro_firm_tag', member.company_id);
+            }
+            localStorage.setItem('taxpro_firm_configured', 'true');
+            window.dispatchEvent(new CustomEvent('taxpro_firm_updated', {
+              detail: { name: member.company, tag: member.company_id || 'TaxPro' }
+            }));
           }
         }
       } catch (e) {}
@@ -919,18 +943,30 @@ export default function AuthModal({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className={`mt-2 py-3 rounded-2xl text-xs font-bold shadow-lg transition-all active:scale-[0.99] ${getButtonClass()} ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
+                className={`mt-2 py-3 px-4 rounded-2xl text-xs font-bold shadow-lg transition-all active:scale-[0.99] flex items-center justify-center gap-2 ${getButtonClass()} ${isSubmitting ? 'opacity-90 cursor-wait shadow-cyan-500/20' : ''}`}
               >
-                {isSubmitting 
-                  ? 'Authenticating...' 
-                  : (authTab === 'login' 
+                {isSubmitting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin shrink-0" />
+                    <span>
+                      {portalType === 'admin'
+                        ? 'Authorizing Administrator Session...'
+                        : portalType === 'manager'
+                        ? 'Authorizing Practice Manager...'
+                        : 'Authorizing Staff Workspace...'}
+                    </span>
+                  </>
+                ) : (
+                  <span>
+                    {authTab === 'login' 
                       ? (portalType === 'admin' 
                           ? 'Sign In as Administrator' 
                           : (portalType === 'manager' ? 'Direct Login as Manager' : 'Direct Login as Employee')
                         )
                       : 'Create Administrator Account'
-                    )
-                }
+                    }
+                  </span>
+                )}
               </button>
 
             </form>

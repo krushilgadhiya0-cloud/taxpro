@@ -184,11 +184,13 @@ def build_otp_html(otp_code, target_email):
 # =========================================================================
 # 3. SUBSCRIPTION PURCHASE & PAYMENT RECEIPT EMAIL TEMPLATE
 # =========================================================================
-def build_subscription_html(name, email, plan_name, amount, payment_id, billing_cycle, expiry_date, origin):
+def build_subscription_html(name, email, plan_name, amount, payment_id, billing_cycle, expiry_date, origin, receipt_number=None, order_id=None):
     user_name = name or "Valued Subscriber"
     plan = plan_name or "TaxPro Enterprise Professional"
     amt = amount or "₹14,999.00"
     tx_id = payment_id or f"TXN-{os.urandom(4).hex().upper()}"
+    rcpt_no = receipt_number or f"REC-RZP-{tx_id[-8:]}"
+    ord_id = order_id or f"order_{tx_id[-8:]}"
     cycle = billing_cycle or "Annual License"
     expiry = expiry_date or "August 23, 2027"
     portal_url = origin or "http://localhost:3000"
@@ -219,29 +221,37 @@ def build_subscription_html(name, email, plan_name, amount, payment_id, billing_
     <body>
       <div class="card">
         <div class="logo">❖ TAXPRO AI ENTERPRISE</div>
-        <div class="tagline">Official Subscription & Payment Confirmation</div>
+        <div class="tagline">Official Razorpay Payment & Tax Receipt</div>
 
         <div class="congrats-hero">
           <span class="congrats-badge">🎉 Payment Verified & Confirmed</span>
           <div class="h1-title">Congratulations, {user_name}!</div>
           <p style="font-size: 13px; color: #cbd5e1; margin: 0; line-height: 1.5;">
-            Thank you for purchasing your <b>{plan}</b> subscription. Your premium workspace features, AI engines, and unlimited firm capacity are fully unlocked!
+            Thank you for purchasing your <b>{plan}</b> subscription via <b>Razorpay Gateway</b>. Your receipt voucher and tax invoice are confirmed below.
           </p>
         </div>
 
         <div class="receipt-box">
-          <div style="font-size: 12px; font-weight: 800; color: #00F0FF; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Official Tax Invoice & Receipt Details</div>
+          <div style="font-size: 12px; font-weight: 800; color: #00F0FF; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Official Razorpay Tax Receipt Details</div>
           <div class="receipt-row">
-            <span class="receipt-label">Invoice Number</span>
-            <span class="receipt-val">INV-{tx_id[-6:]}</span>
+            <span class="receipt-label">Receipt Number</span>
+            <span class="receipt-val" style="color: #00FFA3;">{rcpt_no}</span>
           </div>
           <div class="receipt-row">
-            <span class="receipt-label">Transaction Reference</span>
+            <span class="receipt-label">Razorpay Order ID</span>
+            <span class="receipt-val">{ord_id}</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Razorpay Payment ID</span>
             <span class="receipt-val">{tx_id}</span>
           </div>
           <div class="receipt-row">
             <span class="receipt-label">Subscribed Plan</span>
             <span class="receipt-val" style="color: #00FFA3;">{plan}</span>
+          </div>
+          <div class="receipt-row">
+            <span class="receipt-label">Payment Channel</span>
+            <span class="receipt-val">Razorpay (UPI / Card / NetBanking)</span>
           </div>
           <div class="receipt-row">
             <span class="receipt-label">Billing Cycle</span>
@@ -253,7 +263,7 @@ def build_subscription_html(name, email, plan_name, amount, payment_id, billing_
           </div>
           <div class="receipt-row">
             <span class="receipt-label">Payment Status</span>
-            <span class="receipt-val" style="color: #00FFA3;">✓ Success (Paid)</span>
+            <span class="receipt-val" style="color: #00FFA3;">✓ Success (Settled via Razorpay)</span>
           </div>
           <div class="total-row">
             <span style="color: #ffffff;">Total Amount Paid</span>
@@ -264,8 +274,223 @@ def build_subscription_html(name, email, plan_name, amount, payment_id, billing_
         <a href="{portal_url}" class="btn">🚀 Access Premium Workspace</a>
 
         <div class="footer">
-          TaxPro Financial Intelligence Platform &bull; Python smtplib Automated Billing<br>
+          TaxPro Financial Intelligence Platform &bull; Razorpay Automated Gateway<br>
           Support: support@taxpro.com &bull; Authorized GST Invoice Generated
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+# =========================================================================
+# 3B. SUBSCRIPTION VALIDITY EXTENSION EMAIL (Remaining + Added = Total Days)
+# =========================================================================
+def build_validity_update_html(name, email, plan_name, prev_days, added_days, total_days, bonus_days, expiry_date, origin):
+    user_name = name or "Valued Subscriber"
+    plan = plan_name or "TaxPro Enterprise Professional"
+    p_days = int(prev_days or 0)
+    a_days = int(added_days or 0)
+    t_days = int(total_days or (p_days + a_days))
+    bonus = int(bonus_days or 0)
+    expiry = expiry_date or "August 23, 2027"
+    portal_url = origin or "http://localhost:3000"
+
+    bonus_banner = ""
+    if bonus > 0:
+        bonus_banner = f"""
+        <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(234, 88, 12, 0.2)); border: 2px solid #f59e0b; border-radius: 18px; padding: 18px; margin: 20px 0; text-align: center;">
+          <div style="font-size: 22px; margin-bottom: 4px;">🎁 🌟 10th CUSTOMER MILESTONE UNLOCKED! 🌟 🎁</div>
+          <div style="font-size: 14px; font-weight: 900; color: #fbbf24; text-transform: uppercase; letter-spacing: 1px;">+{bonus} EXTRA BONUS DAY ADDED FREE!</div>
+          <p style="font-size: 12px; color: #fef3c7; margin: 6px 0 0 0; line-height: 1.5;">
+            Congratulations! You are our <b>10th Customer</b>! In honor of this milestone, we have gifted you <b>+1 Extra Free Day</b> on top of your plan days!
+          </p>
+        </div>
+        """
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b0f19; color: #ffffff; margin: 0; padding: 24px; }}
+        .card {{ max-width: 580px; margin: 0 auto; background: #131828; border: 1px solid rgba(91, 82, 224, 0.4); border-radius: 24px; padding: 40px; box-shadow: 0 25px 60px rgba(0,0,0,0.7); }}
+        .logo {{ font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #00F0FF, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
+        .tagline {{ font-size: 11px; color: #818cf8; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-top: 4px; font-weight: 700; }}
+        .hero {{ background: linear-gradient(135deg, rgba(91, 82, 224, 0.18), rgba(0, 240, 255, 0.1)); border: 1px solid rgba(91, 82, 224, 0.35); border-radius: 20px; padding: 24px; margin: 24px 0; text-align: center; }}
+        .badge {{ display: inline-block; background: rgba(91, 82, 224, 0.25); border: 1px solid #818cf8; color: #818cf8; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px; padding: 5px 14px; border-radius: 20px; margin-bottom: 10px; }}
+        .calc-box {{ background: rgba(0, 0, 0, 0.35); border: 2px dashed rgba(91, 82, 224, 0.55); border-radius: 20px; padding: 24px; margin: 24px 0; text-align: center; }}
+        .formula-table {{ width: 100%; border-collapse: collapse; margin: 14px 0; }}
+        .formula-cell {{ text-align: center; vertical-align: middle; padding: 6px; font-family: monospace; }}
+        .num-box {{ display: inline-block; padding: 8px 14px; border-radius: 12px; font-size: 18px; font-weight: 900; }}
+        .summary-list {{ background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 18px; padding: 20px; margin: 20px 0; text-align: left; }}
+        .summary-row {{ display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 13px; }}
+        .summary-row:last-child {{ border-bottom: none; }}
+        .btn {{ display: block; text-align: center; background: linear-gradient(135deg, #5b52e0, #00F0FF); color: #ffffff; padding: 16px 32px; border-radius: 16px; font-weight: 900; font-size: 14px; text-decoration: none; box-shadow: 0 10px 30px rgba(91, 82, 224, 0.4); margin: 28px 0 16px; }}
+        .footer {{ text-align: center; margin-top: 32px; font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">❖ TAXPRO AI ENTERPRISE</div>
+        <div class="tagline">Official Workspace Validity Calculation</div>
+
+        <div class="hero">
+          <span class="badge">📅 Days Added Successfully</span>
+          <div style="font-size: 22px; font-weight: 900; color: #ffffff; margin-bottom: 8px;">Subscription Extended, {user_name}!</div>
+          <p style="font-size: 13px; color: #cbd5e1; margin: 0; line-height: 1.5;">
+            Your payment for <b>{plan}</b> has been settled and your workspace subscription period has been updated.
+          </p>
+        </div>
+
+        {bonus_banner}
+
+        <div class="calc-box">
+          <div style="font-size: 11px; font-weight: 800; color: #818cf8; text-transform: uppercase; letter-spacing: 2px;">
+            Accredited Days Calculation
+          </div>
+          
+          <table class="formula-table">
+            <tr>
+              <td class="formula-cell">
+                <span class="num-box" style="background: rgba(255,255,255,0.08); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.15);">
+                  {p_days} Days
+                </span>
+                <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Remaining</div>
+              </td>
+              <td class="formula-cell" style="font-size: 24px; color: #818cf8; font-weight: 900;">+</td>
+              <td class="formula-cell">
+                <span class="num-box" style="background: rgba(0,255,163,0.12); color: #00FFA3; border: 1px solid rgba(0,255,163,0.35);">
+                  +{a_days} Days
+                </span>
+                <div style="font-size: 10px; color: #00FFA3; margin-top: 4px;">Added</div>
+              </td>
+              <td class="formula-cell" style="font-size: 24px; color: #818cf8; font-weight: 900;">=</td>
+              <td class="formula-cell">
+                <span class="num-box" style="background: rgba(0,240,255,0.18); color: #00F0FF; border: 2px solid #00F0FF; font-size: 24px;">
+                  {t_days} Days
+                </span>
+                <div style="font-size: 10px; color: #00F0FF; margin-top: 4px; font-weight: bold;">Total Active</div>
+              </td>
+            </tr>
+          </table>
+
+          <div style="font-size: 13px; color: #e2e8f0; margin-top: 10px; font-weight: 700;">
+            {p_days} Remaining Days + {a_days} Added Days = {t_days} Total Days
+          </div>
+        </div>
+
+        <div class="summary-list">
+          <div style="font-size: 12px; font-weight: 800; color: #00F0FF; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Active Workspace Status</div>
+          <div class="summary-row">
+            <span style="color: #94a3b8;">Workspace Tier</span>
+            <span style="font-weight: 700; color: #ffffff;">{plan}</span>
+          </div>
+          <div class="summary-row">
+            <span style="color: #94a3b8;">Previous Balance</span>
+            <span style="font-weight: 700; font-family: monospace; color: #ffffff;">{p_days} Days</span>
+          </div>
+          <div class="summary-row">
+            <span style="color: #94a3b8;">Days Credited This Payment</span>
+            <span style="font-weight: 700; font-family: monospace; color: #00FFA3;">+{a_days} Days</span>
+          </div>
+          <div class="summary-row">
+            <span style="color: #94a3b8;">New Total Active Validity</span>
+            <span style="font-weight: 900; font-family: monospace; color: #00F0FF; font-size: 15px;">{t_days} Days</span>
+          </div>
+          <div class="summary-row">
+            <span style="color: #94a3b8;">Valid Until</span>
+            <span style="font-weight: 700; color: #ffffff;">{expiry}</span>
+          </div>
+        </div>
+
+        <a href="{portal_url}" class="btn">🚀 Open TaxPro Practice Suite</a>
+
+        <div class="footer">
+          TaxPro Financial Intelligence Platform &bull; Automated Subscription Engine<br>
+          Account: {email} &bull; 256-Bit SSL Encrypted
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+# =========================================================================
+# 3C. PAYMENT FAILED / DECLINED EMAIL TEMPLATE
+# =========================================================================
+def build_payment_failed_html(name, email, plan_name, amount, order_id, failure_reason, origin):
+    user_name = name or "Valued Client"
+    plan = plan_name or "TaxPro Subscription"
+    amt = amount or "₹1,999.00"
+    o_id = order_id or f"ORD-{os.urandom(4).hex().upper()}"
+    reason = failure_reason or "Transaction was cancelled or declined by your bank / UPI app"
+    portal_url = origin or "http://localhost:3000"
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0b0f19; color: #ffffff; margin: 0; padding: 24px; }}
+        .card {{ max-width: 580px; margin: 0 auto; background: #18141f; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 24px; padding: 40px; box-shadow: 0 25px 60px rgba(0,0,0,0.7); }}
+        .logo {{ font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #f87171, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
+        .tagline {{ font-size: 11px; color: #f87171; text-transform: uppercase; letter-spacing: 2px; text-align: center; margin-top: 4px; font-weight: 700; }}
+        .fail-hero {{ background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(249, 115, 22, 0.08)); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 20px; padding: 24px; margin: 24px 0; text-align: center; }}
+        .fail-badge {{ display: inline-block; background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #f87171; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; padding: 5px 14px; border-radius: 20px; margin-bottom: 10px; }}
+        .details-box {{ background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 18px; padding: 20px; margin: 20px 0; text-align: left; }}
+        .detail-row {{ display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 13px; }}
+        .detail-row:last-child {{ border-bottom: none; }}
+        .btn {{ display: block; text-align: center; background: linear-gradient(135deg, #2563eb, #3b82f6); color: #ffffff; padding: 16px 32px; border-radius: 16px; font-weight: 900; font-size: 14px; text-decoration: none; box-shadow: 0 10px 30px rgba(37, 99, 235, 0.4); margin: 28px 0 16px; }}
+        .footer {{ text-align: center; margin-top: 32px; font-size: 11px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">❖ TAXPRO PAYMENT NOTICE</div>
+        <div class="tagline">Official Payment Status Alert</div>
+
+        <div class="fail-hero">
+          <span class="fail-badge">⚠️ Transaction Incomplete</span>
+          <div style="font-size: 22px; font-weight: 900; color: #ffffff; margin-bottom: 8px;">Payment Could Not Be Processed</div>
+          <p style="font-size: 13px; color: #fca5a5; margin: 0; line-height: 1.5;">
+            Hello <b>{user_name}</b>, your payment attempt on Razorpay for <b>{plan}</b> was not completed.
+          </p>
+        </div>
+
+        <div class="details-box">
+          <div style="font-size: 12px; font-weight: 800; color: #f87171; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px;">Transaction Details</div>
+          <div class="detail-row">
+            <span style="color: #94a3b8;">Order ID</span>
+            <span style="font-weight: 700; font-family: monospace; color: #ffffff;">{o_id}</span>
+          </div>
+          <div class="detail-row">
+            <span style="color: #94a3b8;">Target Plan</span>
+            <span style="font-weight: 700; color: #ffffff;">{plan}</span>
+          </div>
+          <div class="detail-row">
+            <span style="color: #94a3b8;">Amount</span>
+            <span style="font-weight: 700; font-family: monospace; color: #fb923c;">{amt}</span>
+          </div>
+          <div class="detail-row">
+            <span style="color: #94a3b8;">Failure Reason</span>
+            <span style="font-weight: 700; color: #f87171;">{reason}</span>
+          </div>
+          <div class="detail-row">
+            <span style="color: #94a3b8;">Status</span>
+            <span style="font-weight: 800; color: #ef4444;">✕ Failed / Unsettled</span>
+          </div>
+        </div>
+
+        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 14px; padding: 14px; margin-top: 14px; font-size: 12px; color: #94a3b8; line-height: 1.5;">
+          🛡️ <b>Safe & Protected:</b> If any amount was deducted by your bank, it will be automatically refunded by Razorpay to your original payment source within 2 to 4 business days.
+        </div>
+
+        <a href="{portal_url}" class="btn">🔄 Retry Payment with Razorpay</a>
+
+        <div class="footer">
+          TaxPro Financial Intelligence Platform &bull; Razorpay Payment Engine<br>
+          Need assistance? Contact support@taxpro.com &bull; SSL Secured
         </div>
       </div>
     </body>
@@ -487,12 +712,44 @@ def main():
             plan_name = payload.get("plan_name", "TaxPro Enterprise Professional Plan")
             amount = payload.get("amount", "₹14,999.00")
             payment_id = payload.get("payment_id", f"PAY-{os.urandom(4).hex().upper()}")
+            receipt_number = payload.get("receipt_number") or f"REC-RZP-{payment_id[-8:]}"
+            order_id = payload.get("order_id") or f"order_{payment_id[-8:]}"
             billing_cycle = payload.get("billing_cycle", "Annual Billing")
             expiry_date = payload.get("expiry_date", "August 23, 2027")
             origin = payload.get("origin", "http://localhost:3000")
-            html = build_subscription_html(name, target_email, plan_name, amount, payment_id, billing_cycle, expiry_date, origin)
-            subject = f"🎉 Payment Confirmed: Welcome to TaxPro {plan_name}! (Receipt #{payment_id[-8:]})"
-            result = send_email_via_smtplib(target_email, subject, html, f"Congratulations {name}! Your {plan_name} subscription is active. Receipt: {payment_id}", custom_config)
+            html = build_subscription_html(name, target_email, plan_name, amount, payment_id, billing_cycle, expiry_date, origin, receipt_number, order_id)
+            subject = f"🎉 Payment Confirmed: Welcome to TaxPro {plan_name}! (Receipt #{receipt_number[-8:]})"
+            result = send_email_via_smtplib(target_email, subject, html, f"Congratulations {name}! Your {plan_name} subscription is active. Receipt: {receipt_number}, Payment ID: {payment_id}", custom_config)
+            print(json.dumps(result))
+
+        # 3B. SUBSCRIPTION VALIDITY UPDATE EMAIL (Remaining Days + Added Days = Total Days)
+        elif action in ["validity_update", "days_update"]:
+            name = payload.get("name", "Valued Subscriber")
+            plan_name = payload.get("plan_name", "TaxPro Enterprise Plan")
+            prev_days = payload.get("prev_days") or payload.get("remaining_days") or 0
+            added_days = payload.get("added_days", 30)
+            total_days = payload.get("total_days") or (int(prev_days) + int(added_days))
+            bonus_days = payload.get("bonus_days", 0)
+            expiry_date = payload.get("expiry_date", "August 23, 2027")
+            origin = payload.get("origin", "http://localhost:3000")
+            html = build_validity_update_html(name, target_email, plan_name, prev_days, added_days, total_days, bonus_days, expiry_date, origin)
+            subject = f"📅 Workspace Validity Updated: {prev_days} + {added_days} = {total_days} Days ({plan_name})"
+            plain_text = f"Hello {name},\n\nYour workspace subscription validity has been updated:\nRemaining Days ({prev_days}) + Added Days ({added_days}) = Total Days ({total_days})\n\nValid Until: {expiry_date}\n\n— TaxPro Billing Team"
+            result = send_email_via_smtplib(target_email, subject, html, plain_text, custom_config)
+            print(json.dumps(result))
+
+        # 3C. PAYMENT FAILED / DECLINED ALERT EMAIL
+        elif action in ["payment_failed", "payment_error", "payment_declined"]:
+            name = payload.get("name", "Valued Client")
+            plan_name = payload.get("plan_name", "TaxPro Subscription")
+            amount = payload.get("amount", "₹1,999.00")
+            order_id = payload.get("order_id", f"ORD-{os.urandom(4).hex().upper()}")
+            failure_reason = payload.get("failure_reason") or payload.get("reason") or "Transaction cancelled or declined by bank"
+            origin = payload.get("origin", "http://localhost:3000")
+            html = build_payment_failed_html(name, target_email, plan_name, amount, order_id, failure_reason, origin)
+            subject = f"⚠️ Action Required: Payment Unsuccessful for TaxPro {plan_name}"
+            plain_text = f"Hello {name},\n\nYour payment attempt for {plan_name} ({amount}) could not be completed.\nOrder ID: {order_id}\nReason: {failure_reason}\n\nPlease retry your payment on TaxPro. No funds were debited.\n\n— TaxPro Billing Desk"
+            result = send_email_via_smtplib(target_email, subject, html, plain_text, custom_config)
             print(json.dumps(result))
 
         # 4. LAST 5-DAY DUE REMINDER

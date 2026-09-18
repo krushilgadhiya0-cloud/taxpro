@@ -50,7 +50,12 @@ export default function MyWorkView({ onShowToast, onNavigateToLeave }) {
   const [isLoading, setIsLoading] = useState(true);
   
   // Filter & Search states
-  const [activeTab, setActiveTab] = useState('Active'); // 'Active' | 'InProgress' | 'Pending' | 'Urgent' | 'Overdue' | 'History' | 'All'
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined' && (window.location.hash.includes('history') || window.location.hash.includes('recent'))) {
+      return 'History';
+    }
+    return 'Active';
+  }); // 'Active' | 'InProgress' | 'Pending' | 'Urgent' | 'Overdue' | 'History' | 'All'
   const [historyFilter, setHistoryFilter] = useState('all'); // 'all' | '7days' | '30days' | 'month' | 'archived' | 'specific_date' | 'specific_month'
   const [historyScope, setHistoryScope] = useState('auto'); // 'auto' | 'mine' | 'all'
   const [specificDate, setSpecificDate] = useState(''); // 'YYYY-MM-DD'
@@ -167,8 +172,22 @@ export default function MyWorkView({ onShowToast, onNavigateToLeave }) {
   useEffect(() => {
     fetchData();
     const handleDbUpdate = () => fetchData();
+    const handleShowHistory = () => setActiveTab('History');
+    const handleHashCheck = () => {
+      if (window.location.hash.includes('history') || window.location.hash.includes('recent')) {
+        setActiveTab('History');
+      }
+    };
+
     window.addEventListener('taxpro_db_updated', handleDbUpdate);
-    return () => window.removeEventListener('taxpro_db_updated', handleDbUpdate);
+    window.addEventListener('taxpro_show_my_work_history', handleShowHistory);
+    window.addEventListener('hashchange', handleHashCheck);
+
+    return () => {
+      window.removeEventListener('taxpro_db_updated', handleDbUpdate);
+      window.removeEventListener('taxpro_show_my_work_history', handleShowHistory);
+      window.removeEventListener('hashchange', handleHashCheck);
+    };
   }, []);
 
   // Helper to check if a task is assigned to current logged-in user
@@ -195,8 +214,9 @@ export default function MyWorkView({ onShowToast, onNavigateToLeave }) {
   const effectiveHistoryTasks = useMemo(() => {
     if (historyScope === 'mine') return myCompletedTasks;
     if (historyScope === 'all') return allCompletedTasks;
+    if (workScope === 'all') return allCompletedTasks;
     return myCompletedTasks.length > 0 ? myCompletedTasks : allCompletedTasks;
-  }, [historyScope, myCompletedTasks, allCompletedTasks]);
+  }, [historyScope, workScope, myCompletedTasks, allCompletedTasks]);
 
   // Scope tasks: either strictly mine or all team deliverables
   const scopedTasks = useMemo(() => {
@@ -264,21 +284,26 @@ export default function MyWorkView({ onShowToast, onNavigateToLeave }) {
       });
     }
 
-    // 2. Active work tabs
+    // 2. Standard work tabs
     return scopedTasks.filter(task => {
       const isDone = (task.status || '').toLowerCase() === 'completed';
-      const isArchived = isCompletedOlderThanOneWeek(task);
-      if (isArchived) return false;
 
       // Tab filter
-      if (activeTab === 'Active' && isDone) return false; // Removes completed from active tasks
-      if (activeTab === 'InProgress' && task.status !== 'In Progress') return false;
-      if (activeTab === 'Pending' && (isDone || task.status === 'In Progress')) return false;
-      if (activeTab === 'Completed' && !isDone) return false;
-      if (activeTab === 'Urgent' && (task.priority !== 'High' && task.priority !== 'Urgent')) return false;
-      if (activeTab === 'Overdue') {
+      if (activeTab === 'Active') {
+        if (isDone) return false;
+      } else if (activeTab === 'InProgress') {
+        if (task.status !== 'In Progress') return false;
+      } else if (activeTab === 'Pending') {
+        if (isDone || task.status === 'In Progress') return false;
+      } else if (activeTab === 'Completed') {
+        if (!isDone) return false;
+      } else if (activeTab === 'Urgent') {
+        if (isDone || (task.priority !== 'High' && task.priority !== 'Urgent')) return false;
+      } else if (activeTab === 'Overdue') {
         const isPast = task.due_date && task.due_date < todayStr;
-        if (!isPast || isDone) return false;
+        if (isDone || !isPast) return false;
+      } else if (activeTab === 'All') {
+        // Shows all tasks in scope!
       }
 
       // Category filter
@@ -301,20 +326,19 @@ export default function MyWorkView({ onShowToast, onNavigateToLeave }) {
 
   // Metric stats
   const stats = useMemo(() => {
-    // Current cycle tasks
-    const currentCycleTasks = scopedTasks.filter(t => !isCompletedOlderThanOneWeek(t));
     const total = scopedTasks.length;
     const completed = scopedTasks.filter(t => (t.status || '').toLowerCase() === 'completed').length;
-    const inProgress = currentCycleTasks.filter(t => t.status === 'In Progress').length;
-    const pending = currentCycleTasks.filter(t => (t.status || '').toLowerCase() !== 'completed' && t.status !== 'In Progress').length;
+    const inProgress = scopedTasks.filter(t => t.status === 'In Progress').length;
+    const pending = scopedTasks.filter(t => (t.status || '').toLowerCase() !== 'completed' && t.status !== 'In Progress').length;
     const active = inProgress + pending;
-    const overdue = currentCycleTasks.filter(t => t.due_date && t.due_date < todayStr && (t.status || '').toLowerCase() !== 'completed').length;
+    const overdue = scopedTasks.filter(t => t.due_date && t.due_date < todayStr && (t.status || '').toLowerCase() !== 'completed').length;
+    const urgent = scopedTasks.filter(t => (t.priority === 'High' || t.priority === 'Urgent') && (t.status || '').toLowerCase() !== 'completed').length;
 
     // History count reflects available completed deliverables
     const historyCount = effectiveHistoryTasks.length;
     const rate = total > 0 ? Math.round((completed / total) * 100) : (allCompletedTasks.length > 0 ? 100 : 0);
 
-    return { total, active, completed, inProgress, pending, overdue, historyCount, rate };
+    return { total, active, completed, inProgress, pending, overdue, urgent, historyCount, rate };
   }, [scopedTasks, effectiveHistoryTasks, allCompletedTasks, todayStr]);
 
   // Set Task Status (In Progress, Completed, Pending)
@@ -608,15 +632,19 @@ export default function MyWorkView({ onShowToast, onNavigateToLeave }) {
 
           {/* Quick Actions (Add Task, Task History, Salary UPI & Ask Leave) */}
           <div className="flex items-center gap-3 flex-wrap shrink-0">
-            {/* Direct Task History Page Button */}
+            {/* Quick in-place Recent Tasks / History Switcher */}
             <button
               type="button"
-              onClick={() => { window.location.hash = '#/task-history'; }}
-              className="px-3.5 py-2.5 rounded-xl border font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 bg-white/10 hover:bg-white/20 text-white border-white/20"
-              title="Open Task History page"
+              onClick={() => setActiveTab('History')}
+              className={`px-3.5 py-2.5 rounded-xl border font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 ${
+                activeTab === 'History'
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-black shadow-md'
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+              }`}
+              title="View Recent Tasks & Completed Deliverables in My Work"
             >
-              <History className="w-4 h-4 text-cyan-300" />
-              <span>Task History ({stats.historyCount}) ↗</span>
+              <History className={`w-4 h-4 ${activeTab === 'History' ? 'text-slate-950' : 'text-cyan-300'}`} />
+              <span>Recent Tasks ({stats.historyCount})</span>
             </button>
 
             <button
@@ -814,20 +842,15 @@ export default function MyWorkView({ onShowToast, onNavigateToLeave }) {
               { id: 'Active', label: '🚀 Active Tasks', count: stats.active },
               { id: 'InProgress', label: '⚡ In Progress', count: stats.inProgress },
               { id: 'Pending', label: '⏳ Pending', count: stats.pending },
-              { id: 'Urgent', label: '🔥 Urgent', count: scopedTasks.filter(t => (t.priority === 'High' || t.priority === 'Urgent') && (t.status || '').toLowerCase() !== 'completed').length },
+              { id: 'Urgent', label: '🔥 Urgent', count: stats.urgent },
               { id: 'Overdue', label: '⚠️ Overdue', count: stats.overdue },
-              { id: 'History', label: '📜 Task History', count: stats.historyCount, highlight: true },
-              { id: 'All', label: '🎯 All Current', count: stats.total }
+              { id: 'Completed', label: '✅ Completed', count: stats.completed },
+              { id: 'History', label: '📜 Recent & Finished Tasks', count: stats.historyCount, highlight: true },
+              { id: 'All', label: '🎯 All Tasks', count: stats.total }
             ].map(tab => (
               <button
                 key={tab.id}
-                onClick={() => {
-                  if (tab.id === 'History') {
-                    window.location.hash = '#/task-history';
-                    return;
-                  }
-                  setActiveTab(tab.id);
-                }}
+                onClick={() => setActiveTab(tab.id)}
                 className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
                   activeTab === tab.id
                     ? 'bg-[#5b52e0] text-white shadow-sm shadow-indigo-600/30 ring-2 ring-indigo-200'
@@ -1088,58 +1111,51 @@ export default function MyWorkView({ onShowToast, onNavigateToLeave }) {
       )}
 
       {filteredTasks.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-3xl p-12 text-center shadow-xs space-y-4">
-          <div className="w-16 h-16 rounded-full bg-indigo-50 text-[#5b52e0] flex items-center justify-center text-3xl mx-auto shadow-inner">
-            {activeTab === 'History' ? '📜' : '🎉'}
+        <div className="bg-white border border-gray-200 rounded-3xl p-10 text-center shadow-xs space-y-4 animate-fade-in">
+          <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center text-3xl mx-auto shadow-inner">
+            {activeTab === 'History' ? '📜' : stats.active === 0 && stats.completed > 0 ? '🎉' : '📋'}
           </div>
           <h3 className="text-lg font-black text-gray-900 font-outfit">
             {activeTab === 'History' 
               ? `No completed tasks found in "${historyScope === 'mine' ? 'My History' : 'Team History'}" for period "${historyFilter.toUpperCase()}"`
-              : 'No active work items found matching this filter!'}
+              : stats.active === 0 && stats.completed > 0 && (activeTab === 'Active' || activeTab === 'InProgress' || activeTab === 'Pending')
+                ? 'All Assigned Deliverables 100% Completed!'
+                : `No tasks found under ${activeTab}`}
           </h3>
           <p className="text-xs text-gray-500 max-w-md mx-auto">
             {activeTab === 'History' 
-              ? 'Switch to All Team History or choose a different date filter to inspect completed firm tasks.' 
-              : activeTab === 'Active' 
-                ? "You're all caught up on your active deliverables! Great job." 
+              ? 'Switch to All Team History or choose "All Time" to inspect finished practice tasks.' 
+              : stats.active === 0 && stats.completed > 0
+                ? `You have completed all ${stats.completed} deliverable${stats.completed > 1 ? 's' : ''} assigned to you! Check your finished tasks in Completed, Recent & Finished Tasks, or All Tasks.` 
                 : 'No tasks currently match your filter criteria.'}
           </p>
           <div className="flex items-center justify-center gap-3 flex-wrap">
-            {activeTab === 'History' ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => { setHistoryFilter('all'); setHistoryScope('all'); setSearchQuery(''); }}
-                  className="px-4 py-2 rounded-xl bg-[#5b52e0] hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs"
-                >
-                  View All Firm History ({allCompletedTasks.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setActiveTab('Active'); setSearchQuery(''); }}
-                  className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Back to Active Work
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => { setActiveTab('History'); }}
-                  className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
-                >
-                  <History className="w-3.5 h-3.5" />
-                  <span>Check Task History ({allCompletedTasks.length})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setWorkScope('all'); setSearchQuery(''); }}
-                  className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Show All Team Work
-                </button>
-              </>
+            {stats.completed > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('Completed')}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs flex items-center gap-1.5 active:scale-95"
+              >
+                <CheckCheck className="w-3.5 h-3.5" />
+                <span>View Completed Tasks ({stats.completed})</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveTab('All')}
+              className="px-4 py-2 rounded-xl bg-[#5b52e0] hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs flex items-center gap-1.5 active:scale-95"
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span>Show All Tasks ({stats.total})</span>
+            </button>
+            {workScope === 'mine' && (
+              <button
+                type="button"
+                onClick={() => { setWorkScope('all'); setSearchQuery(''); }}
+                className="px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Show All Team Tasks ({tasks.length})
+              </button>
             )}
           </div>
         </div>
@@ -1366,11 +1382,11 @@ export default function MyWorkView({ onShowToast, onNavigateToLeave }) {
           </div>
           <button
             type="button"
-            onClick={() => { window.location.hash = '#/task-history'; }}
+            onClick={() => setActiveTab('History')}
             className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs transition-all shadow-md shadow-cyan-500/20 cursor-pointer flex items-center gap-1.5 shrink-0 self-start sm:self-auto active:scale-95"
           >
             <History className="w-4 h-4" />
-            <span>Open Task History ({allCompletedTasks.length}) →</span>
+            <span>View Recent & Completed Tasks ({allCompletedTasks.length}) →</span>
           </button>
         </div>
       )}

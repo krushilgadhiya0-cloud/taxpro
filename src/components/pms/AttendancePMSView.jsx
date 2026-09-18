@@ -594,68 +594,29 @@ export default function AttendancePMSView({ onShowToast }) {
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold font-outfit text-slate-900 tracking-tight">
-            Attendance & Salary Cut Register
+            Daily Attendance Register
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            1-Click mark daily staff presence, track monthly leave quotas, calculate extra leave salary cuts, and export printable slips.
+            1-Click mark daily staff presence, track attendance status, and export printable daily sheets.
           </p>
         </div>
 
-        {/* View Mode Switcher */}
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-1">
-            <button
-              onClick={() => setViewMode('daily')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                viewMode === 'daily'
-                  ? 'bg-[#5b52e0] text-white shadow-md shadow-indigo-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              <CalendarCheck className="w-3.5 h-3.5" />
-              <span>Daily Live Register</span>
-            </button>
-
-            <button
-              onClick={() => setViewMode('monthly_cuts')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                viewMode === 'monthly_cuts'
-                  ? 'bg-[#5b52e0] text-white shadow-md shadow-indigo-600/30'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              <Scissors className="w-3.5 h-3.5" />
-              <span>Monthly Leaves & Salary Cuts</span>
-            </button>
-          </div>
-
-          {viewMode === 'daily' ? (
-            <button
-              onClick={handlePrintDailySheet}
-              className="px-3.5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
-              title="Print daily attendance sheet"
-            >
-              <Printer className="w-4 h-4 text-indigo-600" />
-              <span>Print Day Sheet</span>
-            </button>
-          ) : (
-            <button
-              onClick={handlePrintMonthlyCutsRegister}
-              className="px-3.5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
-              title="Print monthly attendance and salary cut register"
-            >
-              <Printer className="w-4 h-4 text-indigo-600" />
-              <span>Print Cuts Register</span>
-            </button>
-          )}
+          <button
+            onClick={handlePrintDailySheet}
+            className="px-3.5 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
+            title="Print daily attendance sheet"
+          >
+            <Printer className="w-4 h-4 text-indigo-600" />
+            <span>Print Day Sheet</span>
+          </button>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* MODE 1: DAILY LIVE ATTENDANCE REGISTER */}
+      {/* DAILY LIVE ATTENDANCE REGISTER */}
       {/* ========================================================================= */}
-      {viewMode === 'daily' && (
-        <div className="space-y-6 print:hidden">
+      <div className="space-y-6 print:hidden">
 
           {/* Date Selector & Daily KPIs */}
           <div className="bg-gradient-to-r from-[#181c32] via-slate-900 to-indigo-950 rounded-3xl p-5 sm:p-6 text-white shadow-xl border border-indigo-500/20">
@@ -924,290 +885,8 @@ export default function AttendancePMSView({ onShowToast }) {
           </div>
 
         </div>
-      )}
 
       {/* ========================================================================= */}
-      {/* MODE 2: MONTHLY ATTENDANCE AUDIT & EXTRA LEAVE SALARY CUTS */}
-      {/* ========================================================================= */}
-      {viewMode === 'monthly_cuts' && (
-        <div className="space-y-6 print:hidden">
-
-          {/* Month Navigator + Policy Bar + Aggregates */}
-          <div className="bg-gradient-to-r from-[#181c32] via-slate-900 to-indigo-950 rounded-3xl p-5 sm:p-6 text-white shadow-xl border border-indigo-500/20">
-            
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-white/10">
-              
-              {/* Month Selector */}
-              <div className="flex items-center gap-3">
-                <select
-                  value={selectedMonth}
-                  onChange={e => setSelectedMonth(e.target.value)}
-                  className="bg-white/10 hover:bg-white/15 border border-white/20 rounded-xl px-3.5 py-2 text-white font-extrabold text-sm outline-none cursor-pointer"
-                >
-                  {MONTH_NAMES.map(m => (
-                    <option key={m.num} value={m.num} className="bg-slate-900 text-white font-bold">
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={selectedYear}
-                  onChange={e => setSelectedYear(e.target.value)}
-                  className="bg-white/10 hover:bg-white/15 border border-white/20 rounded-xl px-3.5 py-2 text-white font-extrabold text-sm outline-none cursor-pointer"
-                >
-                  {['2024', '2025', '2026', '2027'].map(y => (
-                    <option key={y} value={y} className="bg-slate-900 text-white font-bold">{y}</option>
-                  ))}
-                </select>
-
-                <span className="text-xs font-mono font-bold text-indigo-300 ml-2">
-                  Working Days: <strong>{standardWorkingDays} Days</strong>
-                </span>
-              </div>
-
-              {/* Allowed Leaves Policy Config + Sync Action */}
-              <div className="flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-2 bg-white/10 px-3 py-1.5 rounded-xl border border-white/15 text-xs font-bold">
-                  <span className="text-gray-300">Free Allowed Leaves / Mo:</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="10"
-                    value={monthlyAllowedLeaves}
-                    onChange={(e) => {
-                      const val = Math.max(0, Number(e.target.value));
-                      setMonthlyAllowedLeaves(val);
-                      localStorage.setItem('taxpro_allowed_monthly_leaves', String(val));
-                    }}
-                    className="w-12 bg-white text-slate-900 font-black px-2 py-0.5 rounded-lg text-center font-mono outline-none"
-                  />
-                  <span className="text-indigo-200">Day(s)</span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleSyncCutsToPayroll}
-                  className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
-                  title="Push net salaries after leave deductions into Members Payment desk"
-                >
-                  <DollarSign className="w-4 h-4" />
-                  <span>Sync Cuts to Payroll Desk</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Monthly Aggregate KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-6">
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                <div className="text-[10px] uppercase font-black text-gray-400">Gross Monthly Payroll</div>
-                <div className="text-2xl font-black font-mono text-white mt-1">
-                  ₹{monthlyAggregates.totalBaseSalaries.toLocaleString('en-IN')}
-                </div>
-                <div className="text-[10px] text-gray-400 mt-1">Base run-rate before deductions</div>
-              </div>
-
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-2xl p-4">
-                <div className="text-[10px] uppercase font-black text-blue-300">Approved Paid Leaves</div>
-                <div className="text-2xl font-black font-mono text-blue-400 mt-1">
-                  {monthlyAggregates.totalApprovedLeaves} Days
-                </div>
-                <div className="text-[10px] text-blue-300/80 mt-1">✓ ₹0 Cut (100% Fully Paid)</div>
-              </div>
-
-              <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4">
-                <div className="text-[10px] uppercase font-black text-rose-300">Unexcused Absents</div>
-                <div className="text-2xl font-black font-mono text-rose-400 mt-1">
-                  {monthlyAggregates.totalAbsents} Days
-                </div>
-                <div className="text-[10px] text-rose-300/80 mt-1">Subject to daily rate salary cuts</div>
-              </div>
-
-              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4">
-                <div className="text-[10px] uppercase font-black text-emerald-300">Total Deductions Outflow</div>
-                <div className="text-2xl font-black font-mono text-emerald-400 mt-1">
-                  -₹{monthlyAggregates.totalCuts.toLocaleString('en-IN')}
-                </div>
-                <div className="text-[10px] text-emerald-300/80 mt-1">Net Payable: ₹{monthlyAggregates.totalNetPayable.toLocaleString('en-IN')}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Monthly Staff Roster & Salary Cut Table */}
-          <div className="bg-white border border-slate-200 rounded-3xl shadow-xs overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                  <Scissors className="w-4 h-4 text-rose-600" />
-                  <span>Staff Leave Audit & Salary Deduction Register ({currentMonthObj?.name} {selectedYear})</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  <b>Rule:</b> Approved Leaves (`On Leave`) are 100% Paid with ₹0 Cut. Deductions apply exclusively to Unexcused Absents (1.0x) and Half Days (0.5x).
-                </p>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-extrabold uppercase text-[10px] tracking-wider">
-                    <th className="p-4">Employee</th>
-                    <th className="p-4">Base Salary</th>
-                    <th className="p-4 text-center">Present Days</th>
-                    <th className="p-4 text-center">Approved Leaves (Paid)</th>
-                    <th className="p-4 text-center">Half Days (0.5x Cut)</th>
-                    <th className="p-4 text-center">Absents (1.0x Cut)</th>
-                    <th className="p-4 text-right">Daily Rate</th>
-                    <th className="p-4 text-right">Salary Cut (₹)</th>
-                    <th className="p-4 text-right">Net Payable (₹)</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {monthlyStaffAuditList.map(item => {
-                    const m = item.member;
-
-                    return (
-                      <tr key={m.id} className="hover:bg-slate-50/70 transition-colors">
-                        
-                        {/* Member Details - Clickable for Full Dossier */}
-                        <td className="p-4">
-                          <div 
-                            onClick={() => {
-                              setDossierMember(m);
-                              setIsDossierOpen(true);
-                            }}
-                            className="cursor-pointer group flex items-center gap-2"
-                            title="Click to view full Monthly/Yearly Attendance & Salary Dossier"
-                          >
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-extrabold text-slate-900 text-sm group-hover:text-indigo-600 transition-colors">{m.name}</span>
-                                <TrendingUp className="w-3.5 h-3.5 text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                              </div>
-                              <div className="text-[10px] text-slate-500">{m.role || 'Staff'} • {m.department || 'Operations'}</div>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Base Salary */}
-                        <td className="p-4 font-mono font-bold text-slate-900">
-                          ₹{item.baseSalary.toLocaleString('en-IN')}
-                        </td>
-
-                        {/* Present */}
-                        <td className="p-4 text-center font-mono font-bold text-emerald-700">
-                          {item.presentCount}
-                        </td>
-
-                        {/* Approved Paid Leaves */}
-                        <td className="p-4 text-center font-mono">
-                          {item.onLeaveCount > 0 ? (
-                            <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-black text-[11px]">
-                              {item.onLeaveCount} (Paid)
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">0</span>
-                          )}
-                        </td>
-
-                        {/* Half Days */}
-                        <td className="p-4 text-center font-mono text-amber-700">
-                          {item.halfDayCount > 0 ? `${item.halfDayCount} (-0.5x)` : '-'}
-                        </td>
-
-                        {/* Absent */}
-                        <td className="p-4 text-center font-mono">
-                          {item.absentCount > 0 ? (
-                            <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 font-mono font-black text-[11px]">
-                              {item.absentCount} (-1.0x)
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 font-mono">0</span>
-                          )}
-                        </td>
-
-                        {/* Daily Rate */}
-                        <td className="p-4 text-right font-mono text-slate-600 text-[11px]">
-                          ₹{Math.round(item.dailySalaryRate).toLocaleString('en-IN')}/day
-                        </td>
-
-                        {/* Salary Cut Amount */}
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <span className={`font-mono font-black text-sm ${
-                              item.finalCutAmount > 0 ? 'text-rose-600' : 'text-slate-400'
-                            }`}>
-                              {item.finalCutAmount > 0 ? `-₹${item.finalCutAmount.toLocaleString('en-IN')}` : '₹0'}
-                            </span>
-
-                            {item.hasCustomCut && (
-                              <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[9px] font-black uppercase font-mono" title="Custom Override Active">
-                                Custom
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Net Payable */}
-                        <td className="p-4 text-right font-mono font-black text-sm text-emerald-700">
-                          ₹{item.netPayableSalary.toLocaleString('en-IN')}
-                        </td>
-
-                        {/* Actions: Progress Dossier / Set Custom Cut / Print Slip */}
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDossierMember(m);
-                                setIsDossierOpen(true);
-                              }}
-                              className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-                              title="View full Monthly/Yearly Attendance & Salary Dossier"
-                            >
-                              <TrendingUp className="w-3 h-3" />
-                              <span>Progress</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCutTargetMember(m);
-                                setCustomCutInput(String(item.finalCutAmount));
-                                setCutNotesInput(item.customNotes || '');
-                                setIsCutModalOpen(true);
-                              }}
-                              className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-                              title="Set custom salary deduction override"
-                            >
-                              <Edit3 className="w-3 h-3 text-slate-500" />
-                              <span>Cut</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handlePrintEmployeeSlip(item)}
-                              className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-                              title="Print Attendance & Salary Deduction Slip"
-                            >
-                              <Printer className="w-3 h-3" />
-                              <span>Slip</span>
-                            </button>
-                          </div>
-                        </td>
-
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
-      )}
-
       {/* ========================================================================= */}
       {/* 3. PRINTABLE OFFICIAL DOCUMENT TEMPLATES */}
       {/* ========================================================================= */}
@@ -1290,60 +969,7 @@ export default function AttendancePMSView({ onShowToast }) {
           </div>
         )}
 
-        {/* PRINT TYPE 2: MONTHLY CUTS REGISTER */}
-        {printDocType === 'monthly_cuts_register' && (
-          <div>
-            <table className="w-full text-left text-xs border-collapse border border-slate-300 mb-6">
-              <thead>
-                <tr className="bg-slate-100 text-slate-800 font-extrabold uppercase text-[10px]">
-                  <th className="p-2 border border-slate-300">Employee Name</th>
-                  <th className="p-2 border border-slate-300 text-right">Base Salary</th>
-                  <th className="p-2 border border-slate-300 text-center">Present</th>
-                  <th className="p-2 border border-slate-300 text-center">Half Day</th>
-                  <th className="p-2 border border-slate-300 text-center">Leaves</th>
-                  <th className="p-2 border border-slate-300 text-center">Extra</th>
-                  <th className="p-2 border border-slate-300 text-right">Deduction</th>
-                  <th className="p-2 border border-slate-300 text-right">Net Payable</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthlyStaffAuditList.map((item, i) => (
-                  <tr key={item.member.id || i}>
-                    <td className="p-2 border border-slate-300 font-bold">{item.member.name}</td>
-                    <td className="p-2 border border-slate-300 font-mono text-right">₹{item.baseSalary.toLocaleString('en-IN')}</td>
-                    <td className="p-2 border border-slate-300 text-center font-mono">{item.presentCount}</td>
-                    <td className="p-2 border border-slate-300 text-center font-mono">{item.halfDayCount}</td>
-                    <td className="p-2 border border-slate-300 text-center font-mono">{item.totalLeavesTaken}</td>
-                    <td className="p-2 border border-slate-300 text-center font-mono font-bold text-rose-800">{item.extraLeaves}</td>
-                    <td className="p-2 border border-slate-300 font-mono text-right font-bold text-rose-700">
-                      {item.finalCutAmount > 0 ? `-₹${item.finalCutAmount.toLocaleString('en-IN')}` : '₹0'}
-                    </td>
-                    <td className="p-2 border border-slate-300 font-mono text-right font-black">
-                      ₹{item.netPayableSalary.toLocaleString('en-IN')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
 
-            <div className="flex justify-end mb-6">
-              <div className="border border-slate-300 p-3 rounded-lg w-72 text-right bg-slate-50 space-y-1">
-                <div className="flex justify-between text-xs font-bold text-slate-600">
-                  <span>Gross Payroll:</span>
-                  <span className="font-mono">₹{monthlyAggregates.totalBaseSalaries.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="flex justify-between text-xs font-bold text-rose-700">
-                  <span>Total Leave Cuts:</span>
-                  <span className="font-mono">-₹{monthlyAggregates.totalCuts.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="flex justify-between text-sm font-black text-slate-900 border-t border-slate-300 pt-1">
-                  <span>Net Disbursal:</span>
-                  <span className="font-mono">₹{monthlyAggregates.totalNetPayable.toLocaleString('en-IN')}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* PRINT TYPE 3: INDIVIDUAL EMPLOYEE ATTENDANCE & DEDUCTION SLIP */}
         {printDocType === 'employee_slip' && printEmployeeData && (

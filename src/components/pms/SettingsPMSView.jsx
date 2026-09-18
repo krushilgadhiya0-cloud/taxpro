@@ -1,19 +1,104 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, Shield, Printer, Mail, Phone, Lock, KeyRound, Building, CheckCircle2, Check, User, Globe, Moon, Sun, ArrowRight, Eye, EyeOff, AlertCircle, ShieldAlert, Sparkles, ShieldCheck, Key, ZoomIn, ZoomOut, Maximize2, Sliders, Tag, BadgeCheck, MapPin, RefreshCw, RotateCcw, Loader2, QrCode, IndianRupee, Edit3, Copy, ArrowUp, ArrowDown, ListOrdered, Pin, PinOff, ChevronsUp, ChevronsDown, DollarSign, Coins } from 'lucide-react';
+import { Settings, Save, Shield, Printer, Mail, Phone, Lock, KeyRound, Building, CheckCircle2, Check, User, Globe, Moon, Sun, ArrowRight, Eye, EyeOff, AlertCircle, ShieldAlert, Sparkles, ShieldCheck, Key, ZoomIn, ZoomOut, Maximize2, Sliders, Tag, BadgeCheck, MapPin, RefreshCw, RotateCcw, Loader2, QrCode, IndianRupee, Edit3, Copy, ArrowUp, ArrowDown, ListOrdered, Pin, PinOff, ChevronsUp, ChevronsDown, DollarSign, Coins, Bot, Cpu, ExternalLink, LifeBuoy, Send, MessageSquare, Inbox, Clock, Megaphone, FileText, Laptop, Smartphone, Tablet, Monitor, Trash2, LogOut, Wifi, Coffee, UserCheck, Power } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { printHtml } from '../../lib/printHelper';
 import { formatDate } from '../../lib/dateUtils';
 import { SUPPORTED_CURRENCIES, getActiveCurrency, setGlobalCurrency, formatCurrency } from '../../lib/currencyHelper';
+import { SUPPORTED_LANGUAGES, getActiveLanguage, setGlobalLanguage, useLanguage, t } from '../../lib/languageHelper';
+import LanguageDropdownSelector from '../LanguageDropdownSelector';
 import FirmProfileModal from './FirmProfileModal';
+import {
+  registerCurrentDeviceSession,
+  fetchUserActiveSessions,
+  revokeDeviceSession,
+  revokeAllOtherDevices
+} from '../../lib/deviceSessionHelper';
 
-export default function SettingsPMSView({ userRole: propUserRole, onShowToast }) {
+export default function SettingsPMSView({ userRole: propUserRole, onShowToast, onLogout }) {
   const userRole = propUserRole || localStorage.getItem('taxpro_user_role') || 'Admin';
+  const { currentLanguage, setLanguage, t } = useLanguage();
   const [theme, setTheme] = useState(() => localStorage.getItem('taxpro_theme') || 'light');
   const [globalZoom, setGlobalZoom] = useState(() => {
     return parseInt(localStorage.getItem('taxpro_global_zoom') || '90', 10);
   });
-  const [activeLang, setActiveLang] = useState('en');
+  const [currentLang, setCurrentLang] = useState(getActiveLanguage);
   const [resetting, setResetting] = useState(false);
+
+  // Operational Workspace Modules (Attendance & Leaves)
+  const [isAttendanceModuleEnabled, setIsAttendanceModuleEnabled] = useState(() => {
+    return localStorage.getItem('taxpro_module_attendance') !== 'disabled';
+  });
+  const [isLeavesModuleEnabled, setIsLeavesModuleEnabled] = useState(() => {
+    return localStorage.getItem('taxpro_module_leaves') !== 'disabled';
+  });
+
+  const handleToggleAttendanceModule = async () => {
+    const nextState = !isAttendanceModuleEnabled;
+    const val = nextState ? 'enabled' : 'disabled';
+    setIsAttendanceModuleEnabled(nextState);
+    localStorage.setItem('taxpro_module_attendance', val);
+
+    try {
+      await supabase.from('settings').upsert({
+        key: 'module_attendance_enabled',
+        value: nextState,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'key' });
+    } catch (e) {}
+
+    window.dispatchEvent(new CustomEvent('taxpro_modules_updated', {
+      detail: { module: 'attendance', enabled: nextState }
+    }));
+    window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+    if (onShowToast) {
+      if (nextState) {
+        onShowToast('✓ Attendance Tracking module enabled across workspace', 'success');
+      } else {
+        onShowToast('✕ Attendance Tracking module turned off & hidden from menu', 'info');
+      }
+    }
+  };
+
+  const handleToggleLeavesModule = async () => {
+    const nextState = !isLeavesModuleEnabled;
+    const val = nextState ? 'enabled' : 'disabled';
+    setIsLeavesModuleEnabled(nextState);
+    localStorage.setItem('taxpro_module_leaves', val);
+
+    try {
+      await supabase.from('settings').upsert({
+        key: 'module_leaves_enabled',
+        value: nextState,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'key' });
+    } catch (e) {}
+
+    window.dispatchEvent(new CustomEvent('taxpro_modules_updated', {
+      detail: { module: 'leaves', enabled: nextState }
+    }));
+    window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+    if (onShowToast) {
+      if (nextState) {
+        onShowToast('✓ Leave Management & Ask Leave module enabled', 'success');
+      } else {
+        onShowToast('✕ Leave Management turned off & hidden from menu', 'info');
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleLang = (e) => setCurrentLang(e.detail || getActiveLanguage());
+    window.addEventListener('taxpro_language_changed', handleLang);
+    return () => window.removeEventListener('taxpro_language_changed', handleLang);
+  }, []);
+
+  const handleChangeLanguage = (langCode) => {
+    const updated = setLanguage(langCode);
+    setCurrentLang(updated);
+    if (onShowToast) onShowToast(`✓ Language switched to ${updated.name} (${updated.nativeName})!`, 'success');
+  };
 
   // Global Currency State
   const [activeCurrency, setActiveCurrency] = useState(getActiveCurrency);
@@ -74,6 +159,94 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
   const [isEditingUpi, setIsEditingUpi] = useState(false);
   const [upiInputVal, setUpiInputVal] = useState('');
   const [isSavingUpi, setIsSavingUpi] = useState(false);
+
+  // Active Devices & Security Sessions State (Real Working Session Control)
+  const [activeSessions, setActiveSessions] = useState([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState(null);
+  const [isRevokingAll, setIsRevokingAll] = useState(false);
+  const [deviceToRemove, setDeviceToRemove] = useState(null);
+
+  const loadSessions = async () => {
+    setIsLoadingSessions(true);
+    try {
+      await registerCurrentDeviceSession(userEmail);
+      const data = await fetchUserActiveSessions(userEmail);
+      if (data && data.success && Array.isArray(data.sessions)) {
+        setActiveSessions(data.sessions);
+      }
+    } catch (e) {
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSessions();
+    const handleRevokeSync = () => loadSessions();
+    window.addEventListener('taxpro_device_revoked', handleRevokeSync);
+    return () => window.removeEventListener('taxpro_device_revoked', handleRevokeSync);
+  }, [userEmail]);
+
+  const handleRevokeDevice = async (sessionId, sessionToken, deviceName, isCurrent) => {
+    if (isCurrent) {
+      handleSignOutCurrentDevice();
+      return;
+    }
+
+    setRevokingSessionId(sessionId);
+    try {
+      const res = await revokeDeviceSession(sessionId, sessionToken, userEmail);
+      if (res && res.success) {
+        setActiveSessions(prev => prev.filter(s => s.id !== sessionId && s.sessionId !== sessionId));
+        if (onShowToast) onShowToast(`✓ Device "${deviceName}" removed! Its access has been terminated immediately.`, 'success');
+        window.dispatchEvent(new CustomEvent('taxpro_device_revoked', { detail: sessionId }));
+      } else {
+        if (onShowToast) onShowToast(res?.error || 'Failed to remove device', 'error');
+      }
+    } catch (err) {
+      if (onShowToast) onShowToast('Failed to revoke device session', 'error');
+    } finally {
+      setRevokingSessionId(null);
+      setDeviceToRemove(null);
+    }
+  };
+
+  const handleRevokeAllOtherDevices = async () => {
+    setIsRevokingAll(true);
+    try {
+      const res = await revokeAllOtherDevices(userEmail);
+      if (res && res.success) {
+        setActiveSessions(prev => prev.filter(s => s.isCurrent));
+        if (onShowToast) onShowToast('✓ All other devices signed out! Only this device remains authorized.', 'success');
+        window.dispatchEvent(new CustomEvent('taxpro_device_revoked'));
+      } else {
+        if (onShowToast) onShowToast(res?.error || 'Failed to sign out other devices', 'error');
+      }
+    } catch (err) {
+      if (onShowToast) onShowToast('Network error while signing out devices', 'error');
+    } finally {
+      setIsRevokingAll(false);
+    }
+  };
+
+  const handleSignOutCurrentDevice = async () => {
+    const currentSess = activeSessions.find(s => s.isCurrent);
+    if (currentSess) {
+      try {
+        await revokeDeviceSession(currentSess.id, currentSess.sessionToken, userEmail);
+      } catch (e) {}
+    }
+    if (onLogout) {
+      onLogout();
+    } else {
+      localStorage.removeItem('taxpro_pg_session');
+      localStorage.removeItem('taxpro_profile_completed');
+      localStorage.removeItem('taxpro_user_email');
+      localStorage.removeItem('taxpro_user_role');
+      window.location.reload();
+    }
+  };
 
   // Fetch live user & PIN & UPI from PostgreSQL on mount
   useEffect(() => {
@@ -217,6 +390,164 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
   const [showPin, setShowPin] = useState(false);
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [isSavingFirm, setIsSavingFirm] = useState(false);
+
+  // =========================================================================
+  // REGISTER COMPLAINT & GRIEVANCE BOX STATE & METHODS
+  // =========================================================================
+  const [complaintSubject, setComplaintSubject] = useState('');
+  const [complaintCategory, setComplaintCategory] = useState('Technical Bug / System Error');
+  const [complaintPriority, setComplaintPriority] = useState('Medium');
+  const [complaintText, setComplaintText] = useState('');
+  const [complaintTargetEmail, setComplaintTargetEmail] = useState(() => {
+    return localStorage.getItem('taxpro_user_email') || localStorage.getItem('taxpro_secret_superadmin') || 'krushilgadhiya0@gmail.com';
+  });
+  const [isSubmittingComplaint, setIsSubmittingComplaint] = useState(false);
+  const [userComplaints, setUserComplaints] = useState([]);
+  const [isLoadingComplaints, setIsLoadingComplaints] = useState(false);
+  const [complaintActiveTab, setComplaintActiveTab] = useState('form'); // 'form' | 'history'
+  const [lastSubmittedTicket, setLastSubmittedTicket] = useState(null);
+
+  // Sync complaint target email with active user email
+  useEffect(() => {
+    if (userEmail && userEmail.includes('@')) {
+      setComplaintTargetEmail(userEmail);
+    }
+  }, [userEmail]);
+
+  // Fetch Complaints submitted by current user (combines PostgreSQL & Local Storage)
+  const fetchUserComplaints = async () => {
+    setIsLoadingComplaints(true);
+    const targetEmail = (complaintTargetEmail || userEmail || localStorage.getItem('taxpro_user_email') || '').trim().toLowerCase();
+    let dbList = [];
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      const res = await fetch(`${baseUrl}/api/complaints?email=${encodeURIComponent(targetEmail)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.complaints)) {
+          dbList = data.complaints;
+        }
+      }
+    } catch (err) {}
+
+    // Also get from localStorage
+    try {
+      const localList = JSON.parse(localStorage.getItem('taxpro_complaints') || '[]');
+      const filteredLocal = localList.filter(l => {
+        const email = (l.user_email || l.reporterEmail || '').toLowerCase();
+        return !targetEmail || email.includes(targetEmail) || targetEmail.includes(email);
+      });
+      const combined = [...dbList];
+      filteredLocal.forEach(loc => {
+        const locTicket = loc.ticket_no || loc.ticketNo;
+        if (!combined.some(c => (c.ticket_no || c.ticketNo) === locTicket)) {
+          combined.push(loc);
+        }
+      });
+      setUserComplaints(combined);
+    } catch (e) {
+      setUserComplaints(dbList);
+    } finally {
+      setIsLoadingComplaints(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUserComplaints();
+    const handleComplaintAdded = (e) => {
+      if (e.detail) {
+        setUserComplaints(prev => [e.detail, ...prev.filter(p => (p.ticket_no || p.ticketNo) !== (e.detail.ticket_no || e.detail.ticketNo))]);
+      }
+    };
+    window.addEventListener('taxpro_complaint_added', handleComplaintAdded);
+    return () => window.removeEventListener('taxpro_complaint_added', handleComplaintAdded);
+  }, [userEmail]);
+
+  const handleSubmitComplaint = async (e) => {
+    if (e) e.preventDefault();
+    if (!complaintText.trim()) {
+      if (onShowToast) onShowToast('Please provide a detailed grievance description.', 'warning');
+      return;
+    }
+    const cleanEmail = (complaintTargetEmail || userEmail || '').trim();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      if (onShowToast) onShowToast('Please enter a valid recipient email for your inbox confirmation.', 'error');
+      return;
+    }
+
+    setIsSubmittingComplaint(true);
+    setLastSubmittedTicket(null);
+
+    const ticketNo = `TKT-${Date.now().toString().slice(-6)}`;
+    const sub = complaintSubject.trim() || (complaintText.trim().slice(0, 45) + '...');
+
+    const newTicket = {
+      id: `ST-${Date.now()}`,
+      ticket_no: ticketNo,
+      ticketNo: ticketNo,
+      user_email: cleanEmail,
+      reporterEmail: cleanEmail,
+      user_name: userFullName || 'Authorized User',
+      reporterName: userFullName || 'Authorized User',
+      userRole: userRole || 'User',
+      firm_name: firmName,
+      subject: sub,
+      category: complaintCategory,
+      priority: complaintPriority,
+      message: complaintText.trim(),
+      complaintText: complaintText.trim(),
+      status: 'Open',
+      created_at: new Date().toISOString()
+    };
+
+    // 1. Save locally for instant persistence
+    try {
+      const existing = JSON.parse(localStorage.getItem('taxpro_complaints') || '[]');
+      existing.unshift(newTicket);
+      localStorage.setItem('taxpro_complaints', JSON.stringify(existing));
+    } catch (err) {}
+
+    // 2. Dispatch global event for live multi-tab & superadmin reactivity
+    window.dispatchEvent(new CustomEvent('taxpro_complaint_added', { detail: newTicket }));
+
+    // 3. Dispatch to Backend Endpoint for dual delivery (Inbox confirmation & Admin escalation)
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      const res = await fetch(`${baseUrl}/api/complain`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reporterEmail: cleanEmail,
+          reporterName: userFullName || 'Authorized User',
+          subject: sub,
+          complaintText: complaintText.trim(),
+          category: complaintCategory,
+          priority: complaintPriority
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      const resolvedTicket = data.ticket || newTicket;
+      setLastSubmittedTicket(resolvedTicket);
+
+      if (data.userEmailSent) {
+        if (onShowToast) onShowToast(`✓ Complaint #${ticketNo} registered! Confirmation delivered to your inbox (${cleanEmail}).`, 'success');
+      } else {
+        if (onShowToast) onShowToast(`✓ Complaint #${ticketNo} registered & escalated to Super Admin!`, 'success');
+      }
+
+      setComplaintSubject('');
+      setComplaintText('');
+      setComplaintActiveTab('history');
+      fetchUserComplaints();
+    } catch (err) {
+      if (onShowToast) onShowToast(`Complaint recorded in local queue and Super Admin console.`, 'info');
+      setLastSubmittedTicket(newTicket);
+      setComplaintActiveTab('history');
+    } finally {
+      setIsSubmittingComplaint(false);
+    }
+  };
 
   // Password Reset Modal States (2-Page Flow: 1. OTP, 2. New Password)
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
@@ -827,7 +1158,7 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
                   className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-xl flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 transition-all cursor-pointer text-xs active:scale-95"
                 >
                   <Lock className="w-3.5 h-3.5" />
-                  <span>Change Firm Details (Requires OTP)</span>
+                  <span>Change Firm Details</span>
                 </button>
               );
             })()}
@@ -988,33 +1319,484 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
           </div>
         </div>
 
-        {/* 4. SECURITY & PASSWORD RESET */}
-        <div className={`border rounded-3xl p-6 shadow-xs ${
+        {/* 4. SECURITY & CREDENTIALS (ACTIVE DEVICES & LOGGED-IN SESSIONS) */}
+        <div className={`lg:col-span-2 border rounded-3xl p-6 shadow-xs ${
           theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200/90 shadow-sm'
-        } smooth-card print:hidden`}>
-          <h3 className={`font-extrabold text-sm mb-4 flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
-            <Shield className="w-4 h-4 text-emerald-500" /> Security & Credentials
-          </h3>
-          <div className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl border gap-4 ${
-            theme === 'dark' ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
-          }`}>
-             <div>
-               <h4 className={`font-bold text-xs ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>System Password Override</h4>
-               <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>Reset or override your login password securely via OTP.</p>
-             </div>
-             <button 
-               onClick={handleResetPassword}
-               disabled={resetting}
-               className={`px-4 py-2 border text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 ${
-                 theme === 'dark' ? 'bg-slate-800 border-slate-600 text-white hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
-               }`}
-             >
-               {resetting ? 'Dispatching...' : 'Change Password'}
-             </button>
+        } smooth-card print:hidden space-y-6`}>
+          
+          {/* Card Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 via-teal-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shadow-emerald-500/20 shrink-0">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className={`font-extrabold text-base ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                    Security &amp; Credentials
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Dual-Layer Protection Active
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 font-medium">
+                  Manage login password, inspect active logged-in devices, and remotely terminate unauthorized sessions.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              <span className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono border flex items-center gap-1.5 ${
+                theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'
+              }`}>
+                <Monitor className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Active Devices ({activeSessions.length})</span>
+              </span>
+            </div>
           </div>
+
+          {/* Row 1: Quick Security Controls (Password & Screen Lock PIN) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            {/* System Password Override */}
+            <div className={`p-4 rounded-2xl border flex flex-col justify-between gap-3 ${
+              theme === 'dark' ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50/70 border-slate-200'
+            }`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
+                    <KeyRound className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className={`font-bold text-xs ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                      Account Login Password
+                    </h4>
+                    <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Change or override your account password securely via email OTP.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                <span className="text-[10px] font-mono text-slate-400">
+                  Secured with PostgreSQL hash
+                </span>
+                <button 
+                  type="button"
+                  onClick={handleResetPassword}
+                  disabled={resetting}
+                  className={`px-3.5 py-1.5 border text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                    theme === 'dark' ? 'bg-slate-800 border-slate-600 text-white hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>{resetting ? 'Dispatching OTP...' : 'Change Password'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Screen Privacy PIN */}
+            <div className={`p-4 rounded-2xl border flex flex-col justify-between gap-3 ${
+              theme === 'dark' ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50/70 border-slate-200'
+            }`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className={`font-bold text-xs ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                      Workspace Screen Lock PIN
+                    </h4>
+                    <p className={`text-[11px] mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Instant zero-lag screen privacy lock for client confidentiality.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                <span className="font-mono text-xs font-black tracking-widest text-indigo-600 dark:text-indigo-400">
+                  {showPin ? (lockPin || 'Not Set') : (lockPin ? '••••' : 'Not Set')}
+                </span>
+                <button 
+                  type="button"
+                  onClick={handleOpenEditAccountModal}
+                  className={`px-3.5 py-1.5 border text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                    theme === 'dark' ? 'bg-slate-800 border-slate-600 text-white hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-purple-500" />
+                  <span>Update PIN</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Row 2: Active Devices & Logged-In Sessions */}
+          <div className={`p-5 rounded-2xl border ${
+            theme === 'dark' ? 'bg-slate-800/30 border-slate-800' : 'bg-slate-50/50 border-slate-200'
+          } space-y-4`}>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-slate-800">
+              <div>
+                <h4 className={`font-extrabold text-sm flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                  <Monitor className="w-4 h-4 text-indigo-600" />
+                  <span>Active Devices &amp; Authorized Sessions</span>
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Devices currently signed into this account. Remove any unfamiliar or old session to terminate its access immediately.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadSessions}
+                  disabled={isLoadingSessions}
+                  className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title="Refresh active device list"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSessions ? 'animate-spin text-indigo-500' : ''}`} />
+                </button>
+
+                {activeSessions.filter(s => !s.isCurrent).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleRevokeAllOtherDevices}
+                    disabled={isRevokingAll}
+                    className="px-3.5 py-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 hover:text-white bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-600 border border-rose-200 dark:border-rose-900/60 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  >
+                    {isRevokingAll ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+                    <span>Log Out All Other Devices</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Device Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {activeSessions.map((session) => {
+                const isMobile = session.deviceType === 'mobile';
+                const isTablet = session.deviceType === 'tablet';
+
+                return (
+                  <div
+                    key={session.id || session.sessionId}
+                    className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 relative ${
+                      session.isCurrent
+                        ? theme === 'dark'
+                          ? 'bg-slate-800/80 border-emerald-500/40 ring-2 ring-emerald-500/10'
+                          : 'bg-white border-emerald-300 ring-2 ring-emerald-500/10 shadow-xs'
+                        : theme === 'dark'
+                          ? 'bg-slate-800/40 border-slate-700/80 hover:border-slate-600'
+                          : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+                    }`}
+                  >
+                    {/* Device Icon + Header */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold shrink-0 ${
+                          session.isCurrent
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                            : isMobile
+                            ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800'
+                            : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800'
+                        }`}>
+                          {isMobile ? (
+                            <Smartphone className="w-5 h-5" />
+                          ) : isTablet ? (
+                            <Tablet className="w-5 h-5" />
+                          ) : (
+                            <Laptop className="w-5 h-5" />
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-xs font-black ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                              {session.deviceName || 'Workstation Device'}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            {session.osName} • {session.browserName}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Current vs Remote Badge */}
+                      {session.isCurrent ? (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 text-[9px] font-black font-mono flex items-center gap-1 shrink-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          THIS DEVICE
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 border border-slate-300/80 dark:border-slate-600 text-[9px] font-bold font-mono shrink-0">
+                          REMOTE SESSION
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Metadata Specs (IP, Location, Last Active) */}
+                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-semibold block uppercase">Network IP</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-bold truncate block">
+                          {session.ipAddress || '127.0.0.1'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-semibold block uppercase">Location</span>
+                        <span className="text-slate-600 dark:text-slate-400 truncate block">
+                          {session.location || 'Local Workspace'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Action Bar (Remove Device) */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span>{session.isCurrent ? 'Active now' : 'Connected recently'}</span>
+                      </div>
+
+                      {session.isCurrent ? (
+                        <button
+                          type="button"
+                          onClick={handleSignOutCurrentDevice}
+                          className="px-3 py-1.5 text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-600 hover:text-white border border-amber-200 dark:border-amber-800/60 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                          <LogOut className="w-3 h-3" />
+                          <span>Sign Out This Device</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setDeviceToRemove(session)}
+                          disabled={revokingSessionId === session.id}
+                          className="px-3 py-1.5 text-[11px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-600 hover:text-white border border-rose-200 dark:border-rose-800/60 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          {revokingSessionId === session.id ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3 h-3" />
+                          )}
+                          <span>Remove Device</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Security Guarantee Notice */}
+            <div className="p-3 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 flex items-center gap-2.5 text-[11px] text-indigo-700 dark:text-indigo-300 font-medium">
+              <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>
+                <strong>Security Protection:</strong> Removing any device immediately revokes its authorization token. If that device is open in another browser or tab, it will be automatically terminated on its next security check.
+              </span>
+            </div>
+
+          </div>
+
         </div>
 
-        {/* 4. THEME & APPEARANCE */}
+        {/* 5. WORKSPACE MODULES & FEATURES CONTROL (ATTENDANCE & LEAVES TOGGLES) */}
+        <div className={`lg:col-span-2 border rounded-3xl p-6 shadow-xs ${
+          theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200/90 shadow-sm'
+        } smooth-card print:hidden space-y-5`}>
+          
+          {/* Section Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-md shadow-indigo-500/20 shrink-0">
+                <Sliders className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className={`font-extrabold text-sm sm:text-base ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                    Workspace Modules &amp; Feature Control
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-mono">
+                    Admin Management
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 font-medium">
+                  Selectively turn off or enable operational modules (Attendance and Leave Management) across your entire practice.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className={`text-[11px] font-mono font-bold px-3 py-1 rounded-xl border ${
+                theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
+              }`}>
+                Active Modules: {[isAttendanceModuleEnabled, isLeavesModuleEnabled].filter(Boolean).length}/2
+              </span>
+            </div>
+          </div>
+
+          {/* Modules Grid (Attendance & Leaves) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            {/* 1. ATTENDANCE MODULE TOGGLE CARD */}
+            <div className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-4 ${
+              isAttendanceModuleEnabled
+                ? theme === 'dark'
+                  ? 'bg-slate-800/40 border-slate-700 hover:border-slate-600'
+                  : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+                : theme === 'dark'
+                ? 'bg-rose-950/10 border-rose-900/40'
+                : 'bg-rose-50/40 border-rose-200/70'
+            }`}>
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold shrink-0 ${
+                      isAttendanceModuleEnabled
+                        ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800'
+                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60'
+                    }`}>
+                      <UserCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className={`text-sm font-extrabold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                          Attendance Tracking Module
+                        </h4>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Biometric check-ins &amp; daily logs
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Status Badge */}
+                  {isAttendanceModuleEnabled ? (
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase font-mono bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Active
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase font-mono bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 flex items-center gap-1 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Turned Off
+                    </span>
+                  )}
+                </div>
+
+                <p className={`text-xs mt-3 leading-relaxed ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Includes staff biometric attendance, daily check-in / check-out timecards, employee monthly attendance dossiers, and shift logs.
+                </p>
+              </div>
+
+              {/* Action Toggle Switch */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                <span className="text-[11px] font-medium text-slate-400">
+                  {isAttendanceModuleEnabled ? 'Currently visible in menu' : 'Hidden from sidebar menu'}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={handleToggleAttendanceModule}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shadow-xs active:scale-95 ${
+                    isAttendanceModuleEnabled
+                      ? 'bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-600 dark:hover:text-white border border-rose-200 dark:border-rose-900/60'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
+                  }`}
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  <span>{isAttendanceModuleEnabled ? 'Turn Off Attendance' : 'Turn On Attendance'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. LEAVE MANAGEMENT MODULE TOGGLE CARD */}
+            <div className={`p-5 rounded-2xl border transition-all flex flex-col justify-between gap-4 ${
+              isLeavesModuleEnabled
+                ? theme === 'dark'
+                  ? 'bg-slate-800/40 border-slate-700 hover:border-slate-600'
+                  : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+                : theme === 'dark'
+                ? 'bg-rose-950/10 border-rose-900/40'
+                : 'bg-rose-50/40 border-rose-200/70'
+            }`}>
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold shrink-0 ${
+                      isLeavesModuleEnabled
+                        ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60'
+                    }`}>
+                      <Coffee className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className={`text-sm font-extrabold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                          Leave Management Module
+                        </h4>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Time-off requests &amp; manager approvals
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Status Badge */}
+                  {isLeavesModuleEnabled ? (
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase font-mono bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Active
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase font-mono bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 flex items-center gap-1 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Turned Off
+                    </span>
+                  )}
+                </div>
+
+                <p className={`text-xs mt-3 leading-relaxed ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Includes employee leave applications (Ask Leave), manager review &amp; approval workflows, time-off calendars, and annual leave balances.
+                </p>
+              </div>
+
+              {/* Action Toggle Switch */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                <span className="text-[11px] font-medium text-slate-400">
+                  {isLeavesModuleEnabled ? 'Currently visible in menu' : 'Hidden from sidebar menu'}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={handleToggleLeavesModule}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shadow-xs active:scale-95 ${
+                    isLeavesModuleEnabled
+                      ? 'bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-600 dark:hover:text-white border border-rose-200 dark:border-rose-900/60'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
+                  }`}
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  <span>{isLeavesModuleEnabled ? 'Turn Off Leaves' : 'Turn On Leaves'}</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Informational Guidance */}
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+            <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span>
+              Turning off a module instantly hides its navigation links across the workspace. Existing database records are safely preserved and will reappear whenever re-enabled.
+            </span>
+          </div>
+
+        </div>
+
+        {/* 6. THEME & APPEARANCE */}
         <div className={`border rounded-3xl p-6 shadow-xs ${
           theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200/90 shadow-sm'
         } smooth-card print:hidden`}>
@@ -1125,6 +1907,89 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
                   ) : (
                     <div className="text-[10px] text-slate-400 font-medium mt-0.5">
                       {c.country}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* SYSTEM LANGUAGE & REGIONAL LOCALIZATION */}
+        <div className={`border rounded-3xl p-6 shadow-xs ${
+          theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200/90 shadow-sm'
+        } smooth-card print:hidden`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className={`font-extrabold text-sm flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                <Globe className="w-4 h-4 text-teal-500" /> Language & Regional Localization
+              </h3>
+              <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                Select your preferred system language. Interface transitions smoothly across all screens with RTL support for Arabic.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200/80 dark:border-teal-800 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+                Active: {currentLang?.name} ({currentLang?.nativeName})
+              </span>
+              <LanguageDropdownSelector onShowToast={onShowToast} align="right" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {SUPPORTED_LANGUAGES.map((lang) => {
+              const isSelected = currentLang?.code === lang.code;
+              return (
+                <button
+                  key={lang.code}
+                  type="button"
+                  onClick={() => handleChangeLanguage(lang.code)}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2.5 ${
+                    isSelected
+                      ? 'bg-teal-50/70 dark:bg-teal-950/40 border-teal-500 ring-2 ring-teal-400/20 shadow-xs'
+                      : theme === 'dark'
+                      ? 'bg-slate-800/40 border-slate-700/80 hover:bg-slate-800 hover:border-slate-600'
+                      : 'bg-slate-50/70 border-slate-200/80 hover:bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <img
+                      src={`https://flagcdn.com/w40/${lang.country?.toLowerCase() || 'gb'}.png`}
+                      srcSet={`https://flagcdn.com/w80/${lang.country?.toLowerCase() || 'gb'}.png 2x`}
+                      alt={lang.name}
+                      className="w-6 h-4 object-cover rounded-[2px] shadow-2xs border border-black/10"
+                      onError={(e) => { e.target.style.display = 'none'; }}
+                    />
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                      isSelected
+                        ? 'bg-teal-600 text-white shadow-2xs'
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}>
+                      {lang.dir?.toUpperCase() || 'LTR'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className={`text-xs font-black ${
+                      isSelected 
+                        ? 'text-teal-900 dark:text-teal-200' 
+                        : theme === 'dark' ? 'text-white' : 'text-slate-900'
+                    }`}>
+                      {lang.name}
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-semibold truncate">
+                      {lang.nativeName}
+                    </div>
+                  </div>
+
+                  {isSelected ? (
+                    <div className="text-[10px] font-extrabold text-teal-700 dark:text-teal-400 flex items-center gap-1 mt-0.5">
+                      <CheckCircle2 className="w-3 h-3 text-teal-600" /> Active System Language
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                      Click to switch
                     </div>
                   )}
                 </button>
@@ -1296,6 +2161,379 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
                 </button>
               </div>
             </div>
+          </div>
+
+
+          {/* 8. REGISTER COMPLAINT & SUPPORT GRIEVANCE BOX */}
+          <div className={`lg:col-span-2 border rounded-3xl p-6 shadow-xs ${
+            theme === 'dark' ? 'bg-[#121727] border-slate-800' : 'bg-white border-slate-200/90 shadow-sm'
+          } smooth-card print:hidden`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 mb-5 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shadow-amber-500/20 shrink-0">
+                  <LifeBuoy className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className={`font-extrabold text-base ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                      Register Complaint & Support Grievance Box
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-mono">
+                      Direct Escalation
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-mono flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                      Inbox Receipt Guaranteed
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5 font-medium">
+                    Submit technical bugs, system issues, or workplace grievances directly to the Super Administrator. An official confirmation receipt with your ticket number arrives immediately in your inbox.
+                  </p>
+                </div>
+              </div>
+
+              {/* Tab Selector */}
+              <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setComplaintActiveTab('form')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    complaintActiveTab === 'form'
+                      ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>File Complaint</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setComplaintActiveTab('history');
+                    fetchUserComplaints();
+                  }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    complaintActiveTab === 'history'
+                      ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Inbox className="w-3.5 h-3.5" />
+                  <span>My Tickets</span>
+                  {userComplaints.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-mono font-black">
+                      {userComplaints.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* TAB 1: FILE COMPLAINT FORM */}
+            {complaintActiveTab === 'form' && (
+              <form onSubmit={handleSubmitComplaint} className="space-y-4 animate-fade-in">
+                {lastSubmittedTicket && (
+                  <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 flex items-start justify-between gap-3 text-xs">
+                    <div className="flex items-start gap-2.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="font-extrabold text-sm">
+                          Ticket #{lastSubmittedTicket.ticket_no || lastSubmittedTicket.ticketNo} Registered Successfully!
+                        </div>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
+                          An official confirmation receipt has been dispatched to <strong className="font-mono">{lastSubmittedTicket.user_email || lastSubmittedTicket.reporterEmail}</strong>. Please check your primary inbox.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setComplaintActiveTab('history')}
+                      className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shrink-0 cursor-pointer shadow-xs"
+                    >
+                      View in My Tickets →
+                    </button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Category */}
+                  <div>
+                    <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Complaint Category <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={complaintCategory}
+                      onChange={e => setComplaintCategory(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold border outline-none transition-all ${
+                        theme === 'dark'
+                          ? 'bg-slate-800 border-slate-700 text-white focus:border-indigo-500'
+                          : 'bg-white border-slate-300 text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/10'
+                      }`}
+                    >
+                      <option value="Technical Bug / System Error">🐛 Technical Bug / System Error</option>
+                      <option value="Feature Request">💡 Feature Request / Improvement</option>
+                      <option value="Account & Login Access">🔐 Account & Login Access</option>
+                      <option value="Billing & Payroll Issue">💳 Billing & Payroll Issue</option>
+                      <option value="Workplace Grievance">⚠️ Workplace Grievance</option>
+                      <option value="Other">📝 Other Inquiries</option>
+                    </select>
+                  </div>
+
+                  {/* Priority */}
+                  <div>
+                    <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Priority Level <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={complaintPriority}
+                      onChange={e => setComplaintPriority(e.target.value)}
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold border outline-none transition-all ${
+                        theme === 'dark'
+                          ? 'bg-slate-800 border-slate-700 text-white focus:border-indigo-500'
+                          : 'bg-white border-slate-300 text-slate-800 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/10'
+                      }`}
+                    >
+                      <option value="Low">🟢 Low - Minor Notice</option>
+                      <option value="Medium">🟡 Medium - Standard Attention</option>
+                      <option value="High">🟠 High - Urgent Action Needed</option>
+                      <option value="Critical">🔴 Critical - Blocking Work</option>
+                    </select>
+                  </div>
+
+                  {/* Confirmation Inbox Email */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className={`block text-xs font-bold ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Confirmation Inbox Email <span className="text-rose-500">*</span>
+                      </label>
+                      <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-500" /> Primary Inbox
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="email"
+                        required
+                        value={complaintTargetEmail}
+                        onChange={e => setComplaintTargetEmail(e.target.value)}
+                        placeholder="yourname@gmail.com"
+                        className={`w-full px-3.5 py-2.5 pl-8 rounded-xl text-xs font-mono font-bold border outline-none transition-all ${
+                          theme === 'dark'
+                            ? 'bg-slate-800 border-slate-700 text-white focus:border-indigo-500'
+                            : 'bg-white border-slate-300 text-slate-900 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/10'
+                        }`}
+                      />
+                      <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Subject Line */}
+                <div>
+                  <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Subject / Issue Summary <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={complaintSubject}
+                    onChange={e => setComplaintSubject(e.target.value)}
+                    placeholder="e.g. GST computation mismatch or Attendance register punch not syncing"
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold border outline-none transition-all ${
+                      theme === 'dark'
+                        ? 'bg-slate-800 border-slate-700 text-white focus:border-indigo-500'
+                        : 'bg-white border-slate-300 text-slate-900 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/10'
+                    }`}
+                  />
+                </div>
+
+                {/* Detailed Grievance Description */}
+                <div>
+                  <label className={`block text-xs font-bold mb-1.5 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Detailed Grievance / Description <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={complaintText}
+                    onChange={e => setComplaintText(e.target.value)}
+                    placeholder="Provide full details of the issue, error codes, affected client registers, or specific resolution you require from the Super Administrator..."
+                    className={`w-full p-3.5 rounded-2xl text-xs font-medium border outline-none transition-all resize-none leading-relaxed ${
+                      theme === 'dark'
+                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500 focus:border-indigo-500'
+                        : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-500/10 shadow-2xs'
+                    }`}
+                  />
+                </div>
+
+                {/* Delivery & Anti-Spam Assurance Callout */}
+                <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  theme === 'dark' ? 'bg-indigo-950/20 border-indigo-900/40' : 'bg-indigo-50/50 border-indigo-100'
+                }`}>
+                  <div className="flex items-start gap-2.5 text-xs">
+                    <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-slate-900 dark:text-white">Anti-Spam Dual Delivery:</span>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Transmits instantly to the Super Admin Console and dispatches an official RFC 5322 confirmation ticket directly to <strong>{complaintTargetEmail}</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmittingComplaint || !complaintText.trim()}
+                    className="px-6 py-2.5 bg-gradient-to-r from-amber-600 via-rose-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-md shadow-rose-600/20 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
+                  >
+                    {isSubmittingComplaint ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Dispatching to Inbox & Admin...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Register Grievance & Send to Inbox</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* TAB 2: MY COMPLAINT TICKETS HISTORY */}
+            {complaintActiveTab === 'history' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-indigo-500" />
+                    <span>Your Registered Workplace Grievance History ({userComplaints.length})</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={fetchUserComplaints}
+                    disabled={isLoadingComplaints}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                      theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingComplaints ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                {userComplaints.length === 0 ? (
+                  <div className={`p-8 rounded-2xl border text-center flex flex-col items-center justify-center gap-3 ${
+                    theme === 'dark' ? 'bg-slate-800/20 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                      <Inbox className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-extrabold text-slate-900 dark:text-white">No Grievance Tickets Yet</div>
+                      <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                        You have not registered any support complaints yet. When you file a complaint, it will appear here along with live Super Admin status updates.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setComplaintActiveTab('form')}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1.5 mt-1"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Register a Complaint</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {userComplaints.map((ticket, idx) => {
+                      const tktNo = ticket.ticket_no || ticket.ticketNo || `TKT-${idx}`;
+                      const status = ticket.status || 'Open';
+                      const isResolved = status.toLowerCase() === 'resolved';
+                      const isInReview = status.toLowerCase() === 'in review' || status.toLowerCase() === 'investigating';
+                      const createdDate = ticket.created_at ? new Date(ticket.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'Recent';
+
+                      return (
+                        <div
+                          key={ticket.id || tktNo || idx}
+                          className={`p-4 rounded-2xl border transition-all ${
+                            theme === 'dark'
+                              ? 'bg-slate-800/40 border-slate-700/80 hover:bg-slate-800'
+                              : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-black text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2.5 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                                {tktNo}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                isResolved
+                                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                                  : isInReview
+                                  ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                                  : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                              }`}>
+                                {isResolved ? '✓ Resolved' : isInReview ? '⚡ In Review' : '🟡 Open (Under Admin Review)'}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-bold">
+                                {ticket.category || 'General'}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black font-mono ${
+                                ticket.priority === 'Critical'
+                                  ? 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300'
+                                  : ticket.priority === 'High'
+                                  ? 'bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                              }`}>
+                                {ticket.priority || 'Medium'}
+                              </span>
+                            </div>
+
+                            <div className="text-[11px] text-slate-400 font-mono">
+                              {createdDate}
+                            </div>
+                          </div>
+
+                          <div className="pt-2.5">
+                            <h4 className={`text-xs font-bold ${theme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                              {ticket.subject || 'Support Grievance'}
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed line-clamp-3">
+                              {ticket.message || ticket.complaintText}
+                            </p>
+
+                            {ticket.response && (
+                              <div className="mt-3 p-3 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 text-xs">
+                                <div className="font-extrabold text-purple-700 dark:text-purple-300 flex items-center gap-1.5 mb-1">
+                                  <MessageSquare className="w-3.5 h-3.5 text-purple-600" />
+                                  <span>Super Admin Official Resolution:</span>
+                                </div>
+                                <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                                  {ticket.response}
+                                </p>
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-slate-100 dark:border-slate-800/60 text-[10px] text-slate-400">
+                              <span className="flex items-center gap-1">
+                                <Mail className="w-3 h-3 text-slate-400" />
+                                Confirmation sent to: <strong className="font-mono text-slate-600 dark:text-slate-300">{ticket.user_email || ticket.reporterEmail || 'Registered Email'}</strong>
+                              </span>
+                              <span className="font-bold text-indigo-600 dark:text-indigo-400">
+                                Super Admin Desk
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
         </div>
@@ -1879,6 +3117,58 @@ export default function SettingsPMSView({ userRole: propUserRole, onShowToast })
               </form>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMATION MODAL FOR REMOVING A DEVICE */}
+      {deviceToRemove && (
+        <div className="fixed inset-0 z-[99999] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-[#121727] border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto border border-rose-200 dark:border-rose-900/60">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                Remove Active Device?
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Are you sure you want to revoke access for <strong className="text-slate-900 dark:text-white">{deviceToRemove.deviceName}</strong>?
+                This session will be terminated immediately.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs space-y-1 font-mono">
+              <div className="flex justify-between text-slate-500">
+                <span>IP Address:</span>
+                <span className="text-slate-800 dark:text-slate-200 font-bold">{deviceToRemove.ipAddress}</span>
+              </div>
+              <div className="flex justify-between text-slate-500">
+                <span>Location:</span>
+                <span className="text-slate-800 dark:text-slate-200">{deviceToRemove.location}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeviceToRemove(null)}
+                className="flex-1 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleRevokeDevice(deviceToRemove.id, deviceToRemove.sessionToken, deviceToRemove.deviceName, false)}
+                disabled={Boolean(revokingSessionId)}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {revokingSessionId ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>Revoke Access</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -87,6 +87,30 @@ export default function MembersPaymentView({ onShowToast }) {
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [isSubmittingPay, setIsSubmittingPay] = useState(false);
 
+  // Salary Cut / Deduction Modal States
+  const [isCutModalOpen, setIsCutModalOpen] = useState(false);
+  const [cutTargetItem, setCutTargetItem] = useState(null);
+  const [cutAmountInput, setCutAmountInput] = useState('');
+  const [cutReasonInput, setCutReasonInput] = useState('');
+  const [cutsTrigger, setCutsTrigger] = useState(0);
+
+  // Disbursal Modal live cut fields
+  const [payCutAmount, setPayCutAmount] = useState('');
+  const [payCutReason, setPayCutReason] = useState('');
+
+  // Event listener to reactively update customSalaryCuts
+  useEffect(() => {
+    const handleCutsUpdated = () => {
+      setCutsTrigger(prev => prev + 1);
+    };
+    window.addEventListener('taxpro_attendance_custom_cuts_updated', handleCutsUpdated);
+    window.addEventListener('taxpro_db_updated', handleCutsUpdated);
+    return () => {
+      window.removeEventListener('taxpro_attendance_custom_cuts_updated', handleCutsUpdated);
+      window.removeEventListener('taxpro_db_updated', handleCutsUpdated);
+    };
+  }, []);
+
   // Staff UPI Config Modal
   const [isUpiModalOpen, setIsUpiModalOpen] = useState(false);
   const [upiTargetMember, setUpiTargetMember] = useState(null);
@@ -240,7 +264,7 @@ export default function MembersPaymentView({ onShowToast }) {
     } catch(e) {
       return {};
     }
-  }, []);
+  }, [cutsTrigger]);
 
   // Compute Members Status & Leave Deductions for the Selected Month Cycle
   const monthlyMemberStatusList = useMemo(() => {
@@ -372,11 +396,77 @@ export default function MembersPaymentView({ onShowToast }) {
   // Active Pay Target Item state for modal details
   const [payTargetItem, setPayTargetItem] = useState(null);
 
+  // OPEN CUT MONEY / SALARY DEDUCTION MODAL
+  const handleOpenCutModal = (memberItem) => {
+    setCutTargetItem(memberItem);
+    setCutAmountInput(memberItem.hasCustomCut ? String(memberItem.leaveDeduction) : (memberItem.leaveDeduction > 0 ? String(memberItem.leaveDeduction) : ''));
+    
+    const cuts = JSON.parse(localStorage.getItem('taxpro_attendance_custom_cuts') || '{}');
+    const cutKey = `${currentCycleKey}_${memberItem.member.id}`;
+    setCutReasonInput(cuts[cutKey]?.reason || 'Monthly salary cut / absence adjustment');
+    setIsCutModalOpen(true);
+  };
+
+  // SAVE MEMBER SALARY CUT
+  const handleSaveMemberCut = (e) => {
+    if (e) e.preventDefault();
+    if (!cutTargetItem) return;
+
+    const val = Number(cutAmountInput);
+    if (isNaN(val) || val < 0) {
+      if (onShowToast) onShowToast('Please enter a valid deduction amount (₹0 or more)', 'error');
+      return;
+    }
+
+    try {
+      const cuts = JSON.parse(localStorage.getItem('taxpro_attendance_custom_cuts') || '{}');
+      const cutKey = `${currentCycleKey}_${cutTargetItem.member.id}`;
+      cuts[cutKey] = {
+        customAmount: val,
+        reason: cutReasonInput.trim() || 'Manual salary cut',
+        updatedAt: new Date().toISOString()
+      };
+      localStorage.setItem('taxpro_attendance_custom_cuts', JSON.stringify(cuts));
+      setCutsTrigger(prev => prev + 1);
+      window.dispatchEvent(new CustomEvent('taxpro_attendance_custom_cuts_updated'));
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      if (onShowToast) onShowToast(`✓ Salary cut of ₹${val.toLocaleString('en-IN')} saved for ${cutTargetItem.member.name}`, 'success');
+      setIsCutModalOpen(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // RESET SALARY CUT TO AUTO ATTENDANCE CALCULATION
+  const handleResetMemberCut = () => {
+    if (!cutTargetItem) return;
+    try {
+      const cuts = JSON.parse(localStorage.getItem('taxpro_attendance_custom_cuts') || '{}');
+      const cutKey = `${currentCycleKey}_${cutTargetItem.member.id}`;
+      delete cuts[cutKey];
+      localStorage.setItem('taxpro_attendance_custom_cuts', JSON.stringify(cuts));
+      setCutsTrigger(prev => prev + 1);
+      window.dispatchEvent(new CustomEvent('taxpro_attendance_custom_cuts_updated'));
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      if (onShowToast) onShowToast(`✓ Reset salary cut for ${cutTargetItem.member.name} to auto attendance calculation`, 'info');
+      setIsCutModalOpen(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   // Open Payment Modal for a Member
   const handleOpenPayModal = (memberItem) => {
     const m = memberItem.member;
     setPayTargetMember(m);
     setPayTargetItem(memberItem);
+    const existingCut = memberItem.leaveDeduction || 0;
+    setPayCutAmount(String(existingCut));
+    const cuts = JSON.parse(localStorage.getItem('taxpro_attendance_custom_cuts') || '{}');
+    const cutKey = `${currentCycleKey}_${m.id}`;
+    setPayCutReason(cuts[cutKey]?.reason || '');
     setPayAmount(String(memberItem.netSalary || memberItem.baseSalary || ''));
     setPayMethod('UPI');
     setPayCycle(currentCycleKey);
@@ -398,6 +488,22 @@ export default function MembersPaymentView({ onShowToast }) {
     const txnRef = upiRefNo.trim() || `PAY-${Date.now().toString().slice(-6)}`;
     const effectiveUpi = inlineUpiInput.trim() || getMemberUpi(payTargetMember);
 
+    // Save custom cut if adjusted in payout modal
+    if (payCutAmount !== '' && !isNaN(payCutAmount) && Number(payCutAmount) >= 0) {
+      try {
+        const cuts = JSON.parse(localStorage.getItem('taxpro_attendance_custom_cuts') || '{}');
+        const cutKey = `${payCycle || currentCycleKey}_${payTargetMember.id}`;
+        cuts[cutKey] = {
+          customAmount: Number(payCutAmount),
+          reason: payCutReason.trim() || 'Salary deduction confirmed at disbursal',
+          updatedAt: new Date().toISOString()
+        };
+        localStorage.setItem('taxpro_attendance_custom_cuts', JSON.stringify(cuts));
+        setCutsTrigger(prev => prev + 1);
+        window.dispatchEvent(new CustomEvent('taxpro_attendance_custom_cuts_updated'));
+      } catch (e) {}
+    }
+
     // If inline UPI provided, save it
     if (inlineUpiInput.trim()) {
       localStorage.setItem(`taxpro_upi_${payTargetMember.id}`, inlineUpiInput.trim());
@@ -408,8 +514,13 @@ export default function MembersPaymentView({ onShowToast }) {
     }
 
     const monthName = currentMonthObj?.name || 'Month';
+    const payId = `PAY-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+    const recStaffId = `REC-STAFF-${payId}`;
+    const todayYmd = new Date().toISOString().slice(0, 10);
+
     const newPayment = {
-      id: `PAY-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+      id: payId,
+      receiptId: recStaffId,
       memberId: payTargetMember.id,
       memberName: payTargetMember.name,
       memberRole: payTargetMember.role || 'Staff',
@@ -431,21 +542,47 @@ export default function MembersPaymentView({ onShowToast }) {
     setPaymentHistory(updatedHistory);
     localStorage.setItem('taxpro_payroll_history', JSON.stringify(updatedHistory));
 
-    // 2. Insert into Supabase 'receipts_payments' for Ledger integration
+    // 2. Canonical Receipts & Payments Entry
+    const staffRecEntry = {
+      id: recStaffId,
+      title: `Salary Disbursement - ${payTargetMember.name} (${monthName} ${selectedYear})`,
+      type: 'expense',
+      category: 'Staff Salary & Payroll',
+      amount: payNum,
+      method: payMethod,
+      party: `${payTargetMember.name} (Staff Salary)`,
+      date: todayYmd,
+      reference: txnRef,
+      notes: `Salary Disbursement for ${monthName} ${selectedYear} via ${payMethod}. Txn Ref: ${txnRef}`
+    };
+
+    // Save to Supabase / PostgreSQL
     try {
-      await supabase.from('receipts_payments').insert([{
-        id: `REC-STAFF-${Date.now()}`,
-        title: `Salary Disbursement - ${payTargetMember.name} (${monthName} ${selectedYear})`,
-        type: 'expense',
+      await supabase.from('receipts_payments').insert([staffRecEntry]);
+    } catch (err) {
+      console.warn('[Staff Payout DB Insert Fallback]:', err);
+    }
+
+    // Direct mirror to localStorage taxpro_receipts_payments for instant 0ms ledger availability
+    try {
+      const rawRec = localStorage.getItem('taxpro_receipts_payments');
+      const recList = rawRec ? JSON.parse(rawRec) : [];
+      localStorage.setItem('taxpro_receipts_payments', JSON.stringify([staffRecEntry, ...recList.filter(r => r.id !== recStaffId)]));
+
+      const rawCal = localStorage.getItem('taxpro_calendar_transactions');
+      const calList = rawCal ? JSON.parse(rawCal) : [];
+      const calTx = {
+        id: recStaffId,
+        type: 'Expense',
+        party: `${payTargetMember.name} (Staff Salary)`,
         category: 'Staff Salary & Payroll',
         amount: payNum,
-        method: payMethod,
-        party: payTargetMember.name,
-        date: new Date().toISOString().slice(0, 10),
-        reference: txnRef,
-        notes: `Salary Payout for ${monthName} ${selectedYear} via ${payMethod}. Txn Ref: ${txnRef}`
-      }]);
-    } catch (err) {}
+        mode: payMethod,
+        date: todayYmd,
+        notes: `Salary Payout for ${monthName} ${selectedYear} (Ref: ${txnRef})`
+      };
+      localStorage.setItem('taxpro_calendar_transactions', JSON.stringify([calTx, ...calList.filter(c => c.id !== recStaffId)]));
+    } catch (e) {}
 
     // 3. Log Audit Activity
     logAuditActivity({
@@ -460,7 +597,7 @@ export default function MembersPaymentView({ onShowToast }) {
 
     setIsSubmittingPay(false);
     setIsPayModalOpen(false);
-    if (onShowToast) onShowToast(`✓ Salary of ₹${payNum.toLocaleString('en-IN')} successfully paid to ${payTargetMember.name}!`, 'success');
+    if (onShowToast) onShowToast(`✓ Salary of ₹${payNum.toLocaleString('en-IN')} successfully paid to ${payTargetMember.name}! Automatically synced to Receipts & Payments.`, 'success');
   };
 
   // Queue Performance Bonus
@@ -940,22 +1077,34 @@ export default function MembersPaymentView({ onShowToast }) {
                         </div>
                       </div>
 
-                      {/* Attendance Leave Deductions Breakdown */}
-                      <div className="flex items-center justify-between text-xs bg-slate-50 border border-slate-200/80 px-3 py-2 rounded-xl mb-3">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+                      {/* Attendance Leave Deductions Breakdown - Clickable to Open Cut Modal */}
+                      <div 
+                        onClick={() => handleOpenCutModal(item)}
+                        className="flex items-center justify-between text-xs bg-slate-50 hover:bg-rose-50/60 border border-slate-200/80 hover:border-rose-200 px-3 py-2 rounded-xl mb-3 cursor-pointer transition-all group shadow-2xs"
+                        title="Click to cut money or adjust salary deductions for this cycle"
+                      >
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 group-hover:text-rose-700">
                           <Scissors className="w-3.5 h-3.5 text-rose-500" />
-                          <span>Leave Deductions:</span>
+                          <span>Salary Cut / Deduction:</span>
                         </div>
                         {item.leaveDeduction > 0 ? (
-                          <span className="font-mono font-black text-rose-600 text-xs flex items-center gap-1">
+                          <span className="font-mono font-black text-rose-600 text-xs flex items-center gap-1.5">
                             -{formatCurrency(item.leaveDeduction, 0)}
-                            <span className="px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 text-[9px] font-black font-mono">
-                              {item.absentCount > 0 ? `${item.absentCount}A ` : ''}{item.halfDayCount > 0 ? `${item.halfDayCount}HD` : ''}
-                            </span>
+                            {item.hasCustomCut ? (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[9px] font-black font-mono border border-amber-200">
+                                Custom Cut
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 text-[9px] font-black font-mono">
+                                {item.absentCount > 0 ? `${item.absentCount}A ` : ''}{item.halfDayCount > 0 ? `${item.halfDayCount}HD` : ''}
+                              </span>
+                            )}
                           </span>
                         ) : (
-                          <span className="font-mono font-bold text-emerald-700 text-[11px] flex items-center gap-1">
-                            <Check className="w-3 h-3 text-emerald-600" /> {activeCurrency.symbol}0 (Fully Paid)
+                          <span className="font-mono font-bold text-emerald-700 text-[11px] flex items-center gap-1 group-hover:text-rose-600">
+                            <Check className="w-3 h-3 text-emerald-600 group-hover:hidden" />
+                            <Scissors className="w-3 h-3 text-rose-500 hidden group-hover:inline" />
+                            {activeCurrency.symbol}0 <span className="text-[10px] text-slate-400 group-hover:text-rose-600">(+ Cut)</span>
                           </span>
                         )}
                       </div>
@@ -1016,6 +1165,20 @@ export default function MembersPaymentView({ onShowToast }) {
 
                       {!isPaid ? (
                         <div className="flex items-center gap-1.5 ml-auto">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCutModal(item)}
+                            className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] border flex items-center gap-1 cursor-pointer transition-all ${
+                              item.hasCustomCut 
+                                ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300' 
+                                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200'
+                            }`}
+                            title="Cut amount of money from salary"
+                          >
+                            <Scissors className="w-3 h-3 text-rose-600" />
+                            <span>{item.hasCustomCut ? '✏️ Edit Cut' : '✂️ Cut Money'}</span>
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => {
@@ -1460,33 +1623,103 @@ export default function MembersPaymentView({ onShowToast }) {
             {/* Form */}
             <div className="p-6 flex flex-col gap-4 text-xs font-semibold overflow-y-auto overscroll-contain chat-custom-scrollbar flex-1">
               
-              {/* Detailed Salary Breakdown Card */}
+              {/* Detailed Salary Breakdown Card with Interactive Salary Cut Controls */}
               {payTargetItem && (
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2 shadow-2xs">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 shadow-2xs">
                   <div className="flex justify-between text-slate-600 font-bold">
                     <span>Base Monthly Salary:</span>
                     <span className="font-mono text-slate-900 font-black">{formatCurrency(payTargetItem.baseSalary, 0)}</span>
                   </div>
 
-                  <div className="flex justify-between text-rose-600 font-bold">
-                    <span className="flex items-center gap-1">
-                      <Scissors className="w-3.5 h-3.5" />
-                      Attendance Salary Deductions ({payTargetItem.absentCount} Absents, {payTargetItem.halfDayCount} Half Days):
-                    </span>
-                    <span className="font-mono font-black">
-                      {payTargetItem.leaveDeduction > 0 ? `-${formatCurrency(payTargetItem.leaveDeduction, 0)}` : `${activeCurrency.symbol}0`}
-                    </span>
+                  {/* Cut / Deduction Adjustment Controls */}
+                  <div className="pt-2 border-t border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-slate-700 font-black text-xs flex items-center gap-1.5">
+                        <Scissors className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Cut Amount / Deduction ({activeCurrency.symbol}):</span>
+                      </label>
+                      <span className="text-[10px] text-slate-500">
+                        {payTargetItem.absentCount > 0 || payTargetItem.halfDayCount > 0 ? `(${payTargetItem.absentCount} Absents, ${payTargetItem.halfDayCount} Half Days)` : 'Custom deduction'}
+                      </span>
+                    </div>
+
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-500 text-xs">{activeCurrency.symbol}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={payTargetItem.baseSalary}
+                        value={payCutAmount}
+                        onChange={e => {
+                          const newCut = e.target.value;
+                          setPayCutAmount(newCut);
+                          const cutVal = Number(newCut) || 0;
+                          setPayAmount(String(Math.max(0, payTargetItem.baseSalary - cutVal)));
+                        }}
+                        className="w-full pl-8 pr-3.5 py-1.5 bg-white border border-slate-300 rounded-xl outline-none focus:border-rose-500 font-mono font-bold text-xs text-rose-700 shadow-2xs"
+                        placeholder="Enter deduction amount"
+                      />
+                    </div>
+
+                    {/* Presets */}
+                    <div className="grid grid-cols-4 gap-1 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = Math.round(payTargetItem.dailyRate || 0);
+                          setPayCutAmount(String(val));
+                          setPayAmount(String(Math.max(0, payTargetItem.baseSalary - val)));
+                        }}
+                        className="p-1 rounded-lg bg-white hover:bg-rose-50 hover:text-rose-700 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all text-center"
+                      >
+                        -1 Day
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = 500;
+                          setPayCutAmount(String(val));
+                          setPayAmount(String(Math.max(0, payTargetItem.baseSalary - val)));
+                        }}
+                        className="p-1 rounded-lg bg-white hover:bg-rose-50 hover:text-rose-700 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all text-center"
+                      >
+                        -₹500
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = 1000;
+                          setPayCutAmount(String(val));
+                          setPayAmount(String(Math.max(0, payTargetItem.baseSalary - val)));
+                        }}
+                        className="p-1 rounded-lg bg-white hover:bg-rose-50 hover:text-rose-700 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all text-center"
+                      >
+                        -₹1,000
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPayCutAmount('0');
+                          setPayAmount(String(payTargetItem.baseSalary));
+                        }}
+                        className="p-1 rounded-lg bg-white hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all text-center"
+                      >
+                        ₹0 (No Cut)
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex justify-between text-emerald-800 font-black pt-2 border-t border-slate-200 text-sm">
                     <span>Net Disbursal Amount:</span>
-                    <span className="font-mono">{formatCurrency(payTargetItem.netSalary, 0)}</span>
+                    <span className="font-mono">
+                      {formatCurrency(Math.max(0, payTargetItem.baseSalary - (Number(payCutAmount) || 0)), 0)}
+                    </span>
                   </div>
                 </div>
               )}
 
               <div>
-                <label className="text-slate-700 block mb-1">Disbursement Amount ({activeCurrency.symbol}) <span className="text-rose-500">*</span></label>
+                <label className="text-slate-700 block mb-1">Final Disbursement Outflow ({activeCurrency.symbol}) <span className="text-rose-500">*</span></label>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">{activeCurrency.symbol}</span>
                   <input
@@ -1828,6 +2061,169 @@ export default function MembersPaymentView({ onShowToast }) {
                 Queue Bonus
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SALARY CUT / DEDUCTION MODAL */}
+      {isCutModalOpen && cutTargetItem && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsCutModalOpen(false); }}
+          className="fixed inset-0 z-[99999] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto print:hidden"
+        >
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden text-slate-800 my-auto animate-modal-smooth flex flex-col">
+            
+            <div className="px-6 py-4.5 bg-gradient-to-r from-rose-600 to-amber-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Scissors className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-white">Cut Amount from Member Salary</h4>
+                  <p className="text-[11px] text-white/80">{cutTargetItem.member.name} • {currentMonthObj?.name} {selectedYear}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCutModalOpen(false)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMemberCut} className="p-6 space-y-4 text-xs font-semibold">
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-1.5">
+                <div className="flex justify-between text-slate-600">
+                  <span>Base Monthly Salary:</span>
+                  <span className="font-mono font-black text-slate-900">{formatCurrency(cutTargetItem.baseSalary, 0)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Daily Rate:</span>
+                  <span className="font-mono text-slate-900">₹{Math.round(cutTargetItem.dailyRate || 0).toLocaleString('en-IN')}/day</span>
+                </div>
+                <div className="flex justify-between text-slate-500 text-[11px]">
+                  <span>Auto Attendance Deductions:</span>
+                  <span className="font-mono font-bold">
+                    {cutTargetItem.absentCount} Absents, {cutTargetItem.halfDayCount} Half Days
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div>
+                <label className="text-slate-700 block mb-1.5 text-[11px] font-bold">Quick Deduction Presets</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput(String(Math.round(cutTargetItem.dailyRate || 0)))}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -1 Day (₹{Math.round(cutTargetItem.dailyRate || 0)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput(String(Math.round((cutTargetItem.dailyRate || 0) * 2)))}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -2 Days (₹{Math.round((cutTargetItem.dailyRate || 0) * 2)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput('500')}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -₹500 Flat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput('1000')}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -₹1,000 Flat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput('2000')}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -₹2,000 Flat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput('0')}
+                    className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    ₹0 (No Cut)
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Input */}
+              <div>
+                <label className="text-slate-700 block mb-1 text-[11px] font-bold">Cut Amount ({activeCurrency.symbol}) <span className="text-rose-500">*</span></label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">{activeCurrency.symbol}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={cutTargetItem.baseSalary}
+                    value={cutAmountInput}
+                    onChange={e => setCutAmountInput(e.target.value)}
+                    placeholder="Enter amount to deduct"
+                    className="w-full pl-8 pr-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-rose-500 font-mono font-black text-sm text-slate-900 shadow-2xs"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="text-slate-700 block mb-1 text-[11px] font-bold">Reason for Cut / Deduction</label>
+                <input
+                  type="text"
+                  value={cutReasonInput}
+                  onChange={e => setCutReasonInput(e.target.value)}
+                  placeholder="e.g. Late arrivals, absence, damage/advance cut"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-rose-500 font-medium text-xs text-slate-800 shadow-2xs"
+                />
+              </div>
+
+              {/* Net preview */}
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                <span className="text-emerald-900 font-bold">Resulting Net Payable:</span>
+                <span className="font-mono font-black text-emerald-800 text-sm">
+                  {formatCurrency(Math.max(0, cutTargetItem.baseSalary - (Number(cutAmountInput) || 0)), 0)}
+                </span>
+              </div>
+
+              <div className="pt-2 flex items-center justify-between gap-2">
+                {cutTargetItem.hasCustomCut && (
+                  <button
+                    type="button"
+                    onClick={handleResetMemberCut}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                  >
+                    Reset to Auto
+                  </button>
+                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsCutModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs cursor-pointer shadow-md shadow-rose-600/20"
+                  >
+                    Save Deduction
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

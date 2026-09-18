@@ -97,6 +97,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   const [activeTab, setActiveTab] = useState('Members');
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [credentialsSuccessModal, setCredentialsSuccessModal] = useState(null);
+  const [duplicateModalInfo, setDuplicateModalInfo] = useState(null);
   const [copiedStatus, setCopiedStatus] = useState(false);
   const [accessModalMember, setAccessModalMember] = useState(null);
   const [accessForm, setAccessForm] = useState({
@@ -222,10 +223,29 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     const cleanEmail = formData.email.toLowerCase().trim();
     const cleanName = formData.name.trim();
 
-    // 1. Check if email is already present in existing directory list
-    const isAlreadyLocal = members.some(m => (m.email || '').toLowerCase().trim() === cleanEmail);
-    if (isAlreadyLocal) {
-      if (onShowToast) onShowToast(`⚠️ Account Already Registered: "${cleanEmail}" is already in your practice directory. Duplicate accounts are prevented.`, 'error');
+    // 1. Check SuperAdmin email
+    const superAdminEmail = (import.meta.env.VITE_SUPERADMIN_EMAIL || 'superadmin@taxpro.com').toLowerCase().trim();
+    if (cleanEmail === superAdminEmail || cleanEmail === 'workforcepro09@gmail.com') {
+      setDuplicateModalInfo({
+        isOpen: true,
+        email: cleanEmail,
+        name: 'Super Administrator',
+        role: 'Super Admin',
+        department: 'Firm Administration'
+      });
+      return;
+    }
+
+    // 2. Check if email already exists in local directory list (team members)
+    const localMatch = members.find(m => (m.email || '').toLowerCase().trim() === cleanEmail);
+    if (localMatch) {
+      setDuplicateModalInfo({
+        isOpen: true,
+        email: cleanEmail,
+        name: localMatch.name || cleanName,
+        role: localMatch.role || 'Team Member',
+        department: localMatch.department || 'General'
+      });
       return;
     }
 
@@ -242,16 +262,45 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
     setIsInviting(true);
 
-    // 2. Check in Supabase / PostgreSQL database
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+
+    // 3. Pre-flight check via backend API (searches across users, team_members, clients across ALL roles)
+    try {
+      const checkResp = await fetch(`${baseUrl}/api/check-email?email=${encodeURIComponent(cleanEmail)}`);
+      if (checkResp.ok) {
+        const checkData = await checkResp.json();
+        if (checkData && checkData.exists) {
+          setIsInviting(false);
+          setDuplicateModalInfo({
+            isOpen: true,
+            email: cleanEmail,
+            name: checkData.name || cleanName,
+            role: checkData.role || 'Registered User',
+            department: checkData.source === 'clients' ? 'Client Directory' : ''
+          });
+          return;
+        }
+      }
+    } catch (checkApiErr) {
+      console.warn('[Check Email API Note]:', checkApiErr);
+    }
+
+    // 4. Check in Supabase / PostgreSQL database for users or team_members
     try {
       const [usrCheck, memCheck] = await Promise.all([
-        supabase.from('users').select('id, email, name, role').eq('email', cleanEmail).limit(1),
-        supabase.from('team_members').select('id, email, name, role').eq('email', cleanEmail).limit(1)
+        supabase.from('users').select('id, email, name, role').ilike('email', cleanEmail).limit(1),
+        supabase.from('team_members').select('id, email, name, role, department').ilike('email', cleanEmail).limit(1)
       ]);
-      if ((usrCheck?.data && usrCheck.data.length > 0) || (memCheck?.data && memCheck.data.length > 0)) {
-        const found = usrCheck?.data?.[0] || memCheck?.data?.[0];
-        if (onShowToast) onShowToast(`⚠️ Account Already Exists: "${cleanEmail}" is already registered in the system as ${found?.role || 'a member'}. Duplicate invitations are prevented.`, 'error');
+      const dbFound = usrCheck?.data?.[0] || memCheck?.data?.[0];
+      if (dbFound) {
         setIsInviting(false);
+        setDuplicateModalInfo({
+          isOpen: true,
+          email: cleanEmail,
+          name: dbFound.name || cleanName,
+          role: dbFound.role || 'Team Member',
+          department: dbFound.department || ''
+        });
         return;
       }
     } catch (checkErr) {
@@ -275,7 +324,6 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
       const smtpRaw = localStorage.getItem('taxpro_smtp');
       const smtpConfig = smtpRaw ? JSON.parse(smtpRaw) : null;
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
 
       let registeredCredentials = null;
       let emailSent = false;
@@ -295,8 +343,8 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
         upi_id: formData.upi_id ? formData.upi_id.trim() : null,
         salary: formData.salary ? formData.salary.trim() : '₹50,000/mo',
         pan: formData.pan ? formData.pan.trim().toUpperCase() : null,
-        bank_account: formData.bank_account ? formData.bank_account.trim() : null,
-        ifsc: formData.ifsc ? formData.ifsc.trim().toUpperCase() : null,
+        bank_account: null,
+        ifsc: null,
         emergency_contact: formData.emergency_contact ? formData.emergency_contact.trim() : null,
         date_of_joining: formData.date_of_joining || new Date().toISOString().slice(0, 10),
         notes: formData.notes ? formData.notes.trim() : null,
@@ -305,33 +353,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
         online: true
       };
 
-      try {
-        await supabase.from('team_members').upsert([memberPayload], { onConflict: 'email' });
-      } catch (tmErr) {
-        console.warn('[team_members upsert]:', tmErr);
-      }
-
-      // 2. Direct reliable upsert to PostgreSQL users table
-      const userPayload = {
-        id: `USR-${Date.now().toString().slice(-6)}`,
-        email: cleanEmail,
-        password: effectivePassword,
-        name: cleanName,
-        role: formData.role || 'Employee',
-        company: firmName || 'TaxPro Enterprise',
-        phone: purePhone ? `+91 ${purePhone}` : (formData.phone || null),
-        phone_verified: true,
-        lock_pin: '1234',
-        status: 'Active'
-      };
-
-      try {
-        await supabase.from('users').upsert([userPayload], { onConflict: 'email' });
-      } catch (uErr) {
-        console.warn('[users upsert]:', uErr);
-      }
-
-      // 3. Dispatch to server invitation mailer
+      // Dispatch directly to server invitation & registration mailer
       try {
         const resp = await fetch(`${baseUrl}/api/invite`, {
           method: 'POST',
@@ -348,16 +370,59 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
             permissions: initialPerms,
             id: memberPayload.id,
             employeeId: memberPayload.id,
+            pan: memberPayload.pan,
+            emergency_contact: memberPayload.emergency_contact,
+            date_of_joining: memberPayload.date_of_joining,
+            notes: memberPayload.notes,
+            upi_id: memberPayload.upi_id,
+            status: memberPayload.status,
+            company: firmName || localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates',
+            company_id: localStorage.getItem('taxpro_firm_tag') || 'TaxPro',
+            firmName: firmName || localStorage.getItem('taxpro_firm_name') || 'TaxPro Advisory & Tax Associates',
+            firmTag: localStorage.getItem('taxpro_firm_tag') || 'TaxPro',
             origin: window.location.origin
           })
         });
 
         const data = await resp.json().catch(() => null);
+        if (data && data.alreadyRegistered) {
+          setIsInviting(false);
+          setDuplicateModalInfo({
+            isOpen: true,
+            email: cleanEmail,
+            name: data.existingName || cleanName,
+            role: data.existingRole || 'Member'
+          });
+          return;
+        }
+
         if (data && (data.success || data.emailDispatched)) {
-          emailSent = true;
+          emailSent = Boolean(data.emailDispatched);
+          if (data.member?.id) {
+            memberPayload.id = data.member.id;
+          }
         }
       } catch (networkErr) {
-        console.warn('[Invite Mailer Network Note]:', networkErr);
+        console.warn('[Invite Mailer Network Note]: Server unavailable, falling back to direct db upsert:', networkErr);
+        // Fallback: direct upsert if server is offline
+        try {
+          const userPayload = {
+            id: `USR-${Date.now().toString().slice(-6)}`,
+            email: cleanEmail,
+            password: effectivePassword,
+            name: cleanName,
+            role: formData.role || 'Employee',
+            company: firmName || 'TaxPro Enterprise',
+            phone: purePhone ? `+91 ${purePhone}` : (formData.phone || null),
+            phone_verified: true,
+            lock_pin: '1234',
+            status: 'Active'
+          };
+          await supabase.from('team_members').upsert([memberPayload], { onConflict: 'email' });
+          await supabase.from('users').upsert([userPayload], { onConflict: 'email' });
+        } catch (dbErr) {
+          console.warn('[Fallback DB upsert error]:', dbErr);
+        }
       }
 
       registeredCredentials = {
@@ -724,11 +789,53 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     if (onShowToast) onShowToast('Record successfully removed.', 'info');
   };
 
+  const [selectedDeptFilter, setSelectedDeptFilter] = useState('All');
+
   const activeMembers = members.filter(m => m.status === 'Active' || m.status === 'Access Revoked');
   const pendingMembers = members.filter(m => m.status === 'Pending Invite');
   const pastMembers = members.filter(m => m.status === 'Old' || m.status === 'Past');
   
   const currentList = activeTab === 'Members' ? activeMembers : activeTab === 'Invitations' ? pendingMembers : activeTab === 'Past' ? pastMembers : [];
+
+  const allDepts = useMemo(() => {
+    const set = new Set();
+    departmentsList.forEach(d => { if (d && d.toLowerCase() !== 'general') set.add(d); });
+    members.forEach(m => { 
+      if (m.department && m.department.toLowerCase() !== 'general' && m.department.toLowerCase() !== 'unassigned') {
+        set.add(m.department); 
+      }
+    });
+    return Array.from(set);
+  }, [departmentsList, members]);
+
+  const displayedMembers = useMemo(() => {
+    if (selectedDeptFilter === 'All') return currentList;
+    if (selectedDeptFilter === 'General') {
+      return currentList.filter(m => !m.department || m.department.toLowerCase() === 'general' || m.department.toLowerCase() === 'unassigned');
+    }
+    return currentList.filter(m => (m.department || '').toLowerCase() === selectedDeptFilter.toLowerCase());
+  }, [currentList, selectedDeptFilter]);
+
+  const handleQuickChangeDept = async (member, newDept) => {
+    try {
+      const { error } = await supabase.from('team_members').update({ department: newDept }).eq('id', member.id);
+      if (error) throw error;
+
+      setMembers(prev => prev.map(m => m.id === member.id ? { ...m, department: newDept } : m));
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      logAuditActivity({
+        action: 'UPDATE_MEMBER_DEPT',
+        module: 'Team Members',
+        details: `Reassigned "${member.name}" to department "${newDept}"`,
+        metadata: { id: member.id, name: member.name, department: newDept }
+      });
+
+      if (onShowToast) onShowToast(`✓ ${member.name} bifurcated into "${newDept}" department!`, 'success');
+    } catch (err) {
+      if (onShowToast) onShowToast(`Failed to update department: ${err.message}`, 'error');
+    }
+  };
 
   const handleArchive = async (e, obj) => {
      e.stopPropagation();
@@ -1610,30 +1717,112 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
           </div>
         </div>
 
+        {/* Department Bifurcation Filter Bar */}
+        <div className="w-full flex items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-gray-200 shadow-2xs overflow-x-auto print:hidden">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5 shrink-0 mr-1">
+              <Building className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Bifurcation:</span>
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setSelectedDeptFilter('All')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                selectedDeptFilter === 'All'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              All Staff ({currentList.length})
+            </button>
+
+            {allDepts.map(deptName => {
+              const count = currentList.filter(m => (m.department || '').toLowerCase() === deptName.toLowerCase()).length;
+              return (
+                <button
+                  key={deptName}
+                  type="button"
+                  onClick={() => setSelectedDeptFilter(deptName)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                    selectedDeptFilter === deptName
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>{deptName}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    selectedDeptFilter === deptName ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-600'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => setSelectedDeptFilter('General')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                selectedDeptFilter === 'General'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span>General Pool</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                selectedDeptFilter === 'General' ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-600'
+              }`}>
+                {currentList.filter(m => !m.department || m.department.toLowerCase() === 'general' || m.department.toLowerCase() === 'unassigned').length}
+              </span>
+            </button>
+          </div>
+
+          <div className="text-[11px] text-slate-400 font-bold shrink-0 hidden md:block">
+            Showing <span className="text-emerald-700 font-black">{displayedMembers.length}</span> of {currentList.length}
+          </div>
+        </div>
+
       </div>
 
       {/* Main Content Board */}
-      {currentList.length === 0 ? (
+      {displayedMembers.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 sm:py-32 opacity-90 bg-white rounded-2xl border border-gray-200 p-6 text-center">
           <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
             <User className="w-8 h-8 text-gray-400" strokeWidth={2.5} />
           </div>
-          <h3 className="text-lg font-black font-outfit text-gray-800 mb-1">No {activeTab.toLowerCase()} found</h3>
-          <p className="text-xs text-gray-500 max-w-sm">Invite new team members or configure staff accounts to populate this workspace.</p>
-          <button
-            type="button"
-            onClick={() => {
-              if (!requireFirmSetup(onShowToast)) return;
-              setIsInviteModalOpen(true);
-            }}
-            className="mt-4 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-md cursor-pointer active:scale-95"
-          >
-            <UserPlus className="w-4 h-4" /> + Add New Team Member
-          </button>
+          <h3 className="text-lg font-black font-outfit text-gray-800 mb-1">
+            {selectedDeptFilter !== 'All' ? `No members found in "${selectedDeptFilter}"` : `No ${activeTab.toLowerCase()} found`}
+          </h3>
+          <p className="text-xs text-gray-500 max-w-sm">
+            {selectedDeptFilter !== 'All' 
+              ? `You can bifurcate existing staff members into ${selectedDeptFilter} from the Departments view or using the department selector below.`
+              : 'Invite new team members or configure staff accounts to populate this workspace.'}
+          </p>
+          {selectedDeptFilter !== 'All' ? (
+            <button
+              type="button"
+              onClick={() => setSelectedDeptFilter('All')}
+              className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+            >
+              Clear Department Filter
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (!requireFirmSetup(onShowToast)) return;
+                setIsInviteModalOpen(true);
+              }}
+              className="mt-4 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-md cursor-pointer active:scale-95"
+            >
+              <UserPlus className="w-4 h-4" /> + Add New Team Member
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {currentList.map(obj => {
+          {displayedMembers.map(obj => {
             const isRevoked = obj.status === 'Access Revoked';
             const isActive = obj.status === 'Active';
 
@@ -1705,12 +1894,28 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                          <span>{obj.phone}</span>
                        </div>
                      )}
-                     {obj.department && (
+                     {/* Department with quick bifurcation selector for admin */}
+                     <div className="flex items-center justify-between gap-2 py-0.5" onClick={e => e.stopPropagation()}>
                        <div className="flex items-center gap-2 truncate">
-                         <Building className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                         <span className="truncate">Dept: {obj.department}</span>
+                         <Building className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                         <span className="truncate text-xs font-semibold text-slate-700">
+                           Dept: <b className="text-slate-900 font-bold">{obj.department || 'General'}</b>
+                         </span>
                        </div>
-                     )}
+                       {isAdmin && departmentsList.length > 0 && (
+                         <select
+                           value={obj.department || 'General'}
+                           onChange={(e) => handleQuickChangeDept(obj, e.target.value)}
+                           className="text-[10px] font-bold py-0.5 px-2 bg-slate-50 hover:bg-white border border-slate-200 rounded-lg text-slate-700 outline-none cursor-pointer focus:border-emerald-500 transition-all max-w-[125px] truncate"
+                           title="Quick Reassign / Bifurcate Department"
+                         >
+                           <option value="General">General Pool</option>
+                           {departmentsList.filter(d => d !== 'General').map(d => (
+                             <option key={d} value={d}>{d}</option>
+                           ))}
+                         </select>
+                       )}
+                     </div>
                      {obj.salary && (
                        <div className="flex items-center gap-2 truncate text-emerald-700 font-bold">
                          <IndianRupee className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
@@ -2056,10 +2261,20 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                         placeholder="e.g. rahul@firm.com"
                         value={formData.email}
                         onChange={(e) => setFormData({...formData, email: e.target.value})}
-                        className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs"
+                        className={`w-full bg-white border rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-800 outline-none transition-colors shadow-2xs ${
+                          members.some(m => (m.email || '').toLowerCase().trim() === (formData.email || '').toLowerCase().trim())
+                            ? 'border-rose-400 focus:border-rose-500 bg-rose-50/20'
+                            : 'border-slate-300 focus:border-indigo-600'
+                        }`}
                         required
                       />
                     </div>
+                    {formData.email && members.some(m => (m.email || '').toLowerCase().trim() === formData.email.toLowerCase().trim()) && (
+                      <div className="mt-1 flex items-center gap-1 text-[11px] text-rose-600 font-semibold">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>Already registered as {members.find(m => (m.email || '').toLowerCase().trim() === formData.email.toLowerCase().trim())?.role || 'Member'}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -2143,12 +2358,14 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-slate-700 block mb-1">UPI ID / VPA</label>
+                    <label className="text-slate-700 block mb-1">
+                      UPI ID / VPA <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>
+                    </label>
                     <div className="relative">
                       <QrCode className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input 
                         type="text" 
-                        placeholder="e.g. rahul@okaxis or 9876543210@paytm"
+                        placeholder="e.g. rahul@okaxis (Optional)"
                         value={formData.upi_id || ''}
                         onChange={(e) => setFormData({...formData, upi_id: e.target.value})}
                         className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
@@ -2156,45 +2373,26 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                     </div>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                  <div>
-                    <label className="text-slate-700 block mb-1">Bank Account Number</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. 50100234567890"
-                      value={formData.bank_account || ''}
-                      onChange={(e) => setFormData({...formData, bank_account: e.target.value})}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-slate-700 block mb-1">IFSC Code</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. HDFC0001234"
-                      value={formData.ifsc || ''}
-                      onChange={(e) => setFormData({...formData, ifsc: e.target.value.toUpperCase()})}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono uppercase shadow-2xs"
-                    />
-                  </div>
-                </div>
               </div>
 
-              {/* SECTION 3: KYC & Compliance */}
+              {/* SECTION 3: KYC & Service Details (Optional) */}
               <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 sm:p-5 flex flex-col gap-3.5 shadow-2xs">
-                <div className="flex items-center gap-2 pb-2 border-b border-slate-200/80 text-slate-900 font-extrabold text-xs uppercase tracking-wider">
-                  <ShieldCheck className="w-4 h-4 text-blue-600" />
-                  <span>3. KYC & Service Details</span>
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                  <div className="flex items-center gap-2 text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                    <ShieldCheck className="w-4 h-4 text-blue-600" />
+                    <span>3. KYC & Service Details</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-md">Optional</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                   <div>
-                    <label className="text-slate-700 block mb-1">Permanent Account Number (PAN)</label>
+                    <label className="text-slate-700 block mb-1">
+                      Permanent Account Number (PAN) <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>
+                    </label>
                     <input 
                       type="text" 
-                      placeholder="e.g. ABCDE1234F"
+                      placeholder="e.g. ABCDE1234F (Optional)"
                       maxLength={10}
                       value={formData.pan || ''}
                       onChange={(e) => setFormData({...formData, pan: e.target.value.toUpperCase()})}
@@ -2203,7 +2401,9 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-slate-700 block mb-1">Date of Joining</label>
+                    <label className="text-slate-700 block mb-1">
+                      Date of Joining <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>
+                    </label>
                     <input 
                       type="date" 
                       value={formData.date_of_joining || ''}
@@ -2213,10 +2413,12 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-slate-700 block mb-1">Emergency Contact Phone</label>
+                    <label className="text-slate-700 block mb-1">
+                      Emergency Contact Phone <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>
+                    </label>
                     <input 
                       type="tel" 
-                      placeholder="e.g. 9811122233"
+                      placeholder="e.g. 9811122233 (Optional)"
                       value={formData.emergency_contact || ''}
                       onChange={(e) => setFormData({...formData, emergency_contact: e.target.value})}
                       className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors font-mono shadow-2xs"
@@ -2280,6 +2482,97 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 
+        ========================================================================
+        DUPLICATE INVITATION PREVENTED MODAL (POP-UP DIALOG)
+        ========================================================================
+      */}
+      {duplicateModalInfo && duplicateModalInfo.isOpen && (
+        <div 
+          onClick={() => setDuplicateModalInfo(null)}
+          className="fixed inset-0 z-[100001] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-rose-200 overflow-hidden animate-modal-smooth flex flex-col"
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-rose-50 to-orange-50 px-6 py-5 border-b border-rose-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shadow-xs">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black font-outfit text-slate-900 tracking-tight">
+                    Account Already Exists
+                  </h3>
+                  <p className="text-[11px] text-rose-600 font-extrabold uppercase tracking-wide">
+                    Duplicate Invitation Prevented
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDuplicateModalInfo(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-white/80 transition-colors cursor-pointer"
+                title="Close Alert"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 flex flex-col gap-4 text-xs">
+              <p className="text-slate-600 leading-relaxed font-medium">
+                The invitation cannot be dispatched because an account with this email address already exists in the system:
+              </p>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col gap-2.5">
+                <div className="flex items-center justify-between py-1 border-b border-slate-200/80">
+                  <span className="text-slate-500 font-bold">Target Email:</span>
+                  <span className="font-mono font-bold text-slate-900 break-all">{duplicateModalInfo.email}</span>
+                </div>
+                {duplicateModalInfo.name && (
+                  <div className="flex items-center justify-between py-1 border-b border-slate-200/80">
+                    <span className="text-slate-500 font-bold">Existing Member:</span>
+                    <span className="font-bold text-slate-800">{duplicateModalInfo.name}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-slate-500 font-bold">Registered Role:</span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                    {duplicateModalInfo.role || 'Active Member'}
+                  </span>
+                </div>
+                {duplicateModalInfo.department && (
+                  <div className="flex items-center justify-between py-1 border-t border-slate-200/80">
+                    <span className="text-slate-500 font-bold">Department:</span>
+                    <span className="font-semibold text-slate-700">{duplicateModalInfo.department}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-[11px] text-amber-900 flex items-start gap-2.5 leading-relaxed">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Why was this blocked?</strong> System policy prevents multiple accounts with the same email address to protect role permissions and authentication integrity. Please enter a different email address or edit this member directly in the Team Directory.
+                </span>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDuplicateModalInfo(null)}
+                  className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <span>Understood — Change Email Address</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

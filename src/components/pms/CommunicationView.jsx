@@ -699,6 +699,20 @@ export default function CommunicationView({ onShowToast }) {
     if (onShowToast) onShowToast('✓ Notice receipt acknowledged!', 'success');
   };
 
+  // Mark All Notices & Circulars as Read / Acknowledged
+  const handleMarkAllAsRead = () => {
+    if (!notices || notices.length === 0) return;
+    const updated = notices.map(n => {
+      const currentAck = n.acknowledgedBy || [];
+      if (!currentAck.includes(currentUserEmail)) {
+        return { ...n, acknowledgedBy: [...currentAck, currentUserEmail] };
+      }
+      return n;
+    });
+    saveNotices(updated);
+    if (onShowToast) onShowToast('✓ All Firm Notices & Circulars marked as read & acknowledged!', 'success');
+  };
+
   // Filtered Notices Memo
   const filteredNotices = useMemo(() => {
     return notices
@@ -1225,12 +1239,33 @@ export default function CommunicationView({ onShowToast }) {
             <div className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">Your Acknowledged</span>
-                <h3 className="text-2xl font-black font-outfit text-emerald-900 mt-1">{acknowledgedCount} / {notices.length}</h3>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <h3 className="text-2xl font-black font-outfit text-emerald-900">{acknowledgedCount} / {notices.length}</h3>
+                  {acknowledgedCount < notices.length && notices.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllAsRead}
+                      className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 underline cursor-pointer"
+                    >
+                      Mark All Read
+                    </button>
+                  )}
+                </div>
                 <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">Confirmed read status</p>
               </div>
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={handleMarkAllAsRead}
+                disabled={notices.length === 0 || acknowledgedCount === notices.length}
+                title="Mark all notices as read"
+                className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all cursor-pointer ${
+                  acknowledgedCount === notices.length && notices.length > 0
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:scale-105 active:scale-95'
+                }`}
+              >
                 <CheckCheck className="w-6 h-6" />
-              </div>
+              </button>
             </div>
 
           </div>
@@ -1239,7 +1274,7 @@ export default function CommunicationView({ onShowToast }) {
           <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-xs flex flex-col gap-5">
             
             {/* Search & Category Filter Toolbar */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-gray-100 pb-5">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 border-b border-gray-100 pb-5">
               
               {/* Search Bar */}
               <div className="relative w-full sm:w-80">
@@ -1253,25 +1288,43 @@ export default function CommunicationView({ onShowToast }) {
                 />
               </div>
 
-              {/* Filter Tabs */}
-              <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 scrollbar-none text-xs">
-                {['All', 'Urgent', 'Compliance Alert', 'General', 'Holiday / Event'].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setNoticeFilter(tab)}
-                    className={`px-3 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer ${
-                      noticeFilter === tab 
-                        ? 'bg-[#5b52e0] text-white shadow-xs' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {tab === 'Urgent' && '🚨 '}
-                    {tab === 'Compliance Alert' && '⚖️ '}
-                    {tab === 'General' && '📢 '}
-                    {tab === 'Holiday / Event' && '🏖️ '}
-                    {tab}
-                  </button>
-                ))}
+              {/* Filter Tabs & Mark All Button */}
+              <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 scrollbar-none text-xs flex-wrap">
+                <div className="flex items-center gap-1.5 overflow-x-auto">
+                  {['All', 'Urgent', 'Compliance Alert', 'General', 'Holiday / Event'].map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setNoticeFilter(tab)}
+                      className={`px-3 py-1.5 rounded-xl font-bold transition-all shrink-0 cursor-pointer ${
+                        noticeFilter === tab 
+                          ? 'bg-[#5b52e0] text-white shadow-xs' 
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {tab === 'Urgent' && '🚨 '}
+                      {tab === 'Compliance Alert' && '⚖️ '}
+                      {tab === 'General' && '📢 '}
+                      {tab === 'Holiday / Event' && '🏖️ '}
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Mark All as Read Action Button */}
+                <button
+                  type="button"
+                  onClick={handleMarkAllAsRead}
+                  disabled={notices.length === 0 || acknowledgedCount === notices.length}
+                  className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shrink-0 transition-all shadow-2xs cursor-pointer ${
+                    acknowledgedCount === notices.length && notices.length > 0
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 opacity-80 cursor-default'
+                      : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/20 active:scale-95'
+                  }`}
+                  title="Mark all circulars and notices as read"
+                >
+                  <CheckCheck className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>{acknowledgedCount === notices.length && notices.length > 0 ? 'All Read ✓' : 'Mark All as Read'}</span>
+                </button>
               </div>
 
             </div>

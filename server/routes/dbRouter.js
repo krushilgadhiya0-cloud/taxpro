@@ -1,5 +1,5 @@
 import express from 'express';
-import { query } from '../db.js';
+import { query, recordMutation } from '../db.js';
 
 const router = express.Router();
 
@@ -36,7 +36,8 @@ const ALLOWED_TABLES = new Set([
   'daily_revenue',
   'leaves',
   'companies',
-  'audit_logs'
+  'audit_logs',
+  'settings'
 ]);
 
 const validateTable = (req, res, next) => {
@@ -58,9 +59,32 @@ const unwrapStorageData = (data) => {
 };
 
 // ==========================================
-// 1. APP STORAGE KEY-VALUE SYNC (/api/db/storage-all & /api/db/storage/:key)
+// 1. REAL-TIME SYNC HEARTBEAT & STORAGE SYNC
 // (Must precede /:table to prevent route collision)
 // ==========================================
+router.get('/sync-heartbeat', async (req, res) => {
+  try {
+    const result = await query('SELECT last_mutated_at, mutated_table, mutated_key FROM db_mutation_tracker WHERE id = $1 LIMIT 1', ['global']);
+    if (result.rowCount > 0) {
+      const row = result.rows[0];
+      return res.json({
+        success: true,
+        lastMutatedAt: row.last_mutated_at,
+        table: row.mutated_table,
+        key: row.mutated_key,
+        serverTime: new Date().toISOString()
+      });
+    }
+    res.json({
+      success: true,
+      lastMutatedAt: new Date().toISOString(),
+      serverTime: new Date().toISOString()
+    });
+  } catch (err) {
+    res.json({ success: true, lastMutatedAt: new Date().toISOString() });
+  }
+});
+
 router.get('/storage-all', async (req, res) => {
   try {
     const result = await query('SELECT key, data FROM app_storage');
@@ -100,6 +124,8 @@ router.post('/storage/:key', async (req, res) => {
     `, [key, JSON.stringify(payload)]);
 
     res.json({ success: true, data: result.rows[0].data });
+    // Record mutation for background real-time sync
+    recordMutation('app_storage', key).catch(() => {});
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -284,6 +310,8 @@ router.post('/:table', validateTable, async (req, res) => {
       count: insertedRows.length,
       data: Array.isArray(payload) ? insertedRows : insertedRows[0]
     });
+    // Record mutation for background real-time sync
+    recordMutation(table).catch(() => {});
   } catch (err) {
     console.error(`[dbRouter POST /${table}] Error:`, err.message);
     res.status(500).json({ success: false, error: err.message });
@@ -366,6 +394,8 @@ const handleUpdate = async (req, res) => {
     `;
 
     const result = await query(sql, values);
+    // Record mutation for background real-time sync
+    recordMutation(table).catch(() => {});
     res.json({
       success: true,
       count: result.rowCount,
@@ -424,10 +454,12 @@ const handleDelete = async (req, res) => {
     `;
 
     const result = await query(sql, values);
+    // Record mutation for background real-time sync
+    recordMutation(table).catch(() => {});
     res.json({
       success: true,
-      deletedCount: result.rowCount,
-      data: result.rows
+      count: result.rowCount,
+      deleted: result.rows
     });
   } catch (err) {
     console.error(`[dbRouter DELETE /${table}] Error:`, err.message);

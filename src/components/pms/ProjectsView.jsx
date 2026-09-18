@@ -466,6 +466,64 @@ export default function ProjectsView({ onShowToast }) {
     if (onShowToast) onShowToast(`Downloaded tasks for ${openProject.name}`, 'success');
   };
 
+  const handleImportTasksCsv = (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !openProject) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result;
+        if (!text || typeof text !== 'string') return;
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+        if (lines.length <= 1) {
+          if (onShowToast) onShowToast('CSV file is empty or missing data rows.', 'warning');
+          return;
+        }
+
+        const startIndex = lines[0].toLowerCase().includes('task') || lines[0].toLowerCase().includes('description') ? 1 : 0;
+        const newTasks = [];
+        for (let i = startIndex; i < lines.length; i++) {
+          const raw = lines[i];
+          const cols = raw.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || raw.split(',');
+          const cleanCol = (idx) => (cols[idx] || '').replace(/^"|"$/g, '').trim();
+          const title = cleanCol(0);
+          const assignee = cleanCol(1) || 'Unassigned';
+          if (!title) continue;
+
+          newTasks.push({
+            id: `PT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            title,
+            assignee,
+            createdAt: formatDate(new Date()),
+            completed: false,
+            importedToTasks: false
+          });
+        }
+
+        if (newTasks.length === 0) {
+          if (onShowToast) onShowToast('No valid task titles found in CSV.', 'warning');
+          return;
+        }
+
+        const updatedTasks = [...(openProject.tasks || []), ...newTasks];
+        setProjectsList(prev => prev.map(p => p.id === openProject.id ? { ...p, tasks: updatedTasks } : p));
+        setOpenProject(prev => ({ ...prev, tasks: updatedTasks }));
+
+        try {
+          await supabase.from('projects').update({ tasks: updatedTasks }).eq('id', String(openProject.id));
+        } catch (err) {}
+
+        window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+        if (onShowToast) onShowToast(`✓ Successfully imported ${newTasks.length} tasks into project checklist!`, 'success');
+      } catch (err) {
+        if (onShowToast) onShowToast(`Failed to parse CSV: ${err.message}`, 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const getFilteredProjects = () => {
     let filtered = projectsList;
     if (activeFilter !== 'All') {
@@ -1105,9 +1163,23 @@ export default function ProjectsView({ onShowToast }) {
               </div>
               
               <div className="flex items-center gap-2">
+                <label 
+                  className="p-1.5 text-slate-700 hover:text-teal-700 hover:bg-teal-50 rounded-xl transition-colors bg-white border border-slate-200 flex items-center gap-1 px-2.5 text-xs font-bold cursor-pointer shadow-2xs"
+                  title="Import tasks from a CSV file into this project"
+                >
+                  <UploadCloud className="w-3.5 h-3.5 text-teal-600" />
+                  <span>Import CSV</span>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={handleImportTasksCsv}
+                  />
+                </label>
                 <button 
                   onClick={handleDownloadTasks}
                   className="p-1.5 text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 rounded-xl transition-colors bg-white border border-slate-200 flex items-center gap-1 px-2.5 text-xs font-bold cursor-pointer shadow-2xs"
+                  title="Download project tasks as CSV"
                 >
                   <Download className="w-3.5 h-3.5" /> CSV
                 </button>

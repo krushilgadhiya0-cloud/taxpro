@@ -49,6 +49,28 @@ export default function MemberAttendanceDossierModal({
   const [activeTab, setActiveTab] = useState('yearly_matrix'); // 'yearly_matrix' | 'daily_calendar'
   const [isFullScreen, setIsFullScreen] = useState(true); // Default to full-screen big page layout
 
+  // Reactive trigger for salary cut changes
+  const [cutsTrigger, setCutsTrigger] = useState(0);
+
+  // Cut Amount Modal States
+  const [isCutModalOpen, setIsCutModalOpen] = useState(false);
+  const [cutTargetMonth, setCutTargetMonth] = useState(null);
+  const [cutAmountInput, setCutAmountInput] = useState('');
+  const [cutReasonInput, setCutReasonInput] = useState('');
+
+  // Listen to custom cuts update events from anywhere in the app
+  React.useEffect(() => {
+    const handleCutsUpdated = () => {
+      setCutsTrigger(prev => prev + 1);
+    };
+    window.addEventListener('taxpro_attendance_custom_cuts_updated', handleCutsUpdated);
+    window.addEventListener('taxpro_db_updated', handleCutsUpdated);
+    return () => {
+      window.removeEventListener('taxpro_attendance_custom_cuts_updated', handleCutsUpdated);
+      window.removeEventListener('taxpro_db_updated', handleCutsUpdated);
+    };
+  }, []);
+
   // Custom cuts from localStorage
   const customSalaryCuts = useMemo(() => {
     try {
@@ -56,7 +78,7 @@ export default function MemberAttendanceDossierModal({
     } catch(e) {
       return {};
     }
-  }, []);
+  }, [cutsTrigger]);
 
   const MONTH_NAMES = [
     { num: '01', name: 'January', days: 31, short: 'Jan' },
@@ -280,6 +302,65 @@ export default function MemberAttendanceDossierModal({
     }
   };
 
+  // CUT AMOUNT / SALARY DEDUCTION HANDLERS
+  const handleOpenCutModal = (monthData) => {
+    setCutTargetMonth(monthData);
+    setCutAmountInput(monthData.hasCustomCut ? String(monthData.finalCutAmount) : (monthData.autoCalculatedCut > 0 ? String(monthData.autoCalculatedCut) : ''));
+    
+    const cuts = JSON.parse(localStorage.getItem('taxpro_attendance_custom_cuts') || '{}');
+    const existing = cuts[`${monthData.cycleKey}_${member.id}`];
+    setCutReasonInput(existing?.reason || 'Performance / Absence deduction');
+    setIsCutModalOpen(true);
+  };
+
+  const handleSaveCut = (e) => {
+    if (e) e.preventDefault();
+    if (!cutTargetMonth) return;
+
+    const val = Number(cutAmountInput);
+    if (isNaN(val) || val < 0) {
+      if (onShowToast) onShowToast('Please enter a valid cut amount (₹0 or more)', 'error');
+      return;
+    }
+
+    try {
+      const cuts = JSON.parse(localStorage.getItem('taxpro_attendance_custom_cuts') || '{}');
+      const cutKey = `${cutTargetMonth.cycleKey}_${member.id}`;
+      cuts[cutKey] = {
+        customAmount: val,
+        reason: cutReasonInput.trim() || 'Manual salary cut',
+        updatedAt: new Date().toISOString()
+      };
+      localStorage.setItem('taxpro_attendance_custom_cuts', JSON.stringify(cuts));
+      setCutsTrigger(prev => prev + 1);
+      window.dispatchEvent(new CustomEvent('taxpro_attendance_custom_cuts_updated'));
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      if (onShowToast) onShowToast(`✓ Salary cut of ₹${val.toLocaleString('en-IN')} applied for ${cutTargetMonth.monthName} ${selectedYear}`, 'success');
+      setIsCutModalOpen(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleResetCut = () => {
+    if (!cutTargetMonth) return;
+    try {
+      const cuts = JSON.parse(localStorage.getItem('taxpro_attendance_custom_cuts') || '{}');
+      const cutKey = `${cutTargetMonth.cycleKey}_${member.id}`;
+      delete cuts[cutKey];
+      localStorage.setItem('taxpro_attendance_custom_cuts', JSON.stringify(cuts));
+      setCutsTrigger(prev => prev + 1);
+      window.dispatchEvent(new CustomEvent('taxpro_attendance_custom_cuts_updated'));
+      window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+
+      if (onShowToast) onShowToast(`✓ Reset salary cut for ${cutTargetMonth.monthName} to auto-calculation`, 'info');
+      setIsCutModalOpen(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   // PRINT DOSSIER
   const handlePrintDossier = () => {
     logAuditActivity({
@@ -303,15 +384,19 @@ export default function MemberAttendanceDossierModal({
   return (
     <div 
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      className={`fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col justify-start items-center overflow-y-auto ${
-        isFullScreen ? 'p-0' : 'p-3 sm:p-6'
+      className={`fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md overflow-y-auto ${
+        isFullScreen ? 'p-0' : 'p-3 sm:p-6 flex justify-center items-start'
       } print:p-0 print:bg-white`}
+      style={{ backgroundColor: 'rgba(2, 6, 23, 0.85)' }}
     >
-      <div className={`w-full bg-white text-slate-800 animate-page-fade flex flex-col ${
-        isFullScreen 
-          ? 'min-h-screen max-w-full rounded-none' 
-          : 'max-w-6xl rounded-3xl shadow-2xl border border-slate-200 my-4'
-      } print:m-0 print:border-none print:shadow-none print:max-w-full`}>
+      <div 
+        className={`w-full bg-white text-slate-800 animate-page-fade flex flex-col ${
+          isFullScreen 
+            ? 'min-h-full max-w-full rounded-none' 
+            : 'max-w-6xl rounded-3xl shadow-2xl border border-slate-200 my-4 shrink-0'
+        } print:m-0 print:border-none print:shadow-none print:max-w-full`}
+        style={{ backgroundColor: '#ffffff', minHeight: '100%' }}
+      >
         
         {/* ========================================================================= */}
         {/* 1. MEMBER HERO PROFILE HEADER */}
@@ -473,22 +558,27 @@ export default function MemberAttendanceDossierModal({
         {/* 3. TAB 1: 12-MONTH YEARLY MATRIX TABLE */}
         {/* ========================================================================= */}
         {activeTab === 'yearly_matrix' && (
-          <div className="p-4 sm:p-8 space-y-6 flex-1 print:hidden">
-            <div className="flex items-center justify-between">
+          <div className="p-4 sm:p-8 space-y-6 flex-1 bg-white print:hidden" style={{ backgroundColor: '#ffffff' }}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
               <div>
                 <h3 className="font-black text-base text-slate-900 flex items-center gap-2 font-outfit">
                   <Scissors className="w-4 h-4 text-indigo-600" />
                   <span>Annual Month-by-Month Attendance & Salary Cut Ledger ({selectedYear})</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  <b>Policy Notice:</b> Approved Leaves (`On Leave`) are 100% paid without salary cut. Deductions apply exclusively to Unexcused Absents and Half Days.
+                  <b>Policy Notice:</b> Approved Leaves (`On Leave`) are 100% paid without salary cut. Deductions apply exclusively to Unexcused Absents, Half Days, or custom deductions.
                 </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[11px] font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                  ✂️ Click <strong>"Cut"</strong> icon in any month to customize deduction
+                </span>
               </div>
             </div>
 
-            <div className="overflow-x-auto border border-slate-200 rounded-3xl shadow-xs">
-              <table className="w-full text-left text-xs">
-                <thead>
+            <div className="overflow-x-auto border border-slate-200 rounded-3xl shadow-xs bg-white" style={{ backgroundColor: '#ffffff' }}>
+              <table className="w-full text-left text-xs bg-white" style={{ backgroundColor: '#ffffff' }}>
+                <thead style={{ backgroundColor: '#f8fafc' }}>
                   <tr className="bg-slate-100/90 border-b border-slate-200 text-slate-700 font-black uppercase text-[10px] tracking-wider">
                     <th className="p-4">Month Cycle</th>
                     <th className="p-4 text-center">Working Days</th>
@@ -502,11 +592,11 @@ export default function MemberAttendanceDossierModal({
                     <th className="p-4 text-center">Disbursal Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-mono">
+                <tbody className="divide-y divide-slate-100 font-mono bg-white" style={{ backgroundColor: '#ffffff' }}>
                   {yearlyMonthsData.map(m => (
-                    <tr key={m.monthNum} className="hover:bg-slate-50/80 transition-colors font-sans">
+                    <tr key={m.monthNum} className="bg-white hover:bg-slate-50/90 transition-colors font-sans border-b border-slate-100" style={{ backgroundColor: '#ffffff' }}>
                       
-                      <td className="p-4 font-bold text-slate-900">
+                      <td className="p-4 font-bold text-slate-900 bg-white" style={{ backgroundColor: '#ffffff' }}>
                         <div className="flex items-center gap-2.5">
                           <span className="w-7 h-7 rounded-xl bg-indigo-50 text-indigo-700 font-mono font-black text-xs flex items-center justify-center border border-indigo-100">
                             {m.monthNum}
@@ -515,15 +605,15 @@ export default function MemberAttendanceDossierModal({
                         </div>
                       </td>
 
-                      <td className="p-4 text-center font-mono text-slate-600 font-bold text-sm">
+                      <td className="p-4 text-center font-mono text-slate-600 font-bold text-sm bg-white" style={{ backgroundColor: '#ffffff' }}>
                         {m.workingDays}
                       </td>
 
-                      <td className="p-4 text-center font-mono font-black text-emerald-700 text-sm">
+                      <td className="p-4 text-center font-mono font-black text-emerald-700 text-sm bg-white" style={{ backgroundColor: '#ffffff' }}>
                         {m.presentCount}
                       </td>
 
-                      <td className="p-4 text-center font-mono">
+                      <td className="p-4 text-center font-mono bg-white" style={{ backgroundColor: '#ffffff' }}>
                         {m.onLeaveCount > 0 ? (
                           <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-black text-[11px]">
                             {m.onLeaveCount} (Paid)
@@ -533,11 +623,11 @@ export default function MemberAttendanceDossierModal({
                         )}
                       </td>
 
-                      <td className="p-4 text-center font-mono font-bold text-amber-700">
+                      <td className="p-4 text-center font-mono font-bold text-amber-700 bg-white" style={{ backgroundColor: '#ffffff' }}>
                         {m.halfDayCount > 0 ? `${m.halfDayCount} (-0.5x)` : '-'}
                       </td>
 
-                      <td className="p-4 text-center font-mono">
+                      <td className="p-4 text-center font-mono bg-white" style={{ backgroundColor: '#ffffff' }}>
                         {m.absentCount > 0 ? (
                           <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 font-black text-[11px]">
                             {m.absentCount} (-1.0x)
@@ -547,26 +637,36 @@ export default function MemberAttendanceDossierModal({
                         )}
                       </td>
 
-                      <td className="p-4 text-right font-mono text-slate-500 text-xs">
+                      <td className="p-4 text-right font-mono text-slate-500 text-xs bg-white" style={{ backgroundColor: '#ffffff' }}>
                         ₹{Math.round(m.dailyRate).toLocaleString('en-IN')}/day
                       </td>
 
-                      <td className="p-4 text-right font-mono font-black text-sm">
-                        <span className={m.finalCutAmount > 0 ? 'text-rose-600' : 'text-slate-400'}>
-                          {m.finalCutAmount > 0 ? `-₹${m.finalCutAmount.toLocaleString('en-IN')}` : '₹0'}
-                        </span>
-                        {m.hasCustomCut && (
-                          <span className="ml-1.5 px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 text-[8px] font-black uppercase font-mono">
-                            Custom
+                      <td className="p-4 text-right font-mono font-black text-sm bg-white" style={{ backgroundColor: '#ffffff' }}>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span className={m.finalCutAmount > 0 ? 'text-rose-600' : 'text-slate-400'}>
+                            {m.finalCutAmount > 0 ? `-₹${m.finalCutAmount.toLocaleString('en-IN')}` : '₹0'}
                           </span>
-                        )}
+                          {m.hasCustomCut && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[8px] font-black uppercase font-mono">
+                              Custom
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCutModal(m)}
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-700 border border-slate-200 cursor-pointer transition-colors shadow-2xs"
+                            title={`Cut or edit salary deduction for ${m.monthName} ${selectedYear}`}
+                          >
+                            <Scissors className="w-3 h-3 text-rose-600" />
+                          </button>
+                        </div>
                       </td>
 
-                      <td className="p-4 text-right font-mono font-black text-emerald-700 text-base">
+                      <td className="p-4 text-right font-mono font-black text-emerald-700 text-base bg-white" style={{ backgroundColor: '#ffffff' }}>
                         ₹{m.netPayable.toLocaleString('en-IN')}
                       </td>
 
-                      <td className="p-4 text-center">
+                      <td className="p-4 text-center bg-white" style={{ backgroundColor: '#ffffff' }}>
                         {m.isPaid ? (
                           <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 font-mono font-black text-[10px] inline-flex items-center gap-1">
                             <Check className="w-3.5 h-3.5" /> Disbursed
@@ -615,7 +715,7 @@ export default function MemberAttendanceDossierModal({
         {/* 4. TAB 2: MONTHLY CALENDAR & DAILY PUNCH LOGS */}
         {/* ========================================================================= */}
         {activeTab === 'daily_calendar' && (
-          <div className="p-4 sm:p-8 space-y-6 flex-1 print:hidden">
+          <div className="p-4 sm:p-8 space-y-6 flex-1 bg-white print:hidden" style={{ backgroundColor: '#ffffff' }}>
             
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
               <div>
@@ -641,9 +741,9 @@ export default function MemberAttendanceDossierModal({
               </div>
             </div>
 
-            <div className="overflow-x-auto border border-slate-200 rounded-3xl shadow-xs max-h-[580px] overflow-y-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="sticky top-0 bg-slate-100 z-10">
+            <div className="overflow-x-auto border border-slate-200 rounded-3xl shadow-xs max-h-[580px] overflow-y-auto bg-white" style={{ backgroundColor: '#ffffff' }}>
+              <table className="w-full text-left text-xs bg-white" style={{ backgroundColor: '#ffffff' }}>
+                <thead className="sticky top-0 bg-slate-100 z-10" style={{ backgroundColor: '#f1f5f9' }}>
                   <tr className="border-b border-slate-200 text-slate-700 font-black uppercase text-[10px] tracking-wider">
                     <th className="p-3.5">Date</th>
                     <th className="p-3.5">Day</th>
@@ -652,9 +752,9 @@ export default function MemberAttendanceDossierModal({
                     <th className="p-3.5 text-center">⚡ Instant 1-Click Status Override</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 bg-white" style={{ backgroundColor: '#ffffff' }}>
                   {monthDailyCalendar.map(day => (
-                    <tr key={day.dateStr} className={`hover:bg-slate-50 ${day.isSunday ? 'bg-slate-50/60' : ''}`}>
+                    <tr key={day.dateStr} className={`hover:bg-slate-50 border-b border-slate-100 ${day.isSunday ? 'bg-slate-50/60' : 'bg-white'}`} style={{ backgroundColor: day.isSunday ? '#f8fafc' : '#ffffff' }}>
                       
                       <td className="p-3.5 font-mono font-black text-slate-900 text-xs">
                         {day.dateStr}
@@ -862,6 +962,169 @@ export default function MemberAttendanceDossierModal({
         </div>
 
       </div>
+
+      {/* ========================================================================= */}
+      {/* 6. INLINE SALARY CUT / DEDUCTION MODAL */}
+      {/* ========================================================================= */}
+      {isCutModalOpen && cutTargetMonth && (
+        <div 
+          onClick={(e) => { if (e.target === e.currentTarget) setIsCutModalOpen(false); }}
+          className="fixed inset-0 z-[100] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 print:hidden"
+        >
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-modal-smooth flex flex-col">
+            <div className="px-6 py-4.5 bg-gradient-to-r from-rose-600 to-amber-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Scissors className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-sm text-white">Cut Salary Amount</h4>
+                  <p className="text-[11px] text-white/80">{member.name} • {cutTargetMonth.monthName} {selectedYear}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCutModalOpen(false)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCut} className="p-6 space-y-4 text-xs font-semibold">
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-1.5">
+                <div className="flex justify-between text-slate-600">
+                  <span>Monthly Base Salary:</span>
+                  <span className="font-mono font-black text-slate-900">₹{baseSalary.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Daily Rate ({cutTargetMonth.workingDays} days):</span>
+                  <span className="font-mono text-slate-900">₹{Math.round(cutTargetMonth.dailyRate).toLocaleString('en-IN')}/day</span>
+                </div>
+                <div className="flex justify-between text-slate-500 text-[11px]">
+                  <span>Auto Attendance Cut ({cutTargetMonth.absentCount}A, {cutTargetMonth.halfDayCount}HD):</span>
+                  <span className="font-mono font-bold">₹{cutTargetMonth.autoCalculatedCut.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div>
+                <label className="text-slate-700 block mb-1.5 text-[11px] font-bold">Quick Deduction Presets</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput(String(Math.round(cutTargetMonth.dailyRate)))}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -1 Day (₹{Math.round(cutTargetMonth.dailyRate)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput(String(Math.round(cutTargetMonth.dailyRate * 2)))}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -2 Days (₹{Math.round(cutTargetMonth.dailyRate * 2)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput('500')}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -₹500 Flat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput('1000')}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -₹1,000 Flat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput('2000')}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    -₹2,000 Flat
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCutAmountInput('0')}
+                    className="p-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[10px] font-bold cursor-pointer transition-all"
+                  >
+                    ₹0 (No Cut)
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Input */}
+              <div>
+                <label className="text-slate-700 block mb-1 text-[11px] font-bold">Cut Amount (₹) <span className="text-rose-500">*</span></label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={baseSalary}
+                    value={cutAmountInput}
+                    onChange={e => setCutAmountInput(e.target.value)}
+                    placeholder="Enter amount to deduct"
+                    className="w-full pl-8 pr-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-rose-500 font-mono font-black text-sm text-slate-900 shadow-2xs"
+                    autoFocus
+                  />
+                </div>
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="text-slate-700 block mb-1 text-[11px] font-bold">Reason for Cut / Deduction</label>
+                <input
+                  type="text"
+                  value={cutReasonInput}
+                  onChange={e => setCutReasonInput(e.target.value)}
+                  placeholder="e.g. Late arrivals, unexcused absence, loan/advance cut"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:border-rose-500 font-medium text-xs text-slate-800 shadow-2xs"
+                />
+              </div>
+
+              {/* Net preview */}
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                <span className="text-emerald-900 font-bold">Resulting Net Payable:</span>
+                <span className="font-mono font-black text-emerald-800 text-sm">
+                  ₹{Math.max(0, baseSalary - (Number(cutAmountInput) || 0)).toLocaleString('en-IN')}
+                </span>
+              </div>
+
+              <div className="pt-2 flex items-center justify-between gap-2">
+                {cutTargetMonth.hasCustomCut && (
+                  <button
+                    type="button"
+                    onClick={handleResetCut}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                  >
+                    Reset to Auto
+                  </button>
+                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsCutModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs cursor-pointer shadow-md shadow-rose-600/20"
+                  >
+                    Apply Cut
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -91,9 +91,30 @@ export async function initDatabase() {
       emergency_contact TEXT,
       date_of_joining TEXT,
       notes TEXT,
+      company TEXT DEFAULT 'TaxPro Enterprise',
+      company_id TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- User Active Sessions & Devices Table (Security & Credentials Device Control)
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id TEXT PRIMARY KEY,
+      user_email TEXT NOT NULL,
+      session_token TEXT NOT NULL,
+      device_id TEXT,
+      device_name TEXT,
+      device_type TEXT DEFAULT 'desktop',
+      os_name TEXT,
+      browser_name TEXT,
+      ip_address TEXT DEFAULT '127.0.0.1',
+      location TEXT DEFAULT 'Active Session',
+      is_revoked BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      last_active TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_email ON user_sessions(user_email);
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
 
     -- Departments Table
     CREATE TABLE IF NOT EXISTS departments (
@@ -457,6 +478,14 @@ export async function initDatabase() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    -- Standard Settings Table (for settings key-value pairs)
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     -- Audit & Activity Logs Table
     CREATE TABLE IF NOT EXISTS audit_logs (
       id TEXT PRIMARY KEY,
@@ -487,6 +516,14 @@ export async function initDatabase() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    -- Real-time Sync & Mutation Tracking Table
+    CREATE TABLE IF NOT EXISTS db_mutation_tracker (
+      id TEXT PRIMARY KEY,
+      last_mutated_at TIMESTAMPTZ DEFAULT NOW(),
+      mutated_table TEXT,
+      mutated_key TEXT
+    );
+
     -- AI Action Audit Logs Table
     CREATE TABLE IF NOT EXISTS ai_action_logs (
       id TEXT PRIMARY KEY,
@@ -512,6 +549,13 @@ export async function initDatabase() {
   try {
     await query(schemaSQL);
 
+    // Ensure initial tracker row exists
+    await query(`
+      INSERT INTO db_mutation_tracker (id, last_mutated_at)
+      VALUES ('global', NOW())
+      ON CONFLICT (id) DO NOTHING;
+    `);
+
     // Run dynamic column alterations to ensure existing database gains all new fields
     try {
       await query(`
@@ -524,6 +568,7 @@ export async function initDatabase() {
         ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS pincode TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT DEFAULT 'TaxPro Enterprise';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
         ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
@@ -536,6 +581,8 @@ export async function initDatabase() {
         ALTER TABLE team_members ADD COLUMN IF NOT EXISTS emergency_contact TEXT;
         ALTER TABLE team_members ADD COLUMN IF NOT EXISTS date_of_joining TEXT;
         ALTER TABLE team_members ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS company TEXT DEFAULT 'TaxPro Enterprise';
+        ALTER TABLE team_members ADD COLUMN IF NOT EXISTS company_id TEXT;
         ALTER TABLE team_members ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
         -- Departments column migrations
@@ -905,3 +952,20 @@ async function seedInitialData() {
     console.error('[PostgreSQL Engine] Seeding warning:', err.message);
   }
 }
+
+// Record a database mutation for real-time heartbeat synchronization
+export const recordMutation = async (table = 'unknown', key = null) => {
+  try {
+    await query(`
+      INSERT INTO db_mutation_tracker (id, last_mutated_at, mutated_table, mutated_key)
+      VALUES ('global', NOW(), $1, $2)
+      ON CONFLICT (id) DO UPDATE SET
+        last_mutated_at = NOW(),
+        mutated_table = EXCLUDED.mutated_table,
+        mutated_key = EXCLUDED.mutated_key;
+    `, [table, key ? String(key) : null]);
+  } catch (err) {
+    // Non-blocking mutation record
+  }
+};
+

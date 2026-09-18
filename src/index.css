@@ -55,6 +55,13 @@ body {
   flex-direction: column;
 }
 
+/* Smooth Language Switching Transition */
+html.taxpro-lang-switching body {
+  opacity: 0.92;
+  transition: opacity 0.25s ease-in-out, filter 0.25s ease-in-out;
+  filter: blur(0.5px);
+}
+
 /* ChatGPT Style Custom Dark Scrollbar */
 .chat-custom-scrollbar {
   scrollbar-width: thin;
@@ -1258,3 +1265,69 @@ html.dark-mode-global table tbody tr:hover {
   left: 35%;
   width: 30%;
 }
+
+/* ==========================================================================
+   Smooth Language Switching Transition & Multilingual UI Effects
+   ========================================================================== */
+html.taxpro-lang-switching body {
+  opacity: 0.72;
+  filter: blur(1.5px);
+  transform: scale(0.998);
+  pointer-events: none;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+              filter 0.22s cubic-bezier(0.16, 1, 0.3, 1), 
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body {
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), 
+              filter 0.35s cubic-bezier(0.16, 1, 0.3, 1), 
+              transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Custom Scrollbar for Language Dropdown matching user screenshot */
+.taxpro-lang-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #52525b #f4f4f5;
+}
+.taxpro-lang-scrollbar::-webkit-scrollbar {
+  width: 7px;
+}
+.taxpro-lang-scrollbar::-webkit-scrollbar-track {
+  background: #f4f4f5;
+  border-radius: 8px;
+}
+.taxpro-lang-scrollbar::-webkit-scrollbar-thumb {
+  background: #52525b;
+  border-radius: 8px;
+  border: 1.5px solid #f4f4f5;
+}
+.taxpro-lang-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #27272a;
+}
+.dark .taxpro-lang-scrollbar {
+  scrollbar-color: #71717a #1e293b;
+}
+.dark .taxpro-lang-scrollbar::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+.dark .taxpro-lang-scrollbar::-webkit-scrollbar-thumb {
+  background: #71717a;
+  border: 1.5px solid #1e293b;
+}
+
+/* ==========================================================================
+   Lock Screen Maximum Privacy Heavy Blur & Background Obfuscation
+   ========================================================================== */
+body.taxpro-screen-locked header,
+body.taxpro-screen-locked main,
+body.taxpro-screen-locked aside,
+body.taxpro-screen-locked .flex-1,
+body.taxpro-screen-locked [data-screen-content] {
+  filter: blur(32px) brightness(0.15) contrast(0.4) !important;
+  opacity: 0.08 !important;
+  user-select: none !important;
+  pointer-events: none !important;
+  transition: filter 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+}
+

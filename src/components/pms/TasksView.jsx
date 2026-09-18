@@ -3,7 +3,7 @@ import {
   Plus, Search, Filter, Calendar, CheckCircle2, Clock, AlertCircle, User, 
   MoreVertical, X, Paperclip, ArrowLeft, Printer, CheckSquare, FolderKanban,
   ArrowDownToLine, CheckCheck, Sparkles, FolderDown, Building2, Coffee, RotateCcw,
-  History, ShieldCheck, Archive, ExternalLink
+  ShieldCheck, Archive, ExternalLink, Download
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { invalidateQueryCache } from '../../lib/postgresClient';
@@ -11,7 +11,6 @@ import { logAuditActivity } from '../../lib/auditLogger';
 import { requireFirmSetup } from '../../lib/firmGatekeeper';
 import { printHtml } from '../../lib/printHelper';
 import { formatDate } from '../../lib/dateUtils';
-import TaskHistoryModal from './TaskHistoryModal';
 
 export default function TasksView({ onShowToast }) {
   const [activeFilter, setActiveFilter] = useState('All');
@@ -19,14 +18,8 @@ export default function TasksView({ onShowToast }) {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
-  // Task History & Mode states
-  const [myTaskMode, setMyTaskMode] = useState('all'); // 'all' | 'active' | 'history'
+  // Task Scope state
   const [myTasksScope, setMyTasksScope] = useState('mine'); // 'mine' | 'all'
-  const [historyPeriod, setHistoryPeriod] = useState('all'); // 'all' | '7days' | '30days' | 'month' | 'specific_date' | 'specific_month'
-  const [specificDate, setSpecificDate] = useState(''); // 'YYYY-MM-DD'
-  const [specificMonth, setSpecificMonth] = useState('2026-08'); // 'YYYY-MM'
-  const [selectedTaskForHistory, setSelectedTaskForHistory] = useState(null);
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   const [tasks, setTasks] = useState([]);
   const [clients, setClients] = useState([]);
@@ -314,6 +307,18 @@ export default function TasksView({ onShowToast }) {
       console.warn('[Import Execution Note]:', e.message);
     }
 
+    try {
+      const savedProjects = JSON.parse(localStorage.getItem('taxpro_projects') || '[]');
+      const updatedLocal = savedProjects.map(p => String(p.id) === String(proj.id) ? { ...p, tasks: updatedProjTasks } : p);
+      localStorage.setItem('taxpro_projects', JSON.stringify(updatedLocal));
+    } catch (e) {}
+
+    const mappedNew = globalInserts.map(g => ({
+      ...g,
+      dueDate: g.due_date
+    }));
+    setTasks(prev => [...mappedNew, ...prev]);
+
     setIsImportModalOpen(false);
     setSelectedTasksToImport([]);
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
@@ -397,26 +402,9 @@ export default function TasksView({ onShowToast }) {
       matchesFilter = true;
     } else if (activeFilter === 'My Tasks') {
       const assigned = isAssignedToMe(t);
-      // If user toggled to 'all' in My Tasks, or if user has 0 assigned tasks and is in history, include all
-      const shouldInclude = (myTasksScope === 'all' || (myTasksAll.length === 0 && myTaskMode === 'history'))
-        ? true
-        : assigned;
-
+      const shouldInclude = (myTasksScope === 'all') ? true : assigned;
       if (!shouldInclude) return false;
-
-      if (myTaskMode === 'active') {
-        matchesFilter = !isDone;
-      } else if (myTaskMode === 'history') {
-        if (!isDone) return false;
-        matchesFilter = matchesHistoryPeriod(t);
-      } else {
-        matchesFilter = true;
-      }
-    } else if (activeFilter === 'Task History') {
-      if (!isDone) return false;
-      const assigned = isAssignedToMe(t);
-      if (myTasksScope === 'mine' && myCompletedTasks.length > 0 && !assigned) return false;
-      matchesFilter = matchesHistoryPeriod(t);
+      matchesFilter = true;
     } else if (activeFilter === 'Project Tasks') {
       matchesFilter = (t.category === 'Project Task' || (t.project && t.project !== 'None'));
     } else {
@@ -429,6 +417,47 @@ export default function TasksView({ onShowToast }) {
                           (t.id && t.id.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesFilter && matchesSearch;
   });
+
+  const handleExportTasksCsv = () => {
+    const listToExport = filteredTasks.length > 0 ? filteredTasks : tasks;
+    if (listToExport.length === 0) {
+      if (onShowToast) onShowToast('No tasks available to export.', 'warning');
+      return;
+    }
+
+    const csvRows = ['Task ID,Title,Client,Category,Assignee,Project,Priority,Due Date,Status'];
+    listToExport.forEach(t => {
+      const clean = (str) => `"${(str || '').toString().replace(/"/g, '""')}"`;
+      csvRows.push([
+        clean(t.id),
+        clean(t.title),
+        clean(t.client),
+        clean(t.category),
+        clean(t.assignee),
+        clean(t.project),
+        clean(t.priority),
+        clean(t.dueDate || t.due_date),
+        clean(t.status)
+      ].join(','));
+    });
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `TaxPro_Tasks_Export_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    logAuditActivity({
+      action: 'EXPORT_CSV',
+      module: 'Tasks',
+      details: `Exported ${listToExport.length} tasks to CSV file`,
+      metadata: { count: listToExport.length }
+    });
+
+    if (onShowToast) onShowToast(`✓ Successfully exported ${listToExport.length} tasks to CSV!`, 'success');
+  };
 
   const handlePrintTasks = () => {
     const list = filteredTasks.length > 0 ? filteredTasks : tasks;
@@ -511,12 +540,12 @@ export default function TasksView({ onShowToast }) {
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           <button 
             type="button"
-            onClick={() => { window.location.hash = '#/task-history'; }}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold shadow-xs transition-all cursor-pointer"
-            title="Open Task History page"
+            onClick={handleExportTasksCsv}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 text-xs font-bold shadow-xs transition-all cursor-pointer active:scale-95"
+            title="Export Tasks to CSV"
           >
-            <History className="w-4 h-4 text-indigo-600" />
-            <span>Task History ({allTeamCompleted.length}) ↗</span>
+            <Download className="w-4 h-4 text-emerald-600" />
+            <span>Export CSV</span>
           </button>
 
           <button 
@@ -559,26 +588,18 @@ export default function TasksView({ onShowToast }) {
         
         {/* Status Filter Chips */}
         <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
-          {['All', 'My Tasks', 'Task History', 'Project Tasks', 'Pending', 'In Progress', 'Completed', 'Overdue', 'GST', 'Income Tax', 'MCA'].map((f) => (
+          {['All', 'My Tasks', 'Project Tasks', 'Pending', 'In Progress', 'Completed', 'Overdue', 'GST', 'Income Tax', 'MCA'].map((f) => (
             <button
               key={f}
-              onClick={() => {
-                if (f === 'Task History') {
-                  window.location.hash = '#/task-history';
-                  return;
-                }
-                setActiveFilter(f);
-              }}
+              onClick={() => setActiveFilter(f)}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeFilter === f 
                   ? 'bg-[#5b52e0] text-white shadow-xs' 
                   : (f === 'My Tasks') ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800' 
-                  : (f === 'Task History') ? 'bg-purple-50 text-purple-700 hover:bg-purple-100 hover:text-purple-800 border border-purple-200'
                   : (f === 'Project Tasks') ? 'bg-teal-50 text-teal-700 hover:bg-teal-100 hover:text-teal-800 border border-teal-200' 
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {f === 'Task History' && <History className="w-3.5 h-3.5" />}
               <span>{f}</span>
               {f === 'My Tasks' && (
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${activeFilter === f ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
@@ -661,12 +682,15 @@ export default function TasksView({ onShowToast }) {
               </button>
               <button
                 type="button"
-                onClick={() => { window.location.hash = '#/task-history'; }}
+                onClick={() => { 
+                  window.location.hash = '#/my-work'; 
+                  setTimeout(() => window.dispatchEvent(new CustomEvent('taxpro_show_my_work_history')), 50);
+                }}
                 className="px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 text-gray-600 hover:text-indigo-700"
-                title="Open dedicated Task History page"
+                title="View recent tasks in My Work"
               >
                 <History className="w-3 h-3 text-indigo-500" />
-                <span>Task History ({allTeamCompleted.length}) ↗</span>
+                <span>Recent Tasks (in My Work) ↗</span>
               </button>
             </div>
           </div>
@@ -754,20 +778,6 @@ export default function TasksView({ onShowToast }) {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                        {/* Task History & Timeline Button */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedTaskForHistory(t);
-                            setIsHistoryModalOpen(true);
-                          }}
-                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
-                          title="View Task History Timeline & Compliance Logs"
-                        >
-                          <History className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">History</span>
-                        </button>
-
                         {t.status === 'Completed' ? (
                           <span className="px-3 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg inline-flex items-center gap-1">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -1171,18 +1181,6 @@ export default function TasksView({ onShowToast }) {
           </div>
         </div>
       )}
-
-      {/* TASK HISTORY & COMPLIANCE TIMELINE MODAL */}
-      <TaskHistoryModal
-        task={selectedTaskForHistory}
-        isOpen={isHistoryModalOpen}
-        onClose={() => {
-          setIsHistoryModalOpen(false);
-          setSelectedTaskForHistory(null);
-        }}
-        onUpdateStatus={(id, status) => updateTaskStatus(id, status)}
-        onShowToast={onShowToast}
-      />
 
     </div>
   );

@@ -57,6 +57,7 @@ import {
   LogOut as PunchOutIcon,
   Timer,
   AlertTriangle,
+  AlertCircle,
   RefreshCw
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
@@ -116,6 +117,12 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
   // Latest Payments Tab Filters
   const [paymentFilterFlow, setPaymentFilterFlow] = useState('all'); // 'all' | 'receipt' | 'expense'
   const [paymentSearchQuery, setPaymentSearchQuery] = useState('');
+
+  // Complaints & Grievance Support State
+  const [complaintsList, setComplaintsList] = useState([]);
+  const [complaintFilterStatus, setComplaintFilterStatus] = useState('all');
+  const [complaintSearchQuery, setComplaintSearchQuery] = useState('');
+  const [updatingComplaintId, setUpdatingComplaintId] = useState(null);
 
   // Workforce & Firm Navigation State (Full-Page Hierarchy)
   const [selectedFirmForRoster, setSelectedFirmForRoster] = useState(null);
@@ -202,6 +209,8 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
         setActiveTab('Operating Expenses');
       } else if (target.includes('revenue') || target.includes('billing')) {
         setActiveTab('Revenue & Billing');
+      } else if (target.includes('complaint') || target.includes('ticket') || target.includes('support') || target.includes('grievance')) {
+        setActiveTab('Complaints & Support');
       } else if (target.includes('firm') || target.includes('workforce') || target.includes('subscription')) {
         setActiveTab('Firms & Workforce');
       } else if (target.includes('log') || target.includes('new user') || target.includes('audit')) {
@@ -210,7 +219,20 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
         setActiveTab('Overview');
       }
     };
+
+    const handleComplaintAdded = (e) => {
+      if (e.detail) {
+        setComplaintsList(prev => {
+          const key = e.detail.ticket_no || e.detail.id;
+          if (prev.some(t => (t.ticket_no || t.id) === key)) return prev;
+          return [e.detail, ...prev];
+        });
+        if (onShowToast) onShowToast(`🚨 New Complaint Escalation: ${e.detail.ticket_no || 'Ticket'}`, 'warning');
+      }
+    };
+
     window.addEventListener('ai_navigate', handleVoiceNav);
+    window.addEventListener('taxpro_complaint_added', handleComplaintAdded);
 
     return () => {
       window.removeEventListener('taxpro_db_updated', handleDbUpdate);
@@ -218,6 +240,7 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
       window.removeEventListener('taxpro_firm_updated', handleDbUpdate);
       window.removeEventListener('taxpro_attendance_updated', handleDbUpdate);
       window.removeEventListener('ai_navigate', handleVoiceNav);
+      window.removeEventListener('taxpro_complaint_added', handleComplaintAdded);
     };
   }, [onShowToast]);
 
@@ -247,10 +270,104 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
       if (rawLogs.length > 0) {
         setSystemLogs(rawLogs);
       }
+
+      // Fetch Support Tickets & Complaints
+      try {
+        let serverTickets = [];
+        try {
+          const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+          const tktRes = await fetch(`${baseUrl}/api/complaints`);
+          const tktJson = await tktRes.json();
+          if (tktJson.success && Array.isArray(tktJson.tickets)) {
+            serverTickets = tktJson.tickets;
+          }
+        } catch (err) {}
+
+        let localTickets = [];
+        try {
+          localTickets = JSON.parse(localStorage.getItem('taxpro_complaints') || '[]');
+        } catch (e) {}
+
+        let sbTickets = [];
+        try {
+          const sbRes = await supabase.from('support_tickets').select('*').order('created_at', { ascending: false });
+          if (sbRes.data) sbTickets = sbRes.data;
+        } catch (e) {}
+
+        const ticketMap = new Map();
+        serverTickets.forEach(t => ticketMap.set(t.ticket_no || t.id, t));
+        sbTickets.forEach(t => {
+          const k = t.ticket_no || t.id;
+          if (!ticketMap.has(k)) ticketMap.set(k, t);
+        });
+        localTickets.forEach(t => {
+          const k = t.ticket_no || t.id;
+          if (!ticketMap.has(k)) ticketMap.set(k, t);
+        });
+
+        const merged = Array.from(ticketMap.values()).sort((a, b) => new Date(b.created_at || Date.now()) - new Date(a.created_at || Date.now()));
+        setComplaintsList(merged);
+      } catch (err) {}
     } catch (e) {
       console.error('[SuperAdmin Stats Fetch Error]:', e);
     } finally {
       setIsLoadingData(false);
+    }
+  };
+
+  // Filtered complaints for Complaints & Support Tab
+  const filteredComplaints = useMemo(() => {
+    let list = [...complaintsList];
+    if (complaintFilterStatus !== 'all') {
+      list = list.filter(c => (c.status || 'Open') === complaintFilterStatus);
+    }
+    if (complaintSearchQuery.trim()) {
+      const q = complaintSearchQuery.toLowerCase().trim();
+      list = list.filter(c =>
+        (c.ticket_no || c.ticketNo || '').toLowerCase().includes(q) ||
+        (c.user_name || c.reporterName || '').toLowerCase().includes(q) ||
+        (c.user_email || c.reporterEmail || '').toLowerCase().includes(q) ||
+        (c.subject || '').toLowerCase().includes(q) ||
+        (c.category || '').toLowerCase().includes(q) ||
+        (c.message || c.complaintText || '').toLowerCase().includes(q) ||
+        (c.firm_name || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [complaintsList, complaintFilterStatus, complaintSearchQuery]);
+
+  const openComplaintsCount = useMemo(() => {
+    return complaintsList.filter(c => (c.status || 'Open') !== 'Resolved').length;
+  }, [complaintsList]);
+
+  // Handle complaint status update
+  const handleUpdateComplaintStatus = async (ticketId, newStatus) => {
+    setUpdatingComplaintId(ticketId);
+    try {
+      setComplaintsList(prev => prev.map(t => (t.id === ticketId || t.ticket_no === ticketId ? { ...t, status: newStatus } : t)));
+
+      try {
+        const existing = JSON.parse(localStorage.getItem('taxpro_complaints') || '[]');
+        const updated = existing.map(t => (t.id === ticketId || t.ticket_no === ticketId ? { ...t, status: newStatus } : t));
+        localStorage.setItem('taxpro_complaints', JSON.stringify(updated));
+      } catch (e) {}
+
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      await fetch(`${baseUrl}/api/complaints/${ticketId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      try {
+        await supabase.from('support_tickets').update({ status: newStatus }).or(`id.eq.${ticketId},ticket_no.eq.${ticketId}`);
+      } catch (e) {}
+
+      if (onShowToast) onShowToast(`✓ Complaint ticket marked as [${newStatus}]`, 'success');
+    } catch (err) {
+      if (onShowToast) onShowToast(`Ticket marked as [${newStatus}] locally`, 'info');
+    } finally {
+      setUpdatingComplaintId(null);
     }
   };
 
@@ -1441,10 +1558,11 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
           </div>
         </div>
 
-        {/* Navigation Menu (Tenants & Infrastructure removed, Latest Payments & Calendar added) */}
+        {/* Navigation Menu */}
         <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto custom-scrollbar">
           {[
             { id: 'Overview', icon: <Activity className="w-4 h-4" /> },
+            { id: 'Complaints & Support', icon: <AlertCircle className="w-4 h-4" />, badge: openComplaintsCount },
             { id: 'Firms & Workforce', icon: <Building2 className="w-4 h-4" /> },
             { id: 'Calendar & In/Out', icon: <CalendarIcon className="w-4 h-4" /> },
             { id: 'Latest Payments', icon: <CreditCard className="w-4 h-4" /> },
@@ -1461,13 +1579,20 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
                   setWorkforceRoleFilter('all');
                 }
               }}
-              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
+              className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
                 activeTab === tab.id 
                 ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20 shadow-inner' 
                 : 'text-gray-500 hover:bg-white/5 hover:text-gray-300'
               }`}
             >
-              {tab.icon} {tab.id}
+              <div className="flex items-center gap-3 truncate">
+                {tab.icon} <span className="truncate">{tab.id}</span>
+              </div>
+              {tab.badge > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-red-500 text-white font-mono text-[9px] font-black animate-pulse shadow-sm flex-shrink-0">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -1635,6 +1760,28 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
                   <div className="text-[10px] text-red-400 mt-1 font-bold flex items-center justify-between">
                     <span>Rent, WiFi, Domain</span>
                     <span>Manage →</span>
+                  </div>
+                </div>
+
+                {/* 7. Open Complaints / Escalations Card */}
+                <div 
+                  onClick={() => setActiveTab('Complaints & Support')}
+                  className={`border rounded-2xl p-4 shadow-xl cursor-pointer group transition-all hover:-translate-y-1 select-none ${
+                    openComplaintsCount > 0 
+                      ? 'bg-amber-950/20 border-amber-500/40 hover:border-amber-500' 
+                      : 'bg-[#09090b] border-white/10 hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs font-bold text-amber-400 mb-2">
+                    <span className="truncate">Open Complaints</span>
+                    <span className={`p-1 rounded-lg ${openComplaintsCount > 0 ? 'bg-amber-500/20 text-amber-400 animate-pulse' : 'bg-white/5 text-gray-400'}`}>🚨</span>
+                  </div>
+                  <div className="text-2xl font-black text-white font-mono tracking-tight group-hover:text-amber-300 transition-colors">
+                    {openComplaintsCount}
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-1 font-bold flex items-center justify-between">
+                    <span>{openComplaintsCount > 0 ? 'Action Required' : 'All Resolved'}</span>
+                    <span className="text-amber-400">Review Tickets →</span>
                   </div>
                 </div>
 
@@ -3159,6 +3306,233 @@ export default function SuperAdminShell({ onLogout, onShowToast, onSwitchToPMS }
                 </div>
               </div>
 
+            </div>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB: COMPLAINTS & GRIEVANCES ESCALATIONS ROUTED TO SUPER ADMIN */}
+          {/* ========================================================================= */}
+          {activeTab === 'Complaints & Support' && (
+            <div className="space-y-6 animate-fade-in">
+              {/* Header & KPI Summary */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-amber-950/30 via-[#130e1c] to-purple-950/30 border border-amber-500/20 rounded-3xl p-6 shadow-2xl">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 via-orange-500 to-red-500 flex items-center justify-center text-white shadow-lg shadow-amber-500/20">
+                    <AlertCircle className="w-6 h-6 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl sm:text-2xl font-black text-white font-outfit tracking-tight">
+                        Complaints & Direct Escalations
+                      </h2>
+                      {openComplaintsCount > 0 && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase font-mono bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">
+                          {openComplaintsCount} Pending
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Direct confidential grievances submitted by firm members and routed immediately to Super Admin mailbox (workforcepro09@gmail.com).
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quick KPI Pills */}
+                <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
+                  <div className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono">
+                    <span className="text-gray-400 font-medium">Total: </span>
+                    <strong className="text-white">{complaintsList.length}</strong>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs font-mono text-red-400">
+                    <span className="font-medium">Open: </span>
+                    <strong className="font-black">{complaintsList.filter(c => (c.status || 'Open') === 'Open').length}</strong>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs font-mono text-amber-400">
+                    <span className="font-medium">In Review: </span>
+                    <strong className="font-black">{complaintsList.filter(c => c.status === 'In Review').length}</strong>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-mono text-emerald-400">
+                    <span className="font-medium">Resolved: </span>
+                    <strong className="font-black">{complaintsList.filter(c => c.status === 'Resolved').length}</strong>
+                  </div>
+                  <button
+                    onClick={fetchGlobalStats}
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 transition-colors cursor-pointer"
+                    title="Refresh Complaints"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoadingData ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Filters & Search Toolbar */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#09090b] border border-white/5 rounded-2xl p-3">
+                <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto">
+                  {['all', 'Open', 'In Review', 'Resolved'].map(st => (
+                    <button
+                      key={st}
+                      onClick={() => setComplaintFilterStatus(st)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                        complaintFilterStatus === st
+                          ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                          : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      {st === 'all' ? 'All Tickets' : st}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-80">
+                  <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={complaintSearchQuery}
+                    onChange={e => setComplaintSearchQuery(e.target.value)}
+                    placeholder="Search ticket #, reporter, category, subject..."
+                    className="w-full pl-9 pr-3.5 py-1.5 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder:text-gray-500 outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              {/* Complaints List */}
+              <div className="space-y-3.5">
+                {filteredComplaints.length > 0 ? (
+                  filteredComplaints.map((ticket) => {
+                    const isOpen = (ticket.status || 'Open') === 'Open';
+                    const isInReview = ticket.status === 'In Review';
+                    const isResolved = ticket.status === 'Resolved';
+                    const isUrgent = (ticket.priority || '').toLowerCase().includes('critical') || (ticket.priority || '').toLowerCase().includes('high');
+
+                    return (
+                      <div
+                        key={ticket.id || ticket.ticket_no}
+                        className={`bg-[#09090b] border rounded-2xl p-5 shadow-xl transition-all ${
+                          isOpen 
+                            ? 'border-red-500/30 hover:border-red-500/50' 
+                            : isInReview
+                            ? 'border-amber-500/30 hover:border-amber-500/50'
+                            : 'border-white/5 hover:border-white/10 opacity-80'
+                        }`}
+                      >
+                        {/* Top Bar of Ticket */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/5">
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <span className="px-2.5 py-0.5 rounded-md bg-purple-500/20 text-purple-300 font-mono font-black text-xs border border-purple-500/30">
+                              {ticket.ticket_no || ticket.ticketNo || ticket.id}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-white/5 text-gray-300 font-bold text-[11px] border border-white/10">
+                              {ticket.category || 'General Issue'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] uppercase font-mono ${
+                              isUrgent 
+                                ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+                                : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            }`}>
+                              Priority: {ticket.priority || 'Medium'}
+                            </span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase font-mono ${
+                              isOpen
+                                ? 'bg-red-500/10 text-red-400 border border-red-500/30 flex items-center gap-1'
+                                : isInReview
+                                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1'
+                                : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-red-500 animate-ping' : isInReview ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                              {ticket.status || 'Open'}
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-gray-500 font-mono flex items-center gap-1.5">
+                            <Clock className="w-3 h-3" />
+                            <span>{ticket.created_at ? formatDate(ticket.created_at) : 'Recent'}</span>
+                          </div>
+                        </div>
+
+                        {/* Middle Content */}
+                        <div className="py-3.5 space-y-2">
+                          <h4 className="text-sm font-bold text-white leading-snug">
+                            {ticket.subject || ticket.title || 'Support Complaint Escalation'}
+                          </h4>
+                          <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed bg-white/[0.02] border border-white/5 rounded-xl p-3">
+                            {ticket.message || ticket.complaintText || 'No detailed message provided.'}
+                          </p>
+                        </div>
+
+                        {/* Footer / Actions */}
+                        <div className="pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2 text-gray-400 truncate">
+                            <User className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                            <span className="font-semibold text-white truncate">{ticket.user_name || ticket.reporterName || 'Authorized User'}</span>
+                            <span className="text-gray-600">•</span>
+                            <span className="font-mono text-purple-400 truncate">&lt;{ticket.user_email || ticket.reporterEmail}&gt;</span>
+                            {ticket.firm_name && (
+                              <>
+                                <span className="text-gray-600">•</span>
+                                <span className="text-gray-400 truncate">🏢 {ticket.firm_name}</span>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                            <a
+                              href={`mailto:${ticket.user_email || ticket.reporterEmail}?subject=Re:%20TaxPro%20Support%20Ticket%20${ticket.ticket_no || ticket.id}&body=Hello%20${encodeURIComponent(ticket.user_name || 'User')},%0D%0A%0D%0ARegarding%20your%20complaint%20ticket%20(${ticket.ticket_no || ticket.id}):%0D%0A`}
+                              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 font-bold transition-all flex items-center gap-1.5"
+                            >
+                              <Mail className="w-3.5 h-3.5 text-purple-400" />
+                              <span>Reply via Email</span>
+                            </a>
+
+                            {!isInReview && !isResolved && (
+                              <button
+                                type="button"
+                                disabled={updatingComplaintId === (ticket.id || ticket.ticket_no)}
+                                onClick={() => handleUpdateComplaintStatus(ticket.id || ticket.ticket_no, 'In Review')}
+                                className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-bold transition-all cursor-pointer"
+                              >
+                                Mark In Review
+                              </button>
+                            )}
+
+                            {!isResolved && (
+                              <button
+                                type="button"
+                                disabled={updatingComplaintId === (ticket.id || ticket.ticket_no)}
+                                onClick={() => handleUpdateComplaintStatus(ticket.id || ticket.ticket_no, 'Resolved')}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                <span>Resolve Ticket</span>
+                              </button>
+                            )}
+
+                            {isResolved && (
+                              <button
+                                type="button"
+                                disabled={updatingComplaintId === (ticket.id || ticket.ticket_no)}
+                                onClick={() => handleUpdateComplaintStatus(ticket.id || ticket.ticket_no, 'Open')}
+                                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 font-bold transition-all cursor-pointer"
+                              >
+                                Re-open Ticket
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-16 bg-[#09090b] border border-white/5 rounded-3xl p-8">
+                    <div className="w-14 h-14 rounded-3xl bg-white/5 text-gray-500 flex items-center justify-center mx-auto mb-3">
+                      <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+                    </div>
+                    <h3 className="text-base font-bold text-white mb-1">No Complaints in this View</h3>
+                    <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                      All support tickets and grievances from practice staff and firm members are either resolved or none have been submitted under this filter.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
