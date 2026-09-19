@@ -58,7 +58,8 @@ import {
   Timer,
   AlertTriangle,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  UserPlus
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { logAuditActivity } from '../lib/auditLogger';

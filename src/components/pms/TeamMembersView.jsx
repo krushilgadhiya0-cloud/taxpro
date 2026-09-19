@@ -790,6 +790,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   };
 
   const [selectedDeptFilter, setSelectedDeptFilter] = useState('All');
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
 
   const activeMembers = members.filter(m => m.status === 'Active' || m.status === 'Access Revoked');
   const pendingMembers = members.filter(m => m.status === 'Pending Invite');
@@ -809,12 +810,26 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   }, [departmentsList, members]);
 
   const displayedMembers = useMemo(() => {
-    if (selectedDeptFilter === 'All') return currentList;
-    if (selectedDeptFilter === 'General') {
-      return currentList.filter(m => !m.department || m.department.toLowerCase() === 'general' || m.department.toLowerCase() === 'unassigned');
+    let list = currentList;
+    if (selectedDeptFilter !== 'All') {
+      if (selectedDeptFilter === 'General') {
+        list = list.filter(m => !m.department || m.department.toLowerCase() === 'general' || m.department.toLowerCase() === 'unassigned');
+      } else {
+        list = list.filter(m => (m.department || '').toLowerCase() === selectedDeptFilter.toLowerCase());
+      }
     }
-    return currentList.filter(m => (m.department || '').toLowerCase() === selectedDeptFilter.toLowerCase());
-  }, [currentList, selectedDeptFilter]);
+    if (memberSearchQuery.trim()) {
+      const q = memberSearchQuery.toLowerCase().trim();
+      list = list.filter(m => 
+        (m.name || '').toLowerCase().includes(q) ||
+        (m.email || '').toLowerCase().includes(q) ||
+        (m.phone || '').toLowerCase().includes(q) ||
+        (m.role || '').toLowerCase().includes(q) ||
+        (m.department || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [currentList, selectedDeptFilter, memberSearchQuery]);
 
   const handleQuickChangeDept = async (member, newDept) => {
     try {
@@ -1610,179 +1625,245 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto flex flex-col gap-6 animate-fade-in">
       
-      {/* Top Header Summary Card */}
-      <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-        
-        {/* Left Title Area */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold border border-emerald-100 shadow-xs">
-              <Users2 className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-black text-gray-900 tracking-tight font-outfit">Team Directory & Access Control</h2>
-              <p className="text-xs text-gray-500 font-medium">Manage workforce accounts, roles, and granular system access permissions</p>
-            </div>
+      {/* Top Header Row */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-100 shadow-xs shrink-0">
+            <Users2 className="w-6 h-6" />
           </div>
-
-          {/* Quick Metrics */}
-          <div className="flex items-center gap-4 flex-wrap mt-1">
-            <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-col justify-center min-w-[120px] shadow-sm">
-              <div className="text-xl font-black text-gray-900 leading-none">{members.length}</div>
-              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-1.5">TOTAL WORKFORCE</div>
-            </div>
-
-            <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-col justify-center min-w-[120px] shadow-sm">
-              <div className="text-xl font-black text-emerald-600 leading-none">
-                {members.filter(m => m.status === 'Active').length}
-              </div>
-              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-1.5">ACTIVE ACCESS</div>
-            </div>
-
-            <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-col justify-center min-w-[120px] shadow-sm">
-              <div className="text-xl font-black text-red-600 leading-none">
-                {members.filter(m => m.status === 'Access Revoked').length}
-              </div>
-              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-1.5">ACCESS REVOKED</div>
-            </div>
-
-            <div className="bg-white border border-gray-200 rounded-xl px-5 py-3 flex flex-col justify-center min-w-[120px] shadow-sm">
-              <div className="text-xl font-black text-purple-600 leading-none">
-                {members.filter(m => m.role && m.role.toLowerCase().includes('manager')).length}
-              </div>
-              <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mt-1.5">MANAGERS</div>
-            </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight font-outfit">Team Directory & Access Control</h1>
+            <p className="text-xs sm:text-sm text-gray-500 font-medium mt-0.5">Manage workforce accounts, roles, and granular system access permissions</p>
           </div>
         </div>
 
-        {/* Right Actions & Tabs area */}
-        <div className="flex flex-col items-end gap-4 w-full xl:w-auto print:hidden">
-          <div className="flex flex-wrap items-center gap-2.5 w-full xl:justify-end">
-            <button 
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className={`flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-emerald-200 bg-white text-emerald-700 font-bold text-xs transition-colors ${isRefreshing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-50'}`}
-            >
-              <RotateCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh
-            </button>
-            <button 
-              onClick={triggerPrint}
-              className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs transition-colors"
-            >
-              <Printer className="w-3.5 h-3.5" /> Print
-            </button>
-            <button 
-              onClick={handleDownloadCSV}
-              className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs transition-colors"
-            >
-              <Download className="w-3.5 h-3.5" /> Export CSV
-            </button>
-            <button 
-              onClick={() => {
-                if (!requireFirmSetup(onShowToast)) return;
-                setIsInviteModalOpen(true);
-              }}
-              className="flex items-center justify-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-md transition-all cursor-pointer active:scale-95"
-            >
-              <UserPlus className="w-4 h-4" /> + Add New Member
-            </button>
-          </div>
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5 flex-wrap print:hidden">
+          <button 
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className={`flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs shadow-2xs transition-colors cursor-pointer ${isRefreshing ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <RotateCcw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-emerald-600' : ''}`} /> 
+            <span>Refresh</span>
+          </button>
+          <button 
+            type="button"
+            onClick={triggerPrint}
+            className="flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs shadow-2xs transition-colors cursor-pointer"
+          >
+            <Printer className="w-3.5 h-3.5" /> 
+            <span>Print</span>
+          </button>
+          <button 
+            type="button"
+            onClick={handleDownloadCSV}
+            className="flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs shadow-2xs transition-colors cursor-pointer"
+          >
+            <Download className="w-3.5 h-3.5" /> 
+            <span>Export CSV</span>
+          </button>
+          <button 
+            type="button"
+            onClick={() => {
+              if (!requireFirmSetup(onShowToast)) return;
+              setIsInviteModalOpen(true);
+            }}
+            className="flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-sm shadow-emerald-700/20 transition-all cursor-pointer hover:shadow-md active:scale-95"
+          >
+            <UserPlus className="w-4 h-4" /> 
+            <span>+ Add New Member</span>
+          </button>
+        </div>
+      </div>
 
-          {/* Sub-Tabs */}
-          <div className="flex flex-wrap items-center bg-gray-100 p-1.5 rounded-2xl border border-gray-200 w-full sm:w-auto">
-             <button 
-               onClick={() => setActiveTab('Members')}
-               className={`flex items-center justify-center min-w-[110px] gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                 activeTab === 'Members' ? 'bg-white text-emerald-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
-               }`}
-             >
-               <User className="w-3.5 h-3.5" /> Members <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Members' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{activeMembers.length}</span>
-             </button>
-             <button 
-               onClick={() => setActiveTab('Invitations')}
-               className={`flex items-center justify-center min-w-[110px] gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                 activeTab === 'Invitations' ? 'bg-white text-emerald-700 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
-               }`}
-             >
-               <Send className="w-3.5 h-3.5" /> Invitations <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Invitations' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200'}`}>{pendingMembers.length}</span>
-             </button>
-             <button 
-               onClick={() => setActiveTab('Past')}
-               className={`flex items-center justify-center min-w-[110px] gap-2 px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                 activeTab === 'Past' ? 'bg-white text-orange-600 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'
-               }`}
-             >
-               <Archive className="w-3.5 h-3.5" /> Past <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === 'Past' ? 'bg-orange-100 text-orange-700' : 'bg-gray-200'}`}>{pastMembers.length}</span>
-             </button>
+      {/* Quick Metrics Grid (Full Width 4-Card Row) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+        <div className="bg-white border border-gray-200/90 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:border-gray-300">
+          <div>
+            <div className="text-2xl sm:text-3xl font-black text-gray-900 leading-tight font-outfit">{members.length}</div>
+            <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mt-1">TOTAL WORKFORCE</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-slate-50 text-slate-600 flex items-center justify-center border border-slate-100">
+            <Users2 className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Department Bifurcation Filter Bar */}
-        <div className="w-full flex items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-gray-200 shadow-2xs overflow-x-auto print:hidden">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-            <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5 shrink-0 mr-1">
-              <Building className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Bifurcation:</span>
+        <div className="bg-white border border-emerald-100 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:border-emerald-200">
+          <div>
+            <div className="text-2xl sm:text-3xl font-black text-emerald-600 leading-tight font-outfit">
+              {members.filter(m => m.status === 'Active').length}
+            </div>
+            <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mt-1">ACTIVE ACCESS</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white border border-red-100 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:border-red-200">
+          <div>
+            <div className="text-2xl sm:text-3xl font-black text-red-600 leading-tight font-outfit">
+              {members.filter(m => m.status === 'Access Revoked').length}
+            </div>
+            <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mt-1">ACCESS REVOKED</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100">
+            <Lock className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white border border-purple-100 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between transition-all hover:border-purple-200">
+          <div>
+            <div className="text-2xl sm:text-3xl font-black text-purple-600 leading-tight font-outfit">
+              {members.filter(m => m.role && m.role.toLowerCase().includes('manager')).length}
+            </div>
+            <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mt-1">MANAGERS</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100">
+            <Shield className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs & Search Control Bar */}
+      <div className="bg-white border border-gray-200 rounded-2xl p-3 sm:p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 print:hidden">
+        {/* Sub-Tabs Switcher */}
+        <div className="flex items-center bg-gray-100/90 p-1 rounded-xl border border-gray-200/80 w-fit">
+          <button 
+            type="button"
+            onClick={() => setActiveTab('Members')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'Members' 
+                ? 'bg-white text-emerald-700 shadow-xs font-black' 
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <User className="w-3.5 h-3.5" /> 
+            <span>Members</span> 
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${activeTab === 'Members' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'}`}>
+              {activeMembers.length}
             </span>
-
-            <button
-              type="button"
-              onClick={() => setSelectedDeptFilter('All')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
-                selectedDeptFilter === 'All'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              All Staff ({currentList.length})
-            </button>
-
-            {allDepts.map(deptName => {
-              const count = currentList.filter(m => (m.department || '').toLowerCase() === deptName.toLowerCase()).length;
-              return (
-                <button
-                  key={deptName}
-                  type="button"
-                  onClick={() => setSelectedDeptFilter(deptName)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
-                    selectedDeptFilter === deptName
-                      ? 'bg-emerald-600 text-white shadow-2xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <span>{deptName}</span>
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                    selectedDeptFilter === deptName ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-600'
-                  }`}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-
-            <button
-              type="button"
-              onClick={() => setSelectedDeptFilter('General')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
-                selectedDeptFilter === 'General'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <span>General Pool</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                selectedDeptFilter === 'General' ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-600'
-              }`}>
-                {currentList.filter(m => !m.department || m.department.toLowerCase() === 'general' || m.department.toLowerCase() === 'unassigned').length}
-              </span>
-            </button>
-          </div>
-
-          <div className="text-[11px] text-slate-400 font-bold shrink-0 hidden md:block">
-            Showing <span className="text-emerald-700 font-black">{displayedMembers.length}</span> of {currentList.length}
-          </div>
+          </button>
+          <button 
+            type="button"
+            onClick={() => setActiveTab('Invitations')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'Invitations' 
+                ? 'bg-white text-emerald-700 shadow-xs font-black' 
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Send className="w-3.5 h-3.5" /> 
+            <span>Invitations</span> 
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${activeTab === 'Invitations' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'}`}>
+              {pendingMembers.length}
+            </span>
+          </button>
+          <button 
+            type="button"
+            onClick={() => setActiveTab('Past')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'Past' 
+                ? 'bg-white text-orange-700 shadow-xs font-black' 
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Archive className="w-3.5 h-3.5" /> 
+            <span>Past</span> 
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${activeTab === 'Past' ? 'bg-orange-100 text-orange-700' : 'bg-gray-200 text-gray-600'}`}>
+              {pastMembers.length}
+            </span>
+          </button>
         </div>
 
+        {/* Search Box */}
+        <div className="relative w-full md:w-72">
+          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input 
+            type="text"
+            placeholder="Search by name, role, email..."
+            value={memberSearchQuery}
+            onChange={(e) => setMemberSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-emerald-500 focus:bg-white text-gray-800 transition-all placeholder:text-gray-400"
+          />
+          {memberSearchQuery && (
+            <button 
+              type="button"
+              onClick={() => setMemberSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Department Bifurcation Filter Bar */}
+      <div className="w-full flex items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-gray-200 shadow-xs overflow-x-auto print:hidden">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+          <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1.5 shrink-0 mr-1">
+            <Building className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Bifurcation:</span>
+          </span>
+
+          <button
+            type="button"
+            onClick={() => setSelectedDeptFilter('All')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+              selectedDeptFilter === 'All'
+                ? 'bg-emerald-600 text-white shadow-2xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            All Staff ({currentList.length})
+          </button>
+
+          {allDepts.map(deptName => {
+            const count = currentList.filter(m => (m.department || '').toLowerCase() === deptName.toLowerCase()).length;
+            return (
+              <button
+                key={deptName}
+                type="button"
+                onClick={() => setSelectedDeptFilter(deptName)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                  selectedDeptFilter === deptName
+                    ? 'bg-emerald-600 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <span>{deptName}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  selectedDeptFilter === deptName ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-600'
+                }`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => setSelectedDeptFilter('General')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+              selectedDeptFilter === 'General'
+                ? 'bg-emerald-600 text-white shadow-2xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <span>General Pool</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              selectedDeptFilter === 'General' ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-600'
+            }`}>
+              {currentList.filter(m => !m.department || m.department.toLowerCase() === 'general' || m.department.toLowerCase() === 'unassigned').length}
+            </span>
+          </button>
+        </div>
+
+        <div className="text-[11px] text-slate-400 font-bold shrink-0 hidden md:block pl-2 border-l border-gray-100">
+          Showing <span className="text-emerald-700 font-black">{displayedMembers.length}</span> of {currentList.length}
+        </div>
       </div>
 
       {/* Main Content Board */}
@@ -1792,14 +1873,28 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
             <User className="w-8 h-8 text-gray-400" strokeWidth={2.5} />
           </div>
           <h3 className="text-lg font-black font-outfit text-gray-800 mb-1">
-            {selectedDeptFilter !== 'All' ? `No members found in "${selectedDeptFilter}"` : `No ${activeTab.toLowerCase()} found`}
+            {memberSearchQuery 
+              ? `No members found matching "${memberSearchQuery}"`
+              : selectedDeptFilter !== 'All' 
+              ? `No members found in "${selectedDeptFilter}"` 
+              : `No ${activeTab.toLowerCase()} found`}
           </h3>
           <p className="text-xs text-gray-500 max-w-sm">
-            {selectedDeptFilter !== 'All' 
+            {memberSearchQuery
+              ? 'Try adjusting your search terms or clearing the filter.'
+              : selectedDeptFilter !== 'All' 
               ? `You can bifurcate existing staff members into ${selectedDeptFilter} from the Departments view or using the department selector below.`
               : 'Invite new team members or configure staff accounts to populate this workspace.'}
           </p>
-          {selectedDeptFilter !== 'All' ? (
+          {memberSearchQuery ? (
+            <button
+              type="button"
+              onClick={() => setMemberSearchQuery('')}
+              className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+            >
+              Clear Search
+            </button>
+          ) : selectedDeptFilter !== 'All' ? (
             <button
               type="button"
               onClick={() => setSelectedDeptFilter('All')}

@@ -3,7 +3,7 @@ import {
   Plus, Search, Filter, Calendar, CheckCircle2, Clock, AlertCircle, User, 
   MoreVertical, X, Paperclip, ArrowLeft, Printer, CheckSquare, FolderKanban,
   ArrowDownToLine, CheckCheck, Sparkles, FolderDown, Building2, Coffee, RotateCcw,
-  ShieldCheck, Archive, ExternalLink, Download
+  ShieldCheck, Archive, ExternalLink, Download, History
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { invalidateQueryCache } from '../../lib/postgresClient';

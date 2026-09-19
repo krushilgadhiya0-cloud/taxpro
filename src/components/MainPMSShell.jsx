@@ -61,7 +61,11 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpToLine,
-  ArrowDownToLine
+  ArrowDownToLine,
+  Mail,
+  User,
+  ShieldAlert,
+  GripVertical
 } from 'lucide-react';
 
 import DashboardView from './DashboardView';
