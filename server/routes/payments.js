@@ -83,6 +83,66 @@ router.post('/send', async (req, res) => {
   }
 });
 
+// POST /api/payments/add-bill (Add custom bill recorded by SuperAdmin)
+router.post('/add-bill', async (req, res) => {
+  const { bill_no, recipient, client_name, amount, date, notes, category } = req.body;
+
+  if (!recipient || !amount) {
+    return res.status(400).json({ success: false, error: 'Bill recipient/client and amount are required.' });
+  }
+
+  const cleanNum = parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 0;
+  const billId = bill_no ? `BILL-${bill_no.trim()}` : `BILL-${Date.now()}`;
+  const displayDate = date ? String(date).trim() : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  try {
+    const result = await query(`
+      INSERT INTO payments (
+        id, 
+        recipient, 
+        client_name, 
+        category, 
+        method, 
+        amount, 
+        numeric_amount, 
+        status, 
+        payment_id, 
+        order_id, 
+        date, 
+        reference, 
+        notes, 
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, 'Superadmin Bill', $5, $6, 'Success', $7, $8, $9, $10, $11, NOW())
+      RETURNING *;
+    `, [
+      billId,
+      recipient,
+      client_name || recipient,
+      category || 'Superadmin Bill',
+      `₹${cleanNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+      cleanNum,
+      billId,
+      `ORD-${billId}`,
+      displayDate,
+      bill_no || billId,
+      notes || 'Added manually by SuperAdmin'
+    ]);
+
+    const newBill = result.rows[0];
+    console.log(`[TaxPro Revenue Engine] ✓ SuperAdmin added bill: ${billId} for ₹${cleanNum}`);
+
+    res.json({
+      success: true,
+      message: `✓ Bill ${billId} for ₹${cleanNum} successfully added by SuperAdmin.`,
+      bill: newBill
+    });
+  } catch (err) {
+    console.error('[add-bill PG Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /api/payments/razorpay/config (Check if live Razorpay keys are configured)
 router.get('/razorpay/config', (req, res) => {
   const hasKeys = !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET && !process.env.RAZORPAY_KEY_ID.includes('Demo'));
@@ -527,19 +587,49 @@ router.post('/trigger-due-reminders', async (req, res) => {
 
 // POST /api/payments/record-direct (Record Card Autopay, UPI, or Direct Bank Transfer in PostgreSQL & email receipt)
 router.post('/record-direct', async (req, res) => {
-  const { txId, amount, planName, billingCycle, seats, method, email, userName, autopay, reference } = req.body;
-  const cleanEmail = (email || 'client@taxpro.com').trim().toLowerCase();
-  const cleanAmount = parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 1499;
-  const paymentId = txId || `PAY-DIR-${Date.now()}`;
-  const paymentMethod = method || 'Direct Settlement';
+  const { 
+    txId, 
+    amount, 
+    planName, 
+    billingCycle, 
+    seats, 
+    method, 
+    email, 
+    userName, 
+    autopay, 
+    reference,
+    receiptNumber,
+    prevDays,
+    addedDays,
+    totalDays,
+    bonusDays,
+    expiryDate,
+    beneficiaryBank
+  } = req.body;
+  const cleanEmail = (email || 'krushilgadhiya138@gmail.com').trim().toLowerCase();
+  const cleanAmount = parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 1999;
+  const paymentId = txId || `PAY-CARD-${Date.now()}`;
+  const paymentMethod = method || 'Credit / Debit Card (Direct Bank)';
   const category = autopay ? 'Subscription (Autopay Active)' : 'Direct Plan Settlement';
+  const rcptNo = receiptNumber || `REC-CARD-${Date.now().toString().slice(-8)}`;
+  const planTitle = planName || 'Fintech Enterprise';
+  const bankDetails = beneficiaryBank || 'The Varachha Co-operative Bank Ltd. (A/C: 00110121914054)';
 
   try {
     const result = await query(`
       INSERT INTO payments (id, recipient, category, method, amount, status, payment_id, date)
       VALUES ($1, $2, $3, $4, $5, 'Success', $6, 'Just now')
       RETURNING *;
-    `, [paymentId, `${planName || 'Practice Subscription'} (${seats || 'Team'})`, category, `${paymentMethod} - ${reference || 'Direct Bank Settlement'}`, cleanAmount, paymentId]);
+    `, [paymentId, `The Varachha Co-operative Bank Ltd. (${planTitle})`, category, `${paymentMethod} - ${reference || bankDetails}`, cleanAmount, paymentId]);
+
+    try {
+      await query(`
+        INSERT INTO receipts_payments (id, title, type, category, amount, method, party, date, reference, notes)
+        VALUES ($1, $2, 'expense', 'Software Licenses & Cloud (AWS/SaaS)', $3, $4, 'The Varachha Co-operative Bank Ltd. (Krushil Gadhiya)', CURRENT_DATE, $5, $6)
+      `, [rcptNo, `Owner Subscription Payment - ${planTitle}`, cleanAmount, paymentMethod, paymentId, `Direct Credit to A/C: 00110121914054 | ${planTitle} (+${addedDays || 30} Days)`]);
+    } catch (rpErr) {
+      console.warn('[Direct Payment Receipts Insert Notice]:', rpErr.message);
+    }
 
     let receiptMail = null;
     try {
@@ -547,29 +637,54 @@ router.post('/record-direct', async (req, res) => {
         cleanEmail,
         paymentId,
         `₹${cleanAmount.toLocaleString('en-IN')}.00`,
-        `${planName} (${seats})`,
+        `${planTitle} (${seats || 'Full Enterprise Suite'})`,
         billingCycle || '30 Days Subscription',
-        userName || 'Valued Subscriber',
-        req.headers.origin || 'http://localhost:3000'
+        userName || 'TaxPro Owner',
+        req.headers.origin || 'http://localhost:3000',
+        {},
+        rcptNo
       );
     } catch (mailErr) {
       console.warn('[Direct Payment Receipt Mail Warning]:', mailErr.message);
     }
 
+    // Also dispatch validity email
+    let validityMail = null;
+    try {
+      if (addedDays || totalDays) {
+        validityMail = await sendValidityUpdateEmail({
+          email: cleanEmail,
+          name: userName || 'TaxPro Owner',
+          planName: planTitle,
+          prevDays: prevDays !== undefined ? prevDays : 30,
+          addedDays: addedDays !== undefined ? addedDays : 30,
+          totalDays: totalDays !== undefined ? totalDays : 60,
+          bonusDays: bonusDays || 0,
+          expiryDate: expiryDate || 'Active Expiration',
+          origin: req.headers.origin || 'http://localhost:3000'
+        });
+      }
+    } catch (valErr) {
+      console.warn('[Direct Payment Validity Mail Warning]:', valErr.message);
+    }
+
     res.json({
       success: true,
-      message: '✓ Payment recorded directly to Bank Account & saved to database!',
+      message: '✓ Payment recorded directly to Varachha Bank Account (00110121914054) & plan activated!',
       paymentId,
+      receiptNumber: rcptNo,
       receiptEmailSent: receiptMail?.success || false,
-      transaction: result.rows[0]
+      validityEmailSent: validityMail?.success || false,
+      transaction: result?.rows?.[0]
     });
   } catch (err) {
     console.warn('[Direct Payment DB Note]:', err.message);
     res.json({
       success: true,
       simulated: true,
-      message: '✓ Payment verified & direct settlement acknowledged.',
-      paymentId
+      message: '✓ Payment verified & direct settlement acknowledged to Varachha Bank Account.',
+      paymentId,
+      receiptNumber: rcptNo
     });
   }
 });

@@ -33,8 +33,14 @@ export default async function handler(req, res) {
         if (query) {
           await query(
             'INSERT INTO payments (id, recipient, category, method, amount, status, payment_id, date) VALUES ($1, $2, $3, $4, $5, \'Success\', $6, \'Just now\') ON CONFLICT (id) DO NOTHING;',
-            [paymentId, (planName || 'Practice Subscription') + ' (' + (seats || 'Team') + ')', category, paymentMethod + ' - ' + (reference || 'Direct Bank Settlement'), cleanAmount, paymentId]
+            [paymentId, 'The Varachha Co-operative Bank Ltd. (' + (planName || 'Practice Subscription') + ')', category, paymentMethod + ' - ' + (reference || 'Direct Bank Settlement (00110121914054)'), cleanAmount, paymentId]
           );
+          try {
+            await query(
+              'INSERT INTO receipts_payments (id, title, type, category, amount, method, party, date, reference, notes) VALUES ($1, $2, \'expense\', \'Software Licenses & Cloud (AWS/SaaS)\', $3, $4, \'The Varachha Co-operative Bank Ltd. (Krushil Gadhiya)\', CURRENT_DATE, $5, $6) ON CONFLICT (id) DO NOTHING;',
+              [paymentId, 'Owner Subscription Payment - ' + (planName || 'Practice Subscription'), cleanAmount, paymentMethod, paymentId, 'Direct Bank Settlement to A/C: 00110121914054']
+            );
+          } catch (rpErr) {}
         }
       }
     } catch (dbErr) {

@@ -136,9 +136,18 @@ export default function PaymentCheckoutModal({
         onShowToast(`✓ Payment of ₹${rawPriceNum.toLocaleString('en-IN')} confirmed directly to bank account!`, 'success');
       }
 
+      const addedDays = plan.billing === 'yearly' ? 365 : 30;
+      const currentDays = parseInt(localStorage.getItem('taxpro_subscription_days') || '30', 10) || 30;
+      const newTotalDays = currentDays + addedDays;
+      const d = new Date();
+      d.setDate(d.getDate() + newTotalDays);
+      localStorage.setItem('taxpro_subscription_expiry_date', d.toISOString());
+      localStorage.setItem('taxpro_subscription_days', String(newTotalDays));
       localStorage.setItem('taxpro_subscription_plan', planTitle);
       localStorage.setItem('taxpro_subscription_status', 'Active');
       localStorage.setItem('taxpro_subscription_seats', seatCount);
+      window.dispatchEvent(new CustomEvent('taxpro_subscription_updated'));
+      window.dispatchEvent(new CustomEvent('taxpro_financial_updated'));
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
 // onPaymentSuccess called when user clicks Enter Workspace on confirmation screen
@@ -177,12 +186,24 @@ export default function PaymentCheckoutModal({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                window.dispatchEvent(new CustomEvent('taxpro_open_login'));
+              }}
+              className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline px-2.5 py-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 transition-colors cursor-pointer"
+            >
+              Go to Login Page →
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* SUCCESS CONFIRMATION SCREEN */}

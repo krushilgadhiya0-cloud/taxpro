@@ -27,6 +27,7 @@ export default function SuperAdminAuthModal({ isOpen, onClose, onSuccess, onShow
     setTimeout(() => {
       if (isIdValid && isPassValid) {
         sessionStorage.setItem('taxpro_superadmin_authenticated', 'true');
+        localStorage.setItem('taxpro_superadmin_authenticated', 'true');
         localStorage.setItem('taxpro_secret_superadmin', 'superadmin@taxpro.com');
         localStorage.setItem('taxpro_user_email', 'superadmin@taxpro.com');
         localStorage.setItem('taxpro_user_role', 'Super Admin');

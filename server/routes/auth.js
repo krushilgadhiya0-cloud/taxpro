@@ -630,26 +630,78 @@ router.post('/register-session', async (req, res) => {
   }
 });
 
-// GET /api/auth/sessions (Retrieve all active devices for account)
+// GET /api/auth/all-sessions (Retrieve all active sessions system-wide for Super Admin)
+router.get('/all-sessions', async (req, res) => {
+  try {
+    await ensureSessionsTable();
+    const sessionsRes = await query(`
+      SELECT * FROM user_sessions 
+      WHERE is_revoked = FALSE 
+      ORDER BY last_active DESC 
+      LIMIT 150
+    `);
+
+    const now = Date.now();
+    const mapped = sessionsRes.rows.map(row => {
+      const lastActiveTime = new Date(row.last_active || row.created_at).getTime();
+      const diffMinutes = Math.floor((now - lastActiveTime) / (1000 * 60));
+      const isOnline = diffMinutes <= 2; // Active in last 2 minutes
+
+      return {
+        id: row.id,
+        sessionId: row.id,
+        userEmail: row.user_email,
+        email: row.user_email,
+        sessionToken: row.session_token,
+        deviceId: row.device_id,
+        deviceName: row.device_name || 'Workstation Device',
+        deviceType: row.device_type || 'desktop',
+        osName: row.os_name || 'Desktop OS',
+        browserName: row.browser_name || 'Browser',
+        ipAddress: row.ip_address || '127.0.0.1',
+        location: row.location || 'Local Secure Network',
+        isCurrent: false,
+        isOnline,
+        diffMinutes,
+        createdAt: row.created_at,
+        lastActive: row.last_active
+      };
+    });
+
+    res.json({ success: true, count: mapped.length, sessions: mapped });
+  } catch (err) {
+    console.error('[Get-All-Sessions Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/auth/sessions (Retrieve active devices for account or all if all=true)
 router.get('/sessions', async (req, res) => {
   try {
     await ensureSessionsTable();
     const email = (req.query.email || '').trim().toLowerCase();
     const currentToken = (req.query.currentToken || '').trim();
     const currentDeviceId = (req.query.deviceId || '').trim();
+    const isAll = req.query.all === 'true' || req.query.scope === 'global';
 
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'Email is required to fetch active sessions.' });
+    let sessionsRes;
+    if (isAll || !email) {
+      sessionsRes = await query(`
+        SELECT * FROM user_sessions 
+        WHERE is_revoked = FALSE 
+        ORDER BY last_active DESC 
+        LIMIT 150
+      `);
+    } else {
+      sessionsRes = await query(`
+        SELECT * FROM user_sessions 
+        WHERE LOWER(user_email) = $1 AND is_revoked = FALSE 
+        ORDER BY last_active DESC
+      `, [email]);
     }
 
-    let sessionsRes = await query(`
-      SELECT * FROM user_sessions 
-      WHERE LOWER(user_email) = $1 AND is_revoked = FALSE 
-      ORDER BY last_active DESC
-    `, [email]);
-
-    // If no sessions registered yet, seed the current session and one secondary demo device so the user can test the remove option immediately
-    if (sessionsRes.rowCount === 0) {
+    // If querying single user and no sessions registered yet, seed current session
+    if (!isAll && email && sessionsRes.rowCount === 0) {
       const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '127.0.0.1';
       const parsed = parseDeviceDetails(req.headers['user-agent'], clientIp);
       const primaryId = `SES-${Date.now().toString().slice(-6)}-P01`;
@@ -661,15 +713,6 @@ router.get('/sessions', async (req, res) => {
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE, NOW(), NOW())
       `, [primaryId, email, primaryToken, primaryDevId, parsed.deviceName, parsed.deviceType, parsed.osName, parsed.browserName, parsed.ipAddress, parsed.location]);
 
-      // Seed a realistic secondary remote session (e.g. mobile device)
-      const secondaryId = `SES-${(Date.now() - 100000).toString().slice(-6)}-M02`;
-      const secondaryToken = `ses_tok_mobile_${Math.random().toString(36).slice(2, 8)}`;
-      const secondaryDevId = `dev_mobile_${Math.random().toString(36).slice(2, 8)}`;
-      await query(`
-        INSERT INTO user_sessions (id, user_email, session_token, device_id, device_name, device_type, os_name, browser_name, ip_address, location, is_revoked, created_at, last_active)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE, NOW() - INTERVAL '4 hours', NOW() - INTERVAL '25 minutes')
-      `, [secondaryId, email, secondaryToken, secondaryDevId, 'iOS (iPhone 15 Pro) • Apple Safari', 'mobile', 'iOS 17.5', 'Apple Safari', '103.21.244.78', 'Surat, Gujarat, India']);
-
       sessionsRes = await query(`
         SELECT * FROM user_sessions 
         WHERE LOWER(user_email) = $1 AND is_revoked = FALSE 
@@ -677,15 +720,21 @@ router.get('/sessions', async (req, res) => {
       `, [email]);
     }
 
+    const now = Date.now();
     const mapped = sessionsRes.rows.map((row, idx) => {
       const isCurrent = Boolean(
         (currentToken && row.session_token === currentToken) ||
         (currentDeviceId && row.device_id === currentDeviceId) ||
-        (!currentToken && !currentDeviceId && idx === 0)
+        (!isAll && !currentToken && !currentDeviceId && idx === 0)
       );
+      const lastActiveTime = new Date(row.last_active || row.created_at).getTime();
+      const diffMinutes = Math.floor((now - lastActiveTime) / (1000 * 60));
+
       return {
         id: row.id,
         sessionId: row.id,
+        userEmail: row.user_email,
+        email: row.user_email,
         sessionToken: row.session_token,
         deviceId: row.device_id,
         deviceName: row.device_name || 'Workstation Device',
@@ -695,6 +744,8 @@ router.get('/sessions', async (req, res) => {
         ipAddress: row.ip_address || '127.0.0.1',
         location: row.location || 'Local Secure Network',
         isCurrent,
+        isOnline: diffMinutes <= 2,
+        diffMinutes,
         createdAt: row.created_at,
         lastActive: row.last_active
       };
@@ -730,7 +781,7 @@ router.post('/revoke-session', async (req, res) => {
       await query(`UPDATE user_sessions SET is_revoked = TRUE WHERE id = $1`, [sessionId]);
     }
 
-    console.log(`[Security Alert] 🔒 Session ${sessionId || sessionToken} revoked for ${cleanEmail}`);
+    console.log(`[Security Alert] 🔒 Session ${sessionId || sessionToken} revoked`);
     res.json({
       success: true,
       revokedId: sessionId,
@@ -738,6 +789,32 @@ router.post('/revoke-session', async (req, res) => {
     });
   } catch (err) {
     console.error('[Revoke-Session Error]:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/terminate-session (Super Admin remote session termination)
+router.post('/terminate-session', async (req, res) => {
+  try {
+    await ensureSessionsTable();
+    const { sessionId, sessionToken } = req.body;
+
+    if (!sessionId && !sessionToken) {
+      return res.status(400).json({ success: false, error: 'Session ID or Token is required.' });
+    }
+
+    await query(`
+      UPDATE user_sessions 
+      SET is_revoked = TRUE, last_active = NOW() 
+      WHERE id = $1 OR session_token = $2
+    `, [sessionId || '', sessionToken || '']);
+
+    res.json({
+      success: true,
+      message: '✓ Live web session terminated by Super Admin.'
+    });
+  } catch (err) {
+    console.error('[Terminate-Session Error]:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -869,29 +946,22 @@ export const registerInvitedUser = async (param1, param2, param3, param4) => {
     throw new Error('Valid email is required for registration.');
   }
 
-  const userId = `USR-${Date.now().toString().slice(-6)}`;
-  const empId = `EMP-${Date.now().toString().slice(-6)}`;
+  const superAdminEmail = (process.env.SUPERADMIN_EMAIL || process.env.VITE_SUPERADMIN_EMAIL || 'superadmin@taxpro.com').toLowerCase().trim();
+  if (cleanEmail === superAdminEmail || cleanEmail === 'workforcepro09@gmail.com') {
+    return {
+      success: false,
+      alreadyRegistered: true,
+      existingRole: 'Super Admin',
+      existingName: 'Super Administrator',
+      existingEmail: cleanEmail,
+      error: `"${cleanEmail}" is a reserved Root Super Administrator account and cannot be modified as an employee.`
+    };
+  }
+
+  const empId = payload.id || payload.employeeId || `EMP-${Date.now().toString().slice(-6)}`;
+  const userId = `USR-${empId.replace(/^EMP-/, '')}`;
 
   try {
-    // Check if an account with this email already exists across any role
-    const existingAccount = await query(`
-      SELECT 'users' as source, id, email, name, role FROM users WHERE LOWER(TRIM(email)) = $1
-      UNION ALL
-      SELECT 'team_members' as source, id, email, name, role FROM team_members WHERE LOWER(TRIM(email)) = $1
-      LIMIT 1;
-    `, [cleanEmail]);
-
-    if (existingAccount && existingAccount.rows && existingAccount.rows.length > 0) {
-      const match = existingAccount.rows[0];
-      return {
-        success: false,
-        alreadyRegistered: true,
-        existingRole: match.role || 'Member',
-        existingName: match.name || cleanName,
-        existingEmail: cleanEmail,
-        error: `An account with email "${cleanEmail}" already exists in the system as "${match.role || 'Member'}". Duplicate invitations are prevented.`
-      };
-    }
 
     // 1. Always Upsert into users table (for instant authentication) with firm association
     const userRes = await query(`
@@ -1175,10 +1245,59 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Ensure status is marked Active in team_members
-    if (member && member.status !== 'Active') {
-      await query("UPDATE team_members SET status = 'Active', online = TRUE WHERE LOWER(email) = $1", [cleanEmail]);
+    // Ensure status is marked Active in team_members and auto-create team_member if missing
+    if (user && !member) {
+      const empId = user.id ? `EMP-${user.id.replace(/^USR-/, '')}` : `EMP-${Date.now().toString().slice(-6)}`;
+      const perms = {};
+      const uRole = user.role || 'Employee';
+      const isAdm = uRole === 'Super Admin' || uRole === 'Administrator' || uRole === 'Admin' || uRole.toLowerCase().includes('director');
+      const isMgr = uRole.toLowerCase().includes('manager');
+
+      const allModules = [
+        'dashboard', 'ai_studio', 'my_work', 'clients', 'projects', 'tasks', 
+        'attendance', 'leaves', 'calendar', 'support', 'receipts_payments', 
+        'fees_tracking', 'members_payment', 'our_payment', 'owner_payments', 
+        'communication', 'private_chat', 'reports', 'team_members', 'departments', 
+        'integrations', 'settings', 'activity_logs'
+      ];
+      allModules.forEach(mod => {
+        if (isAdm) perms[mod] = true;
+        else if (isMgr) perms[mod] = !['integrations', 'owner_payments', 'settings'].includes(mod);
+        else perms[mod] = !['integrations', 'members_payment', 'receipts_payments', 'owner_payments', 'our_payment', 'team_members', 'departments', 'settings', 'reports', 'activity_logs'].includes(mod);
+      });
+
+      const autoMemRes = await query(`
+        INSERT INTO team_members (id, name, email, role, department, status, permissions, online, preset_password, company, company_id, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, 'Active', $6, TRUE, $7, $8, 'TaxPro', NOW(), NOW())
+        ON CONFLICT (email) DO UPDATE SET 
+          status = 'Active', 
+          online = TRUE,
+          role = EXCLUDED.role,
+          updated_at = NOW()
+        RETURNING *;
+      `, [
+        empId,
+        user.name || cleanEmail.split('@')[0],
+        cleanEmail,
+        uRole,
+        user.department || 'General',
+        JSON.stringify(perms),
+        cleanPass,
+        user.company || 'TaxPro Advisory & Tax Associates'
+      ]);
+      member = autoMemRes.rows[0];
+      await recordMutation('team_members', cleanEmail);
+    } else if (member) {
+      if (member.status !== 'Active' || !member.online) {
+        await query("UPDATE team_members SET status = 'Active', online = TRUE, updated_at = NOW() WHERE LOWER(email) = $1", [cleanEmail]);
+        await recordMutation('team_members', cleanEmail);
+      }
+      // Keep role synchronized between users and team_members
+      if (user && member.role && user.role !== member.role) {
+        await query("UPDATE users SET role = $1, updated_at = NOW() WHERE LOWER(email) = $2", [member.role, cleanEmail]);
+      }
     }
+
     // Synchronize passwords if needed
     if (user && (!user.password || user.password !== cleanPass)) {
       await query("UPDATE users SET password = $1 WHERE id = $2", [cleanPass, user.id]);
@@ -1187,6 +1306,11 @@ router.post('/login', async (req, res) => {
     const token = `taxpro_jwt_session_${Date.now()}_${Math.random().toString(36).substring(2)}`;
     const welcomeMail = sendWelcomeEmail(user.email, user.name);
 
+    let parsedPermissions = member?.permissions || null;
+    if (typeof parsedPermissions === 'string') {
+      try { parsedPermissions = JSON.parse(parsedPermissions); } catch (e) { }
+    }
+
     res.json({
       success: true,
       message: 'Authentication successful! Welcome to TaxPro AI (PostgreSQL Connected).',
@@ -1194,16 +1318,16 @@ router.post('/login', async (req, res) => {
       welcomeEmailSent: true,
       welcomeEmailDetails: welcomeMail,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
+        id: member?.id || user.id,
+        name: member?.name || user.name,
+        email: cleanEmail,
         role: member?.role || user.role || 'Employee',
-        department: member?.department || 'General',
+        department: member?.department || user.department || 'General',
         company: member?.company || user.company || 'TaxPro Advisory & Tax Associates',
         company_id: member?.company_id || user.company_id || 'TaxPro',
-        permissions: member?.permissions || null,
-        phone: user.phone || member?.phone || '',
-        avatar: user.avatar || member?.avatar || null
+        permissions: parsedPermissions,
+        phone: member?.phone || user.phone || '',
+        avatar: member?.avatar || user.avatar || null
       }
     });
   } catch (err) {

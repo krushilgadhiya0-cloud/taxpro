@@ -68,17 +68,24 @@ import { formatDate } from '../../lib/dateUtils';
 
 const ALL_MODULES = [
   { id: 'dashboard', name: 'Dashboard Analytics', icon: LayoutDashboard, category: 'Management & Governance', desc: 'Real-time practice analytics, KPI metrics, revenue charts, and operational summary' },
+  { id: 'ai_studio', name: 'AI Studio & Tools', icon: Sparkles, category: 'Operations & Practice', desc: 'AI workspace tools, smart prompts, automated assistants, and generative features' },
+  { id: 'my_work', name: 'My Work & Personal Tasks', icon: ListTodo, category: 'Operations & Practice', desc: 'Personal task assignment, individual workload pipeline, and daily work tracker' },
   { id: 'clients', name: 'Clients Directory & KYC', icon: Users2, category: 'Operations & Practice', desc: 'Client account creation, profile records, and KYC document repository' },
   { id: 'projects', name: 'Projects & Milestones', icon: FolderKanban, category: 'Operations & Practice', desc: 'Project timelines, client milestones, deliverables, and progress tracking' },
   { id: 'tasks', name: 'Tasks Management', icon: CheckSquare, category: 'Operations & Practice', desc: 'Full practice task assignment, status updates, priority tags, and notes' },
-  { id: 'attendance', name: 'Biometric Attendance & Leaves', icon: CalendarCheck, category: 'Operations & Practice', desc: 'Staff attendance check-in, punch logs, leave approvals, and calendar' },
+  { id: 'attendance', name: 'Biometric Attendance', icon: CalendarCheck, category: 'Operations & Practice', desc: 'Staff attendance check-in, punch logs, attendance status, and calendar' },
+  { id: 'leaves', name: 'Leaves & Leave Desk', icon: Calendar, category: 'Operations & Practice', desc: 'Staff leave applications, approval workflow, and leave balance ledger' },
+  { id: 'calendar', name: 'Calendar & Schedule', icon: Clock, category: 'Operations & Practice', desc: 'Firm events, hearing dates, statutory deadlines, and appointment calendar' },
   { id: 'support', name: 'Support & Help Center', icon: LifeBuoy, category: 'Operations & Practice', desc: 'Internal practice tickets, staff inquiries, and technical help desk' },
   { id: 'receipts_payments', name: 'Receipts & Payments Ledger', icon: Receipt, category: 'Financials & Billing', desc: 'Firm accounting journal, receipts ledger, expenditure vouchers, and cashflow' },
-  { id: 'members_payment', name: 'Staff Payroll Processing', icon: DollarSign, category: 'Financials & Billing', desc: 'Monthly salary payouts, payroll records, bonuses, and salary slips' },
   { id: 'fees_tracking', name: 'Client Fees & Invoicing', icon: DollarSign, category: 'Financials & Billing', desc: 'Client fee invoicing, outstanding collection tracking, and payment receipts' },
+  { id: 'members_payment', name: 'Staff Payroll Processing', icon: DollarSign, category: 'Financials & Billing', desc: 'Monthly salary payouts, payroll records, bonuses, and salary slips' },
+  { id: 'our_payment', name: 'Our Payment & Subscriptions', icon: CreditCard, category: 'Financials & Billing', desc: 'Firm vendor bills, software subscriptions, office expenses, and vendor payouts' },
+  { id: 'owner_payments', name: 'Owner Payments & Drawings', icon: DollarSign, category: 'Financials & Billing', desc: 'Partner profit distributions, partner drawings, and executive payouts' },
   { id: 'communication', name: 'Firm Broadcast & Notices', icon: MessageSquare, category: 'Communication', desc: 'Firm-wide bulletin board, announcements, notices, and circulars' },
   { id: 'private_chat', name: 'Private Direct Chat', icon: MessageSquare, category: 'Communication', desc: 'Secure 1-on-1 staff direct messaging, attachments, and real-time chat' },
   { id: 'reports', name: 'Compliance & Audit Reports', icon: FileText, category: 'Compliance & Reports', desc: 'Statutory compliance tracking, filing status reports, and system audit trails' },
+  { id: 'activity_logs', name: 'Activity & System Logs', icon: Activity, category: 'Compliance & Reports', desc: 'Real-time practice audit logs, security access tracking, and changes history' },
   { id: 'team_members', name: 'Team Members Directory', icon: User, category: 'Management & Governance', desc: 'Staff directory, account onboarding, role assignments, and permissions' },
   { id: 'departments', name: 'Departments Structure', icon: Building, category: 'Management & Governance', desc: 'Organizational hierarchy, practice departments, and designations' },
   { id: 'integrations', name: 'Integrations (SMTP / WhatsApp)', icon: Zap, category: 'Management & Governance', desc: 'SMTP email configuration, WhatsApp messaging API, and webhooks' },
@@ -87,12 +94,16 @@ const ALL_MODULES = [
 
 export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   const effectiveRole = userRole || localStorage.getItem('taxpro_user_role') || 'Admin';
+  const rawRole = (effectiveRole || '').toLowerCase();
   const isAdmin = 
-    effectiveRole === 'Admin' || 
-    effectiveRole === 'Administrator' || 
-    effectiveRole === 'Super Admin' || 
-    effectiveRole.toLowerCase().includes('admin') ||
-    effectiveRole.toLowerCase().includes('manager');
+    rawRole.includes('admin') || 
+    rawRole.includes('manager') || 
+    rawRole.includes('director') || 
+    rawRole.includes('partner') || 
+    rawRole.includes('principal') || 
+    rawRole.includes('owner') ||
+    rawRole.includes('lead') ||
+    rawRole.includes('head');
 
   const [activeTab, setActiveTab] = useState('Members');
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -264,19 +275,19 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
     const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
 
-    // 3. Pre-flight check via backend API (searches across users, team_members, clients across ALL roles)
+    // 3. Pre-flight check via backend API specifically scoped to team_members
     try {
-      const checkResp = await fetch(`${baseUrl}/api/check-email?email=${encodeURIComponent(cleanEmail)}`);
+      const checkResp = await fetch(`${baseUrl}/api/check-email?scope=team_members&email=${encodeURIComponent(cleanEmail)}`);
       if (checkResp.ok) {
         const checkData = await checkResp.json();
-        if (checkData && checkData.exists) {
+        if (checkData && checkData.exists && checkData.inTeamMembers) {
           setIsInviting(false);
           setDuplicateModalInfo({
             isOpen: true,
             email: cleanEmail,
             name: checkData.name || cleanName,
-            role: checkData.role || 'Registered User',
-            department: checkData.source === 'clients' ? 'Client Directory' : ''
+            role: checkData.role || 'Team Member',
+            department: ''
           });
           return;
         }
@@ -285,13 +296,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       console.warn('[Check Email API Note]:', checkApiErr);
     }
 
-    // 4. Check in Supabase / PostgreSQL database for users or team_members
+    // 4. Check in team_members table for active duplicate
     try {
-      const [usrCheck, memCheck] = await Promise.all([
-        supabase.from('users').select('id, email, name, role').ilike('email', cleanEmail).limit(1),
-        supabase.from('team_members').select('id, email, name, role, department').ilike('email', cleanEmail).limit(1)
-      ]);
-      const dbFound = usrCheck?.data?.[0] || memCheck?.data?.[0];
+      const { data: memCheck } = await supabase.from('team_members').select('id, email, name, role, department').ilike('email', cleanEmail).limit(1);
+      const dbFound = memCheck?.[0];
       if (dbFound) {
         setIsInviting(false);
         setDuplicateModalInfo({
@@ -308,15 +316,15 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     }
     
     try {
-      // Initialize default permissions based on role
+      // Initialize default permissions based on role across all 23 modules
       const initialPerms = {};
       ALL_MODULES.forEach(m => {
         if (formData.role === 'Administrator') {
           initialPerms[m.id] = true;
         } else if (formData.role === 'Manager') {
-          initialPerms[m.id] = !['integrations'].includes(m.id);
+          initialPerms[m.id] = !['integrations', 'owner_payments', 'settings'].includes(m.id);
         } else {
-          initialPerms[m.id] = !['integrations', 'members_payment', 'receipts_payments'].includes(m.id);
+          initialPerms[m.id] = !['integrations', 'members_payment', 'receipts_payments', 'owner_payments', 'our_payment', 'team_members', 'departments', 'settings', 'reports', 'activity_logs'].includes(m.id);
         }
       });
 
@@ -434,6 +442,12 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
         id: memberPayload.id
       };
 
+      // Immediately place new member in state & local table cache so they appear everywhere instantly
+      setMembers(prev => {
+        const filtered = prev.filter(m => (m.email || '').toLowerCase().trim() !== cleanEmail);
+        return [memberPayload, ...filtered];
+      });
+
       // Re-fetch directory and switch to appropriate tab
       await fetchMembers();
       if (formData.status === 'Pending Invite') {
@@ -441,6 +455,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       } else {
         setActiveTab('Members');
       }
+      window.dispatchEvent(new CustomEvent('taxpro_workforce_synced'));
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
       // Close input modal and open Success Credentials Confirmation Modal
@@ -693,7 +708,36 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
       if (error) throw error;
 
-      setMembers(prev => prev.map(m => m.id === accessModalMember.id ? {
+      // Also ensure updated in team_members by email
+      if (accessModalMember.email) {
+        try {
+          await supabase.from('team_members').update({
+            role: accessForm.role,
+            status: accessForm.status,
+            permissions: accessForm.permissions
+          }).ilike('email', accessModalMember.email);
+        } catch (e) {}
+      }
+
+      // Also keep role & status synchronized in users table
+      if (accessModalMember.email) {
+        try {
+          await supabase.from('users').update({
+            role: accessForm.role,
+            status: accessForm.status
+          }).ilike('email', accessModalMember.email);
+        } catch (e) {}
+      }
+
+      // If updating currently logged in user, apply changes directly to session state
+      const currentLoggedIn = localStorage.getItem('taxpro_user_email');
+      if (currentLoggedIn && accessModalMember.email && currentLoggedIn.toLowerCase().trim() === accessModalMember.email.toLowerCase().trim()) {
+        localStorage.setItem('taxpro_user_role', accessForm.role);
+        localStorage.setItem('taxpro_user_status', accessForm.status);
+        localStorage.setItem('taxpro_user_permissions', JSON.stringify(accessForm.permissions || {}));
+      }
+
+      setMembers(prev => prev.map(m => (m.id === accessModalMember.id || (m.email && m.email.toLowerCase() === (accessModalMember.email || '').toLowerCase())) ? {
         ...m,
         role: accessForm.role,
         status: accessForm.status,
@@ -707,6 +751,8 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
         metadata: { id: accessModalMember.id, name: accessModalMember.name, role: accessForm.role, status: accessForm.status }
       });
 
+      window.dispatchEvent(new CustomEvent('taxpro_permissions_updated'));
+      window.dispatchEvent(new CustomEvent('taxpro_workforce_synced'));
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
 
       if (onShowToast) onShowToast(`✓ Access permissions saved for ${accessModalMember.name}!`, 'success');
@@ -728,10 +774,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
       ALL_MODULES.forEach(m => { updated[m.id] = false; });
       setAccessForm(prev => ({ ...prev, status: 'Access Revoked', permissions: updated }));
     } else if (type === 'manager') {
-      ALL_MODULES.forEach(m => { updated[m.id] = !['integrations'].includes(m.id); });
+      ALL_MODULES.forEach(m => { updated[m.id] = !['integrations', 'owner_payments', 'settings'].includes(m.id); });
       setAccessForm(prev => ({ ...prev, role: 'Manager', status: 'Active', permissions: updated }));
     } else if (type === 'employee') {
-      ALL_MODULES.forEach(m => { updated[m.id] = !['integrations', 'members_payment', 'receipts_payments', 'departments'].includes(m.id); });
+      ALL_MODULES.forEach(m => { updated[m.id] = !['integrations', 'members_payment', 'receipts_payments', 'owner_payments', 'our_payment', 'team_members', 'departments', 'settings', 'reports', 'activity_logs'].includes(m.id); });
       setAccessForm(prev => ({ ...prev, role: 'Employee', status: 'Active', permissions: updated }));
     }
   };
@@ -792,9 +838,18 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   const [selectedDeptFilter, setSelectedDeptFilter] = useState('All');
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
 
-  const activeMembers = members.filter(m => m.status === 'Active' || m.status === 'Access Revoked');
-  const pendingMembers = members.filter(m => m.status === 'Pending Invite');
-  const pastMembers = members.filter(m => m.status === 'Old' || m.status === 'Past');
+  const activeMembers = members.filter(m => {
+    const s = (m.status || '').toLowerCase().trim();
+    return s === 'active' || s === 'access revoked' || s === 'suspended' || s === '' || !m.status;
+  });
+  const pendingMembers = members.filter(m => {
+    const s = (m.status || '').toLowerCase().trim();
+    return s.includes('pending') || s.includes('invite');
+  });
+  const pastMembers = members.filter(m => {
+    const s = (m.status || '').toLowerCase().trim();
+    return s === 'old' || s === 'past' || s === 'archived';
+  });
   
   const currentList = activeTab === 'Members' ? activeMembers : activeTab === 'Invitations' ? pendingMembers : activeTab === 'Past' ? pastMembers : [];
 
@@ -2210,7 +2265,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                   {/* INVITATION SPECIFIC ACTIONS (Awaiting 1st Login) */}
                   {activeTab === 'Invitations' && (
                     <div className="flex flex-col gap-1.5 mt-1 z-10" onClick={(e) => e.stopPropagation()}>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <div className="grid grid-cols-3 gap-1.5">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -2223,7 +2278,17 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                           title="Copy login details"
                         >
                           <KeyRound className="w-3 h-3 text-gray-500" />
-                          <span>Copy Login</span>
+                          <span>Copy</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenAccessModal(e, obj)}
+                          className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-xl border border-indigo-200 flex items-center justify-center gap-1 transition-all cursor-pointer"
+                          title="Configure Menu Bar & Module Permissions"
+                        >
+                          <SlidersHorizontal className="w-3 h-3" />
+                          <span>Perms</span>
                         </button>
 
                         <button
@@ -2236,7 +2301,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                           title="Simulate 1st login and move directly to Active Members"
                         >
                           <CheckSquare className="w-3 h-3 text-emerald-600" />
-                          <span>1st Login (Activate)</span>
+                          <span>Activate</span>
                         </button>
                       </div>
 

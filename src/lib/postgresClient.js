@@ -395,8 +395,10 @@ class PostgresQueryBuilder {
       if (this.action === 'select') {
         const params = new URLSearchParams();
         this.filters.forEach(f => {
-          if (f.op === 'eq' || f.op === 'ilike') {
+          if (f.op === 'eq') {
             params.append(f.column, f.value);
+          } else if (f.op === 'ilike') {
+            params.append(f.column, `ilike.${f.value}`);
           }
         });
         if (this.limitCount) {
@@ -550,8 +552,14 @@ class PostgresQueryBuilder {
         try {
           const currentTableData = getTableCache(this.table);
           const updatedTableData = currentTableData.map(row => {
-            if (idFilter && row[idFilter.column] === idFilter.value) {
-              return { ...row, ...payloadData };
+            if (idFilter) {
+              if (idFilter.column === 'email') {
+                if (String(row.email || '').trim().toLowerCase() === String(idFilter.value || '').trim().toLowerCase()) {
+                  return { ...row, ...payloadData };
+                }
+              } else if (String(row[idFilter.column]) === String(idFilter.value)) {
+                return { ...row, ...payloadData };
+              }
             }
             return row;
           });
@@ -572,6 +580,10 @@ class PostgresQueryBuilder {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('taxpro_db_updated', { detail: { table: this.table, row: payloadData } }));
           window.dispatchEvent(new CustomEvent('taxpro_financial_updated'));
+          if (this.table === 'team_members') {
+            window.dispatchEvent(new CustomEvent('taxpro_workforce_synced'));
+            window.dispatchEvent(new CustomEvent('taxpro_permissions_updated'));
+          }
         }
 
         // 2. Non-blocking/async sync to PostgreSQL Backend if online
@@ -749,6 +761,10 @@ export const postgresClient = {
           localStorage.setItem('taxpro_user_email', session.user.email);
           localStorage.setItem('taxpro_user_role', session.user.role);
           localStorage.setItem('taxpro_profile_completed', 'true');
+          if (json.user?.permissions) {
+            const permStr = typeof json.user.permissions === 'string' ? json.user.permissions : JSON.stringify(json.user.permissions);
+            localStorage.setItem('taxpro_user_permissions', permStr);
+          }
 
           notifyAuthChange('SIGNED_IN', session);
           return { data: { user: session.user, session }, error: null };
@@ -791,6 +807,10 @@ export const postgresClient = {
           localStorage.setItem('taxpro_user_email', session.user.email);
           localStorage.setItem('taxpro_user_role', session.user.role);
           localStorage.setItem('taxpro_profile_completed', 'true');
+          if (matchedLocal.permissions) {
+            const permStr = typeof matchedLocal.permissions === 'string' ? matchedLocal.permissions : JSON.stringify(matchedLocal.permissions);
+            localStorage.setItem('taxpro_user_permissions', permStr);
+          }
           notifyAuthChange('SIGNED_IN', session);
           return { data: { user: session.user, session }, error: null };
         }

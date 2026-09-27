@@ -157,14 +157,16 @@ export default function AuthModal({
     const cleanId = superAdminId.trim().toLowerCase();
     const cleanPass = superAdminPass.trim();
 
-    const isSuperIdValid = cleanId === 'superadmin@taxpro.com' || cleanId === 'superadmin' || cleanId === (import.meta.env.VITE_SUPERADMIN_EMAIL || '').toLowerCase();
-    const isSuperPassValid = cleanPass === 'Krushil@2007' || cleanPass === (import.meta.env.VITE_SUPERADMIN_PASSWORD || '');
+    const reservedSuperAdmins = ['superadmin@taxpro.com', 'workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com'];
+    const isSuperIdValid = reservedSuperAdmins.includes(cleanId) || cleanId === 'superadmin' || cleanId === (import.meta.env.VITE_SUPERADMIN_EMAIL || '').toLowerCase();
+    const isSuperPassValid = cleanPass === 'Krushil@2007' || cleanPass === (import.meta.env.VITE_SUPERADMIN_PASSWORD || 'Krushil@2007');
 
     setTimeout(() => {
       if (isSuperIdValid && isSuperPassValid) {
         sessionStorage.setItem('taxpro_superadmin_authenticated', 'true');
-        localStorage.setItem('taxpro_secret_superadmin', 'superadmin@taxpro.com');
-        localStorage.setItem('taxpro_user_email', 'superadmin@taxpro.com');
+        localStorage.setItem('taxpro_superadmin_authenticated', 'true');
+        localStorage.setItem('taxpro_secret_superadmin', cleanId.includes('@') ? cleanId : 'superadmin@taxpro.com');
+        localStorage.setItem('taxpro_user_email', cleanId.includes('@') ? cleanId : 'superadmin@taxpro.com');
         localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
         localStorage.setItem('taxpro_profile_completed', 'true');
         localStorage.setItem('taxpro_user_role', 'Super Admin');
@@ -176,8 +178,8 @@ export default function AuthModal({
 
         setTimeout(() => {
           onClose();
-          if (onLoginSuccess) onLoginSuccess('superadmin@taxpro.com', 'Super Admin');
-        }, 500);
+          if (onLoginSuccess) onLoginSuccess(cleanId.includes('@') ? cleanId : 'superadmin@taxpro.com', 'Super Admin');
+        }, 400);
       } else {
         setLoginError('✕ ACCESS DENIED: Invalid Master Key ID or Root Passphrase.');
         onShowToast('✕ Unauthorized SuperAdmin Attempt: Security Log Recorded.', 'error');
@@ -205,11 +207,13 @@ export default function AuthModal({
     setLoginError('');
 
     // 1. Check if user typed superadmin credentials
-    const isSuperEmail = cleanEmail === 'superadmin@taxpro.com' || cleanEmail === 'superadmin' || cleanEmail === (import.meta.env.VITE_SUPERADMIN_EMAIL || '').toLowerCase();
-    const isSuperPass = password === 'Krushil@2007' || password === import.meta.env.VITE_SUPERADMIN_PASSWORD;
+    const reservedSuperAdmins = ['superadmin@taxpro.com', 'workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com'];
+    const isSuperEmail = reservedSuperAdmins.includes(cleanEmail) || cleanEmail === 'superadmin' || cleanEmail === (import.meta.env.VITE_SUPERADMIN_EMAIL || '').toLowerCase();
+    const isSuperPass = password === 'Krushil@2007' || password === (import.meta.env.VITE_SUPERADMIN_PASSWORD || 'Krushil@2007');
 
     if (isSuperEmail && isSuperPass) {
       sessionStorage.setItem('taxpro_superadmin_authenticated', 'true');
+      localStorage.setItem('taxpro_superadmin_authenticated', 'true');
       localStorage.setItem('taxpro_secret_superadmin', cleanEmail);
       localStorage.setItem('taxpro_user_email', cleanEmail);
       localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
@@ -220,7 +224,7 @@ export default function AuthModal({
       setTimeout(() => {
         onClose();
         if (onLoginSuccess) onLoginSuccess(cleanEmail, 'Super Admin');
-      }, 500);
+      }, 400);
       setIsSubmitting(false);
       return;
     }
@@ -340,7 +344,11 @@ export default function AuthModal({
             // Determine role automatically
             let resolvedRole = 'Employee';
             const rawRole = (targetRecord.role || '').toLowerCase();
-            if (rawRole.includes('admin') || rawRole.includes('owner') || rawRole.includes('principal')) {
+            const isSuperAccount = rawRole.includes('super') || reservedSuperAdmins.includes(cleanEmail) || (targetRecord.email && reservedSuperAdmins.includes(targetRecord.email.toLowerCase()));
+
+            if (isSuperAccount) {
+              resolvedRole = 'Super Admin';
+            } else if (rawRole.includes('admin') || rawRole.includes('owner') || rawRole.includes('principal')) {
               resolvedRole = 'Admin';
             } else if (rawRole.includes('manager') || rawRole.includes('head') || rawRole.includes('lead')) {
               resolvedRole = 'Manager';
@@ -350,14 +358,14 @@ export default function AuthModal({
 
             const effectiveEmail = targetRecord.email || cleanEmail;
 
-            // Automatically complete setup for invited members so they enter their workspace immediately
+            // Automatically complete setup for members so they enter their workspace immediately
             localStorage.setItem('taxpro_setup_completed', 'true');
             localStorage.setItem('taxpro_profile_completed', 'true');
             localStorage.setItem('taxpro_user_role', resolvedRole);
             localStorage.setItem('taxpro_user_email', effectiveEmail);
             localStorage.setItem('taxpro_user_name', targetRecord.name || effectiveEmail.split('@')[0]);
 
-            // Link firm/company across all roles
+            // Link firm/company across roles
             const targetCompany = targetRecord.company || uRow?.company || member?.company;
             const targetCompanyId = targetRecord.company_id || uRow?.company_id || member?.company_id;
             if (targetCompany) {
@@ -383,9 +391,17 @@ export default function AuthModal({
               await supabase.from('users').update({ status: 'Active' }).ilike('email', effectiveEmail);
             }
 
-            sessionStorage.removeItem('taxpro_superadmin_authenticated');
-            localStorage.removeItem('taxpro_secret_superadmin');
-            localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+            if (resolvedRole === 'Super Admin') {
+              sessionStorage.setItem('taxpro_superadmin_authenticated', 'true');
+              localStorage.setItem('taxpro_superadmin_authenticated', 'true');
+              localStorage.setItem('taxpro_secret_superadmin', effectiveEmail);
+              localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
+            } else {
+              sessionStorage.removeItem('taxpro_superadmin_authenticated');
+              localStorage.removeItem('taxpro_superadmin_authenticated');
+              localStorage.removeItem('taxpro_secret_superadmin');
+              localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+            }
 
             const fallbackSession = {
               access_token: 'pg_session_token_' + Date.now(),
@@ -460,7 +476,8 @@ export default function AuthModal({
           }
           if (member.role) {
             const rawR = member.role.toLowerCase();
-            if (rawR.includes('admin')) finalRole = 'Admin';
+            if (rawR.includes('super')) finalRole = 'Super Admin';
+            else if (rawR.includes('admin')) finalRole = 'Admin';
             else if (rawR.includes('manager')) finalRole = 'Manager';
             else finalRole = 'Employee';
           }
@@ -480,14 +497,31 @@ export default function AuthModal({
         }
       } catch (e) {}
 
-      localStorage.setItem('taxpro_setup_completed', 'true');
-      localStorage.setItem('taxpro_profile_completed', 'true');
-      localStorage.setItem('taxpro_user_role', finalRole);
-      localStorage.setItem('taxpro_user_email', user.email || cleanEmail);
-      localStorage.setItem('taxpro_user_name', user.user_metadata?.name || user.email?.split('@')[0] || 'User');
-      localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
-      sessionStorage.removeItem('taxpro_superadmin_authenticated');
-      localStorage.removeItem('taxpro_secret_superadmin');
+      const reservedSuperAdmins = ['superadmin@taxpro.com', 'workforcepro09@gmail.com', 'krushilgadhiya0@gmail.com', 'krushilgadhiya138@gmail.com'];
+      const isSuperUser = reservedSuperAdmins.includes(cleanEmail) || (user?.email && reservedSuperAdmins.includes(user.email.toLowerCase())) || finalRole === 'Super Admin' || finalRole === 'Super Administrator';
+
+      if (isSuperUser) {
+        finalRole = 'Super Admin';
+        localStorage.setItem('taxpro_setup_completed', 'true');
+        localStorage.setItem('taxpro_profile_completed', 'true');
+        localStorage.setItem('taxpro_user_role', 'Super Admin');
+        localStorage.setItem('taxpro_user_email', user.email || cleanEmail);
+        localStorage.setItem('taxpro_user_name', user.user_metadata?.name || user.email?.split('@')[0] || 'Super Admin');
+        localStorage.setItem('taxpro_workspace_mode', 'superadmin_core');
+        sessionStorage.setItem('taxpro_superadmin_authenticated', 'true');
+        localStorage.setItem('taxpro_superadmin_authenticated', 'true');
+        localStorage.setItem('taxpro_secret_superadmin', user.email || cleanEmail);
+      } else {
+        localStorage.setItem('taxpro_setup_completed', 'true');
+        localStorage.setItem('taxpro_profile_completed', 'true');
+        localStorage.setItem('taxpro_user_role', finalRole);
+        localStorage.setItem('taxpro_user_email', user.email || cleanEmail);
+        localStorage.setItem('taxpro_user_name', user.user_metadata?.name || user.email?.split('@')[0] || 'User');
+        localStorage.setItem('taxpro_workspace_mode', 'pms_workspace');
+        sessionStorage.removeItem('taxpro_superadmin_authenticated');
+        localStorage.removeItem('taxpro_superadmin_authenticated');
+        localStorage.removeItem('taxpro_secret_superadmin');
+      }
 
       onShowToast(`✓ Authenticated successfully as ${finalRole}!`, 'success');
       setTimeout(() => {

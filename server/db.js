@@ -21,7 +21,11 @@ export const pool = new Pool({
   },
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000
+  connectionTimeoutMillis: 0
+});
+
+pool.on('error', (err) => {
+  console.warn('[PostgreSQL Pool Client Notice]:', err.message);
 });
 
 // Helper for single query execution

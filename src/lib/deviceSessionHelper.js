@@ -180,3 +180,63 @@ export async function checkSessionSecurityStatus(email) {
     return { success: true, valid: true };
   }
 }
+
+// Fetch all active global sessions across all users (Super Admin Supervision)
+export async function fetchAllActiveGlobalSessions() {
+  try {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+    const res = await fetch(`${baseUrl}/api/auth/all-sessions`);
+    const data = await res.json();
+    if (data && data.success && Array.isArray(data.sessions)) {
+      return data;
+    }
+    // Fallback if all-sessions is aliased to /api/auth/sessions?all=true
+    const fallbackRes = await fetch(`${baseUrl}/api/auth/sessions?all=true`);
+    return await fallbackRes.json();
+  } catch (err) {
+    console.warn('[Fetch Global Sessions Warning]:', err.message);
+    return { success: false, sessions: [] };
+  }
+}
+
+// Remotely terminate a specific session by ID (Super Admin action)
+export async function terminateGlobalSession(sessionId) {
+  try {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+    const res = await fetch(`${baseUrl}/api/auth/terminate-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId })
+    });
+    return await res.json();
+  } catch (err) {
+    console.warn('[Terminate Global Session Error]:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Background Heartbeat: automatically registers device and pings every 25 seconds
+let _heartbeatTimer = null;
+export function startSessionHeartbeat(email) {
+  if (typeof window === 'undefined') return;
+  const cleanEmail = (email || localStorage.getItem('taxpro_user_email') || '').trim();
+  if (!cleanEmail) return;
+
+  // Immediate registration on startup
+  registerCurrentDeviceSession(cleanEmail).catch(() => {});
+
+  if (_heartbeatTimer) clearInterval(_heartbeatTimer);
+  _heartbeatTimer = setInterval(() => {
+    checkSessionSecurityStatus(cleanEmail).then(res => {
+      if (res && res.valid === false && res.revoked) {
+        clearInterval(_heartbeatTimer);
+        localStorage.removeItem('taxpro_pg_session');
+        localStorage.removeItem('taxpro_user_email');
+        localStorage.removeItem('taxpro_user_role');
+        alert('🔒 Security Notice: Your active session was remotely terminated or revoked.');
+        window.location.reload();
+      }
+    }).catch(() => {});
+  }, 25000);
+}
+

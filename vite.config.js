@@ -14,7 +14,11 @@ function backendServerPlugin() {
       });
       req.on('error', () => {
         console.log('[Vite Plugin] 🚀 Starting TaxPro backend server on port 5000...');
-        const child = spawn('node', ['server/server.js'], { stdio: 'inherit', shell: true });
+        const child = spawn('node', ['server/server.js'], {
+          cwd: fileURLToPath(new URL('.', import.meta.url)),
+          stdio: 'inherit',
+          shell: true
+        });
         process.on('exit', () => {
           try { child.kill(); } catch (e) {}
         });

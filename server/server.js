@@ -44,9 +44,15 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/chat', chatRoutes);
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Pre-flight check if email is already registered across any role
 app.get('/api/check-email', async (req, res) => {
   const email = (req.query.email || '').trim().toLowerCase();
+  const scope = (req.query.scope || '').trim().toLowerCase();
   if (!email) {
     return res.status(400).json({ success: false, error: 'Email parameter is required.' });
   }
@@ -56,6 +62,9 @@ app.get('/api/check-email', async (req, res) => {
   if (email === superAdminEmail || email === 'workforcepro09@gmail.com') {
     return res.json({
       exists: true,
+      inTeamMembers: true,
+      inUsers: true,
+      inClients: false,
       email,
       role: 'Super Administrator',
       name: 'Super Admin',
@@ -65,27 +74,46 @@ app.get('/api/check-email', async (req, res) => {
 
   try {
     const { query } = await import('./db.js');
+    if (scope === 'team_members') {
+      const tmRes = await query(`SELECT id, email, name, role FROM team_members WHERE LOWER(TRIM(email)) = $1 LIMIT 1`, [email]);
+      if (tmRes.rows.length > 0) {
+        const m = tmRes.rows[0];
+        return res.json({
+          exists: true,
+          inTeamMembers: true,
+          email: m.email,
+          role: m.role || 'Member',
+          name: m.name || '',
+          source: 'team_members'
+        });
+      }
+      return res.json({ exists: false, inTeamMembers: false });
+    }
+
     const checkRes = await query(`
-      SELECT 'users' as source, id, email, name, role FROM users WHERE LOWER(TRIM(email)) = $1
-      UNION ALL
       SELECT 'team_members' as source, id, email, name, role FROM team_members WHERE LOWER(TRIM(email)) = $1
       UNION ALL
+      SELECT 'users' as source, id, email, name, role FROM users WHERE LOWER(TRIM(email)) = $1
+      UNION ALL
       SELECT 'clients' as source, id, email, name, 'Client' as role FROM clients WHERE LOWER(TRIM(email)) = $1
-      LIMIT 1;
     `, [email]);
 
     if (checkRes && checkRes.rows && checkRes.rows.length > 0) {
-      const match = checkRes.rows[0];
+      const sources = checkRes.rows.map(r => r.source);
+      const primary = checkRes.rows.find(r => r.source === 'team_members') || checkRes.rows[0];
       return res.json({
         exists: true,
-        email: match.email,
-        role: match.role || 'Member',
-        name: match.name || '',
-        source: match.source
+        inTeamMembers: sources.includes('team_members'),
+        inUsers: sources.includes('users'),
+        inClients: sources.includes('clients'),
+        email: primary.email,
+        role: primary.role || 'Member',
+        name: primary.name || '',
+        source: primary.source
       });
     }
 
-    return res.json({ exists: false });
+    return res.json({ exists: false, inTeamMembers: false, inUsers: false, inClients: false });
   } catch (err) {
     console.warn('[Check Email Error]:', err.message);
     return res.json({ exists: false, error: err.message });
@@ -468,17 +496,101 @@ app.get('/api/complaints', async (req, res) => {
   }
 });
 
-// Update Complaint Status (Super Admin Action)
+// Update Complaint Status & Dispatch Real-Time Email Notification (Super Admin Action)
 app.patch('/api/complaints/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, admin_reply } = req.body;
   try {
     const { query } = await import('./db.js');
     const result = await query(
-      'UPDATE support_tickets SET status = $1, updated_at = NOW() WHERE id = $2 OR ticket_no = $2 RETURNING *',
-      [status || 'Resolved', id]
+      'UPDATE support_tickets SET status = $1, response = COALESCE($2, response) WHERE id = $3 OR ticket_no = $3 RETURNING *',
+      [status || 'Resolved', admin_reply || null, id]
     );
-    res.json({ success: true, ticket: result.rows[0] });
+    const updatedTicket = result.rows[0];
+
+    // Real-time email dispatch to reporter
+    if (updatedTicket && updatedTicket.user_email) {
+      try {
+        const { dispatchEmail } = await import('./routes/auth.js');
+        await dispatchEmail({
+          to: updatedTicket.user_email,
+          fromName: 'TaxPro SuperAdmin Support Desk',
+          subject: `[TaxPro Grievance Update] Ticket #${updatedTicket.ticket_no || id}: Status [${status}]`,
+          html: `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:540px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:14px;background:#ffffff;">
+            <div style="background:#0f172a;padding:16px 20px;border-radius:10px;margin-bottom:18px;color:#ffffff;">
+              <span style="font-size:11px;font-weight:bold;color:#38bdf8;text-transform:uppercase;letter-spacing:1px;">Ticket Status Notification</span>
+              <h2 style="font-size:18px;margin:6px 0 0 0;color:#ffffff;">Ticket #${updatedTicket.ticket_no || id}</h2>
+            </div>
+            <p style="font-size:13px;color:#334155;">Hello <strong>${updatedTicket.user_name || 'Member'}</strong>,</p>
+            <p style="font-size:13px;color:#334155;">Your reported grievance/query regarding <strong>"${updatedTicket.subject}"</strong> has been reviewed by the Super Administrator.</p>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin:16px 0;">
+              <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                <tr><td style="color:#64748b;padding:4px 0;width:120px;">Current Status:</td><td style="font-weight:bold;color:${status === 'Resolved' ? '#16a34a' : status === 'In Review' ? '#d97706' : '#2563eb'};">${status}</td></tr>
+                <tr><td style="color:#64748b;padding:4px 0;">Category:</td><td style="font-weight:600;">${updatedTicket.category || 'General'}</td></tr>
+                ${admin_reply ? `<tr><td style="color:#64748b;padding:4px 0;vertical-align:top;">Review Note:</td><td style="color:#0f172a;font-weight:600;">${admin_reply}</td></tr>` : ''}
+              </table>
+            </div>
+            <p style="font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:12px;margin-bottom:0;">
+              TaxPro SuperAdmin Platform Monitoring Desk • Automated Real-Time Dispatch
+            </p>
+          </div>`,
+          text: `Ticket #${updatedTicket.ticket_no || id} has been marked as ${status}.\n\nReview: ${admin_reply || 'Status updated by Super Admin.'}`
+        });
+        console.log(`[TaxPro Complaint Engine] ✓ Status update email sent to ${updatedTicket.user_email}`);
+      } catch (mailErr) {
+        console.warn('[Complaint Status Mail Warning]:', mailErr.message);
+      }
+    }
+
+    res.json({ success: true, ticket: updatedTicket });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Send Direct Email Response / Query to User (Super Admin Action)
+app.post('/api/complaints/send-reply', async (req, res) => {
+  const { ticket_no, user_email, user_name, subject, reply_message } = req.body;
+  if (!user_email || !reply_message) {
+    return res.status(400).json({ success: false, error: 'User email and message are required.' });
+  }
+
+  try {
+    const { query } = await import('./db.js');
+    const { dispatchEmail } = await import('./routes/auth.js');
+
+    // Update ticket in database if ticket_no exists
+    if (ticket_no) {
+      await query(
+        'UPDATE support_tickets SET response = $1, status = $2 WHERE ticket_no = $3 OR id = $3',
+        [reply_message, 'Resolved', ticket_no]
+      ).catch(() => {});
+    }
+
+    const mailRes = await dispatchEmail({
+      to: user_email,
+      fromName: 'TaxPro SuperAdmin Support Desk',
+      subject: subject || `[TaxPro Grievance Resolution] Regarding Ticket #${ticket_no || 'Query'}`,
+      html: `<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:540px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:14px;background:#ffffff;">
+        <div style="background:#0f172a;padding:16px 20px;border-radius:10px;margin-bottom:18px;color:#ffffff;">
+          <span style="font-size:11px;font-weight:bold;color:#38bdf8;text-transform:uppercase;letter-spacing:1px;">Official Support Response</span>
+          <h2 style="font-size:18px;margin:6px 0 0 0;color:#ffffff;">SuperAdmin Resolution</h2>
+        </div>
+        <p style="font-size:13px;color:#334155;">Hello <strong>${user_name || 'Member'}</strong>,</p>
+        <p style="font-size:13px;color:#334155;">The Super Administrator has reviewed your inquiry. Below is the official response:</p>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid #16a34a;border-radius:8px;padding:16px;margin:16px 0;font-size:13px;line-height:1.6;color:#0f172a;white-space:pre-wrap;">${reply_message}</div>
+        <p style="font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:12px;margin-bottom:0;">
+          TaxPro SaaS Master Control • Ticket Reference: #${ticket_no || 'GENERAL'}
+        </p>
+      </div>`,
+      text: reply_message
+    });
+
+    res.json({
+      success: true,
+      delivered: mailRes?.success || false,
+      message: `✓ Resolution reply successfully dispatched to ${user_email}`
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

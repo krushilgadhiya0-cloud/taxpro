@@ -149,7 +149,11 @@ router.get('/:table', validateTable, async (req, res) => {
 
       const valStr = String(rawVal);
 
-      if (valStr.startsWith('eq.')) {
+      if (key.toLowerCase() === 'email') {
+        const cleanVal = valStr.startsWith('ilike.') ? valStr.slice(6) : (valStr.startsWith('eq.') ? valStr.slice(3) : valStr);
+        whereClauses.push(`LOWER("${key}") = LOWER($${paramIndex++})`);
+        values.push(cleanVal);
+      } else if (valStr.startsWith('eq.')) {
         whereClauses.push(`"${key}" = $${paramIndex++}`);
         values.push(valStr.slice(3));
       } else if (valStr.startsWith('neq.')) {
@@ -370,7 +374,11 @@ const handleUpdate = async (req, res) => {
     for (const [k, rawVal] of Object.entries(filters)) {
       if (rawVal === undefined || rawVal === null) continue;
       const valStr = String(rawVal);
-      if (valStr.startsWith('eq.')) {
+      if (k.toLowerCase() === 'email') {
+        const cleanVal = valStr.startsWith('ilike.') ? valStr.slice(6) : (valStr.startsWith('eq.') ? valStr.slice(3) : valStr);
+        whereClauses.push(`LOWER("${k}") = LOWER($${paramIndex++})`);
+        values.push(cleanVal);
+      } else if (valStr.startsWith('eq.')) {
         whereClauses.push(`"${k}" = $${paramIndex++}`);
         values.push(valStr.slice(3));
       } else if (valStr.startsWith('ilike.')) {
