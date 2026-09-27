@@ -84,6 +84,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem, 
       invalidateQueryCache('global_tasks');
       invalidateQueryCache('team_members');
       invalidateQueryCache('projects');
+      invalidateQueryCache('departments');
 
       const [tasksRes, membersRes, deptsRes, projRes] = await Promise.all([
          supabase.from('global_tasks').select('*'),
@@ -100,7 +101,16 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem, 
       }
       
       if (membersRes.data) setTeamMembers(membersRes.data);
-      if (deptsRes.data) setDepartmentsList(deptsRes.data);
+      if (deptsRes.data && Array.isArray(deptsRes.data)) {
+        setDepartmentsList(deptsRes.data);
+      } else if (!deptsRes.error) {
+        setDepartmentsList([]);
+      } else {
+        const cachedDepts = localStorage.getItem('taxpro_departments');
+        if (cachedDepts) {
+          try { setDepartmentsList(JSON.parse(cachedDepts)); } catch(e) { setDepartmentsList([]); }
+        }
+      }
 
       if (projRes.data && projRes.data.length > 0) {
         setProjects(projRes.data.map(p => ({
@@ -175,6 +185,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem, 
     window.addEventListener('taxpro_db_updated', handleSync);
     window.addEventListener('taxpro_tasks_updated', handleSync);
     window.addEventListener('taxpro_workforce_synced', handleSync);
+    window.addEventListener('taxpro_departments_updated', handleSync);
     window.addEventListener('taxpro_screen_changed', handleScreenChange);
     window.addEventListener('focus', handleSync);
     document.addEventListener('visibilitychange', handleVisibility);
@@ -190,6 +201,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem, 
       window.removeEventListener('taxpro_db_updated', handleSync);
       window.removeEventListener('taxpro_tasks_updated', handleSync);
       window.removeEventListener('taxpro_workforce_synced', handleSync);
+      window.removeEventListener('taxpro_departments_updated', handleSync);
       window.removeEventListener('taxpro_screen_changed', handleScreenChange);
       window.removeEventListener('focus', handleSync);
       document.removeEventListener('visibilitychange', handleVisibility);
@@ -769,7 +781,7 @@ export default function DashboardView({ onOpenOTP, onTriggerAI, onNavigateItem, 
                 </svg>
               </div>
               <div className="flex flex-col">
-                <span className="text-xl font-black text-sky-500 leading-none group-hover:scale-105 transition-transform font-outfit">{departmentsList.length || 5}</span>
+                <span className="text-xl font-black text-sky-500 leading-none group-hover:scale-105 transition-transform font-outfit">{departmentsList.length}</span>
                 <span className="text-xs font-bold text-gray-700 group-hover:text-sky-600 mt-1 uppercase tracking-wide flex items-center gap-1">
                   Departments <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-sky-500" />
                 </span>

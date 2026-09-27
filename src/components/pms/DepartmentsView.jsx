@@ -73,7 +73,7 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
       setTeamMembersList(members);
 
       const rawDepts = deptRes.data;
-      if (!deptRes.error && Array.isArray(rawDepts) && rawDepts.length > 0) {
+      if (!deptRes.error && Array.isArray(rawDepts)) {
         const cleaned = sanitizeDeptList(rawDepts, members);
         setDepts(cleaned);
         localStorage.setItem('taxpro_departments', JSON.stringify(cleaned));
@@ -86,8 +86,8 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
           } catch(e) {
             setDepts([]);
           }
-        } else if (Array.isArray(rawDepts)) {
-          setDepts(sanitizeDeptList(rawDepts, members));
+        } else {
+          setDepts([]);
         }
       }
     } catch (e) {
@@ -171,11 +171,16 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
       }
     }
 
-    setDepts(prev => [data[0], ...prev]);
+    setDepts(prev => {
+      const updated = [data[0], ...prev];
+      try { localStorage.setItem('taxpro_departments', JSON.stringify(updated)); } catch(e) {}
+      return updated;
+    });
 
     setIsAddModalOpen(false);
     setNewDeptForm({ name: 'Compliance', customName: '', isOther: false, desc: '', manager: '', initialMemberIds: [] });
     window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+    window.dispatchEvent(new CustomEvent('taxpro_departments_updated'));
 
     logAuditActivity({
       action: 'ADD_DEPARTMENT',
@@ -401,18 +406,23 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
         metadata: { id: editingDept.id, name: editingDept.name }
       });
 
-      setDepts(prev => prev.map(d => d.id === editingDept.id ? { 
-        ...d,
-        name: editingDept.name.trim(),
-        manager: editingDept.manager || 'Not assigned',
-        initials: editingDept.initials || editingDept.name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase(),
-        description: editingDept.description || editingDept.desc || ''
-      } : d));
+      setDepts(prev => {
+        const updated = prev.map(d => d.id === editingDept.id ? { 
+          ...d,
+          name: editingDept.name.trim(),
+          manager: editingDept.manager || 'Not assigned',
+          initials: editingDept.initials || editingDept.name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase(),
+          description: editingDept.description || editingDept.desc || ''
+        } : d);
+        try { localStorage.setItem('taxpro_departments', JSON.stringify(updated)); } catch(e) {}
+        return updated;
+      });
       if (activeDeptStat && activeDeptStat.id === editingDept.id) {
         setActiveDeptStat({ ...activeDeptStat, ...editingDept });
       }
       setEditingDept(null);
       window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+      window.dispatchEvent(new CustomEvent('taxpro_departments_updated'));
       if (onShowToast) onShowToast(`✓ Department "${editingDept.name}" updated successfully!`, 'success');
     } catch (err) {
       if (onShowToast) onShowToast(`Update Error: ${err.message}`, 'error');
@@ -581,8 +591,12 @@ export default function DepartmentsView({ userRole: propRole, onShowToast }) {
       metadata: { id: deleteId, name: deptToDelete?.name }
     });
 
-    setDepts(prev => prev.filter(d => d.id !== deleteId));
+    const updated = depts.filter(d => d.id !== deleteId);
+    setDepts(updated);
+    try { localStorage.setItem('taxpro_departments', JSON.stringify(updated)); } catch(e) {}
     setDeleteId(null);
+    window.dispatchEvent(new CustomEvent('taxpro_db_updated'));
+    window.dispatchEvent(new CustomEvent('taxpro_departments_updated'));
     if (onShowToast) onShowToast('Department deleted.', 'info');
   };
 

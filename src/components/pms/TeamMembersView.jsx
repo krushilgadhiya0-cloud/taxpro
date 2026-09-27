@@ -58,7 +58,10 @@ import {
   BarChart3,
   ChevronRight,
   QrCode,
-  IndianRupee
+  IndianRupee,
+  Eye,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { logAuditActivity } from '../../lib/auditLogger';
@@ -104,6 +107,15 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     rawRole.includes('owner') ||
     rawRole.includes('lead') ||
     rawRole.includes('head');
+
+  const currentLoggedInEmail = (localStorage.getItem('taxpro_user_email') || '').trim().toLowerCase();
+  const [viewDetailsMember, setViewDetailsMember] = useState(null);
+  const [copiedDetailField, setCopiedDetailField] = useState(null);
+
+  const isMemberAdmin = (role) => {
+    const r = (role || '').toLowerCase();
+    return r.includes('admin') || r.includes('manager') || r.includes('partner') || r.includes('director') || r.includes('principal') || r.includes('owner') || r.includes('head') || r.includes('lead');
+  };
 
   const [activeTab, setActiveTab] = useState('Members');
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -226,6 +238,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
   const handleInviteSubmit = async (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      if (onShowToast) onShowToast('Access Denied: Only administrators can add or invite new members.', 'error');
+      return;
+    }
     if (!formData.email || !formData.name) {
       if (onShowToast) onShowToast('Email and Full Name are required.', 'error');
       return;
@@ -514,6 +530,24 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
     const cleanEmail = editingMember.email.trim().toLowerCase();
     const cleanPhone = (editingMember.phone || '').trim();
 
+    // Security Gate: Non-admin employees CANNOT change other employee or admin details!
+    if (!isAdmin) {
+      if (cleanEmail !== currentLoggedInEmail) {
+        if (onShowToast) onShowToast('Access Denied: You cannot modify other employee or administrator details.', 'error');
+        setIsSavingEdit(false);
+        setEditingMember(null);
+        return;
+      }
+      // If editing own profile, prevent modifying role, status, department, salary
+      const existing = members.find(m => m.id === editingMember.id || (m.email && m.email.toLowerCase().trim() === currentLoggedInEmail));
+      if (existing) {
+        editingMember.role = existing.role;
+        editingMember.status = existing.status;
+        editingMember.department = existing.department;
+        editingMember.salary = existing.salary;
+      }
+    }
+
     setIsSavingEdit(true);
 
     try {
@@ -603,6 +637,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   // One-Click Grant / Revoke Access
   const handleToggleQuickAccess = async (e, member) => {
     e.stopPropagation();
+    if (!isAdmin) {
+      if (onShowToast) onShowToast('Access Denied: Only administrators can modify account access or lock accounts.', 'error');
+      return;
+    }
     const isCurrentlyActive = member.status === 'Active';
     const nextStatus = isCurrentlyActive ? 'Access Revoked' : 'Active';
 
@@ -667,6 +705,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   // Open Detailed Permissions & Access Control Modal
   const handleOpenAccessModal = (e, member) => {
     e.stopPropagation();
+    if (!isAdmin) {
+      if (onShowToast) onShowToast('Access Denied: Only administrators can view or configure permissions.', 'error');
+      return;
+    }
     setAccessModalMember(member);
     
     let currentPerms = member.permissions || {};
@@ -697,6 +739,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   // Save Permissions Matrix to PostgreSQL
   const handleSaveAccessPermissions = async () => {
     if (!accessModalMember) return;
+    if (!isAdmin) {
+      if (onShowToast) onShowToast('Access Denied: Only administrators can update access permissions.', 'error');
+      return;
+    }
     setIsSavingAccess(true);
 
     try {
@@ -814,6 +860,11 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
   const executeDelete = async () => {
     if (!deleteData) return;
+    if (!isAdmin) {
+      if (onShowToast) onShowToast('Access Denied: Only administrators can delete members.', 'error');
+      setDeleteData(null);
+      return;
+    }
     
     const targetMember = members.find(m => m.id === deleteData.id);
     const { error } = await supabase.from('team_members').delete().eq('id', deleteData.id);
@@ -887,6 +938,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
   }, [currentList, selectedDeptFilter, memberSearchQuery]);
 
   const handleQuickChangeDept = async (member, newDept) => {
+    if (!isAdmin) {
+      if (onShowToast) onShowToast('Access Denied: Only administrators can reassign departments.', 'error');
+      return;
+    }
     try {
       const { error } = await supabase.from('team_members').update({ department: newDept }).eq('id', member.id);
       if (error) throw error;
@@ -909,6 +964,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
   const handleArchive = async (e, obj) => {
      e.stopPropagation();
+     if (!isAdmin) {
+       if (onShowToast) onShowToast('Access Denied: Only administrators can archive team members.', 'error');
+       return;
+     }
      if (!window.confirm(`Are you sure you want to mark ${obj.name} as a Past Employee?\n\nTheir access will be revoked but all their historical data, tasks, and payments will remain safely archived.`)) return;
      
      const { error } = await supabase.from('team_members').update({ status: 'Past' }).eq('id', obj.id);
@@ -931,6 +990,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
   const handleRestore = async (e, obj) => {
     e.stopPropagation();
+    if (!isAdmin) {
+      if (onShowToast) onShowToast('Access Denied: Only administrators can restore team members.', 'error');
+      return;
+    }
     try {
       const { error } = await supabase.from('team_members').update({ status: 'Active' }).eq('id', obj.id);
       if (error) throw error;
@@ -1719,17 +1782,19 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
             <Download className="w-3.5 h-3.5" /> 
             <span>Export CSV</span>
           </button>
-          <button 
-            type="button"
-            onClick={() => {
-              if (!requireFirmSetup(onShowToast)) return;
-              setIsInviteModalOpen(true);
-            }}
-            className="flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-sm shadow-emerald-700/20 transition-all cursor-pointer hover:shadow-md active:scale-95"
-          >
-            <UserPlus className="w-4 h-4" /> 
-            <span>+ Add New Member</span>
-          </button>
+          {isAdmin && (
+            <button 
+              type="button"
+              onClick={() => {
+                if (!requireFirmSetup(onShowToast)) return;
+                setIsInviteModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs shadow-sm shadow-emerald-700/20 transition-all cursor-pointer hover:shadow-md active:scale-95"
+            >
+              <UserPlus className="w-4 h-4" /> 
+              <span>+ Add New Member</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1957,7 +2022,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
             >
               Clear Department Filter
             </button>
-          ) : (
+          ) : isAdmin ? (
             <button
               type="button"
               onClick={() => {
@@ -1968,7 +2033,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
             >
               <UserPlus className="w-4 h-4" /> + Add New Team Member
             </button>
-          )}
+          ) : null}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -2107,20 +2172,35 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                       {obj.status}
                     </span>
 
-                    {/* Archive & Delete Icons */}
+                    {/* Action Icons: View Details (all), Edit (admin or self), Archive/Delete (admin only) */}
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                       <button 
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setEditingMember({ ...obj });
+                          setViewDetailsMember(obj);
                         }}
-                        className="p-1.5 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-emerald-200"
-                        title="Edit Full Member Details"
+                        className="p-1.5 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg transition-colors cursor-pointer border border-indigo-100 hover:border-indigo-300 shadow-2xs"
+                        title={isMemberAdmin(obj.role) ? "View Admin Details & Profile" : "View Member Profile & Details"}
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        <Eye className="w-3.5 h-3.5" />
                       </button>
-                      {activeTab !== 'Past' && (
+
+                      {(isAdmin || (currentLoggedInEmail && obj.email && obj.email.toLowerCase().trim() === currentLoggedInEmail)) && (
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingMember({ ...obj });
+                          }}
+                          className="p-1.5 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-emerald-200"
+                          title="Edit Profile Details"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {isAdmin && activeTab !== 'Past' && (
                         <button 
                           type="button"
                           onClick={(e) => handleArchive(e, obj)}
@@ -2130,7 +2210,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                           <Archive className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {activeTab === 'Past' && (
+                      {isAdmin && activeTab === 'Past' && (
                         <button 
                           type="button"
                           onClick={(e) => handleRestore(e, obj)}
@@ -2140,17 +2220,19 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                           <RotateCcw className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      <button 
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteData({ id: obj.id, type: activeTab, name: obj.name || obj.email });
-                        }}
-                        className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-red-200"
-                        title="Permanently Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {isAdmin && (
+                        <button 
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteData({ id: obj.id, type: activeTab, name: obj.name || obj.email });
+                          }}
+                          className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-red-200"
+                          title="Permanently Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2208,57 +2290,92 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
                   {/* ADMIN ACCESS CONTROL BUTTONS */}
                   {isAdmin && activeTab === 'Members' && (
-                    <div className="grid grid-cols-3 gap-1.5 mt-1 z-10" onClick={(e) => e.stopPropagation()}>
-                      
-                      {/* Edit Details Button */}
+                    <div className="flex flex-col gap-1.5 mt-1 z-10" onClick={(e) => e.stopPropagation()}>
+                      {isMemberAdmin(obj.role) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewDetailsMember(obj);
+                          }}
+                          className="w-full py-1.5 px-2 bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 text-indigo-700 text-[11px] font-bold rounded-xl border border-indigo-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>👑 View Admin Profile Details</span>
+                        </button>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {/* Edit Details Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingMember({ ...obj });
+                          }}
+                          className="py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded-xl border border-emerald-200 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                          title="Edit Member Details"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+
+                        {/* Detailed Permissions Modal Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenAccessModal(e, obj)}
+                          className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-xl border border-indigo-200 flex items-center justify-center gap-1 transition-all cursor-pointer"
+                          title="Manage Permissions"
+                        >
+                          <SlidersHorizontal className="w-3 h-3" />
+                          <span>Perms</span>
+                        </button>
+
+                        {/* Quick Revoke / Grant Access Toggle */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleQuickAccess(e, obj)}
+                          className={`py-1.5 px-2 text-[11px] font-bold rounded-xl border flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                            isRevoked
+                              ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300'
+                              : 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300'
+                          }`}
+                          title={isRevoked ? 'Unlock Account' : 'Lock Account'}
+                        >
+                          {isRevoked ? (
+                            <>
+                              <Unlock className="w-3 h-3" />
+                              <span>Unlock</span>
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="w-3 h-3" />
+                              <span>Lock</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* NON-ADMIN EMPLOYEES: VIEW DETAILS BUTTON */}
+                  {!isAdmin && activeTab === 'Members' && (
+                    <div className="mt-1 z-10" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setEditingMember({ ...obj });
+                          setViewDetailsMember(obj);
                         }}
-                        className="py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-bold rounded-xl border border-emerald-200 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
-                        title="Edit Member Details"
-                      >
-                        <Edit2 className="w-3 h-3" />
-                        <span>Edit</span>
-                      </button>
-
-                      {/* Detailed Permissions Modal Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleOpenAccessModal(e, obj)}
-                        className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-xl border border-indigo-200 flex items-center justify-center gap-1 transition-all cursor-pointer"
-                        title="Manage Permissions"
-                      >
-                        <SlidersHorizontal className="w-3 h-3" />
-                        <span>Perms</span>
-                      </button>
-
-                      {/* Quick Revoke / Grant Access Toggle */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleQuickAccess(e, obj)}
-                        className={`py-1.5 px-2 text-[11px] font-bold rounded-xl border flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                          isRevoked
-                            ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300'
-                            : 'bg-red-50 hover:bg-red-100 text-red-700 border-red-300'
+                        className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                          isMemberAdmin(obj.role)
+                            ? 'bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 text-indigo-700 border border-indigo-200'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
                         }`}
-                        title={isRevoked ? 'Unlock Account' : 'Lock Account'}
                       >
-                        {isRevoked ? (
-                          <>
-                            <Unlock className="w-3 h-3" />
-                            <span>Unlock</span>
-                          </>
-                        ) : (
-                          <>
-                            <Lock className="w-3 h-3" />
-                            <span>Lock</span>
-                          </>
-                        )}
+                        <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>{isMemberAdmin(obj.role) ? '👑 View Admin Details' : 'View Member Details'}</span>
                       </button>
-
                     </div>
                   )}
 
@@ -2774,6 +2891,22 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
               </button>
             </div>
 
+            {!isAdmin && editingMember.email?.toLowerCase().trim() !== currentLoggedInEmail ? (
+              <div className="p-8 text-center flex flex-col items-center my-auto">
+                <ShieldAlert className="w-12 h-12 text-rose-500 mb-3" />
+                <h3 className="text-base font-bold text-slate-900 font-outfit">Access Restricted</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                  You are not authorized to edit other employee or administrator details. Only administrators have practice management privileges.
+                </p>
+                <button 
+                  type="button" 
+                  onClick={() => setEditingMember(null)} 
+                  className="mt-4 px-5 py-2 bg-slate-900 text-white font-bold rounded-xl text-xs hover:bg-black transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
             <form onSubmit={handleSaveMemberEdits} className="flex-1 overflow-y-auto p-6 flex flex-col gap-5 text-xs font-semibold overscroll-contain chat-custom-scrollbar">
               
               {/* SECTION 1: Identity & Designation */}
@@ -2804,7 +2937,10 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                       placeholder="Email Address"
                       value={editingMember.email || ''}
                       onChange={(e) => setEditingMember({...editingMember, email: e.target.value})}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs"
+                      disabled={!isAdmin}
+                      className={`w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs ${
+                        !isAdmin ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''
+                      }`}
                     />
                   </div>
 
@@ -2822,11 +2958,14 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                   <div>
-                    <label className="text-slate-700 block mb-1">Role / Designation</label>
+                    <label className="text-slate-700 block mb-1">Role / Designation {!isAdmin && <span className="text-[10px] text-gray-400 font-normal">(Admin Only)</span>}</label>
                     <select
                       value={editingMember.role || 'Employee'}
                       onChange={(e) => setEditingMember({...editingMember, role: e.target.value})}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs"
+                      disabled={!isAdmin}
+                      className={`w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs ${
+                        !isAdmin ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
                     >
                       <option value="Employee">Employee (Associate)</option>
                       <option value="Manager">Department Manager</option>
@@ -2835,11 +2974,14 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-slate-700 block mb-1">Department</label>
+                    <label className="text-slate-700 block mb-1">Department {!isAdmin && <span className="text-[10px] text-gray-400 font-normal">(Admin Only)</span>}</label>
                     <select
                       value={editingMember.department || 'General'}
                       onChange={(e) => setEditingMember({...editingMember, department: e.target.value})}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs"
+                      disabled={!isAdmin}
+                      className={`w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs ${
+                        !isAdmin ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
                     >
                       <option value="General">General</option>
                       {departmentsList.map(d => (
@@ -2849,11 +2991,14 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                   </div>
 
                   <div>
-                    <label className="text-slate-700 block mb-1">Status</label>
+                    <label className="text-slate-700 block mb-1">Status {!isAdmin && <span className="text-[10px] text-gray-400 font-normal">(Admin Only)</span>}</label>
                     <select
                       value={editingMember.status || 'Active'}
                       onChange={(e) => setEditingMember({...editingMember, status: e.target.value})}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors cursor-pointer shadow-2xs"
+                      disabled={!isAdmin}
+                      className={`w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs ${
+                        !isAdmin ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'cursor-pointer'
+                      }`}
                     >
                       <option value="Active">Active</option>
                       <option value="Pending Invite">Pending Invite</option>
@@ -2872,13 +3017,16 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="text-slate-700 block mb-1">Monthly Salary / CTC</label>
+                    <label className="text-slate-700 block mb-1">Monthly Salary / CTC {!isAdmin && <span className="text-[10px] text-gray-400 font-normal">(Admin Only)</span>}</label>
                     <input 
                       type="text" 
                       placeholder="e.g. ₹50,000/mo"
                       value={editingMember.salary || ''}
                       onChange={(e) => setEditingMember({...editingMember, salary: e.target.value})}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs font-mono"
+                      disabled={!isAdmin}
+                      className={`w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 outline-none focus:border-indigo-600 transition-colors shadow-2xs font-mono ${
+                        !isAdmin ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''
+                      }`}
                     />
                   </div>
 
@@ -2938,6 +3086,7 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
                 </button>
               </div>
             </form>
+          )}
           </div>
         </div>
       )}
@@ -3519,6 +3668,406 @@ export default function TeamMembersView({ userRole = 'Admin', onShowToast }) {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* VIEW ADMIN & MEMBER PROFILE DETAILS MODAL */}
+      {/* ========================================================================= */}
+      {viewDetailsMember && (() => {
+        const isDetailAdmin = isMemberAdmin(viewDetailsMember.role);
+        const memberTasks = getMemberTasks(viewDetailsMember);
+        const inProg = memberTasks.filter(t => t.status === 'In Progress').length;
+        const comp = memberTasks.filter(t => t.status === 'Completed').length;
+        const pend = memberTasks.filter(t => t.status !== 'In Progress' && t.status !== 'Completed').length;
+        const isSelf = currentLoggedInEmail && viewDetailsMember.email && viewDetailsMember.email.toLowerCase().trim() === currentLoggedInEmail;
+        const canViewSalary = isAdmin || isSelf;
+
+        const handleCopyText = (text, fieldName) => {
+          if (!text) return;
+          navigator.clipboard.writeText(text);
+          setCopiedDetailField(fieldName);
+          if (onShowToast) onShowToast(`✓ ${fieldName} copied to clipboard!`, 'success');
+          setTimeout(() => setCopiedDetailField(null), 2500);
+        };
+
+        const handlePrintProfileDossier = () => {
+          const m = viewDetailsMember;
+          const bodyHtml = `
+            <div style="background: ${isDetailAdmin ? '#312e81' : '#0f766e'}; color: white; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                  <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.85;">${isDetailAdmin ? '👑 Practice Leadership & Administrator' : '💼 Team Member & Staff Profile'}</div>
+                  <div style="font-size: 24px; font-weight: 900; margin-top: 4px;">${m.name}</div>
+                  <div style="font-size: 13px; opacity: 0.9; margin-top: 4px;">${m.role || 'Member'} • Department: ${m.department || 'General'}</div>
+                </div>
+                <div style="text-align: right;">
+                  <div style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 6px; font-size: 11px; font-weight: bold;">
+                    Status: ${m.status || 'Active'}
+                  </div>
+                  <div style="font-size: 11px; margin-top: 6px; opacity: 0.8;">${firmName}</div>
+                </div>
+              </div>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+              <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; width: 30%; color: #475569;">Official Email:</td>
+                <td style="padding: 10px; color: #0f172a; font-family: monospace;">${m.email || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; color: #475569;">Phone Number:</td>
+                <td style="padding: 10px; color: #0f172a; font-family: monospace;">${m.phone || 'N/A'}</td>
+              </tr>
+              <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; color: #475569;">Date of Joining:</td>
+                <td style="padding: 10px; color: #0f172a;">${m.date_of_joining ? formatDate(m.date_of_joining) : 'Active from Inception'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; color: #475569;">PAN Card Number:</td>
+                <td style="padding: 10px; color: #0f172a; font-family: monospace; font-weight: bold;">${m.pan || 'PAN Verified on Record'}</td>
+              </tr>
+              <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; color: #475569;">UPI ID / Payment VPA:</td>
+                <td style="padding: 10px; color: #0f172a; font-family: monospace;">${m.upi_id || 'Not Listed'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; color: #475569;">Bank Account Details:</td>
+                <td style="padding: 10px; color: #0f172a; font-family: monospace;">${m.bank_account ? `${m.bank_account} ${m.ifsc ? `(${m.ifsc})` : ''}` : 'Registered in Practice Records'}</td>
+              </tr>
+              <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; color: #475569;">Assigned Department:</td>
+                <td style="padding: 10px; color: #0f172a; font-weight: bold;">${m.department || 'General'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; color: #475569;">Monthly Compensation:</td>
+                <td style="padding: 10px; color: #0f172a; font-weight: bold;">${canViewSalary ? (m.salary || '₹50,000/mo') : '🔒 Confidential / Protected Record'}</td>
+              </tr>
+              <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 10px; font-weight: bold; color: #475569;">Emergency Contact:</td>
+                <td style="padding: 10px; color: #0f172a;">${m.emergency_contact || 'None Listed'}</td>
+              </tr>
+            </table>
+
+            <div style="background: #f1f5f9; padding: 14px; border-radius: 8px; font-size: 11px; color: #475569; margin-top: 14px;">
+              <strong>System Authority:</strong> ${isDetailAdmin ? 'Full Practice Administrator Rights (All Modules Unrestricted)' : 'Standard Practice Member Access'}
+            </div>
+          `;
+          printHtml(`${isDetailAdmin ? 'Admin Dossier' : 'Member Dossier'} - ${m.name}`, bodyHtml);
+          if (onShowToast) onShowToast(`🖨️ Generating printable dossier for ${m.name}...`, 'info');
+        };
+
+        return (
+          <div 
+            onClick={(e) => { if (e.target === e.currentTarget) setViewDetailsMember(null); }}
+            className="fixed inset-0 z-[99998] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto"
+          >
+            <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] overflow-hidden my-auto animate-modal-smooth text-slate-800">
+              
+              {/* Modal Top Hero Header */}
+              <div className={`p-6 text-white relative shrink-0 ${
+                isDetailAdmin 
+                  ? 'bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900' 
+                  : 'bg-gradient-to-r from-slate-900 via-slate-800 to-teal-900'
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => setViewDetailsMember(null)}
+                  className="absolute top-4 right-4 p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  title="Close (Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                <div className="flex items-center gap-4">
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-black text-2xl border shadow-md uppercase shrink-0 ${
+                    isDetailAdmin 
+                      ? 'bg-indigo-500/30 text-white border-indigo-300/40 ring-4 ring-indigo-400/20' 
+                      : 'bg-teal-500/30 text-white border-teal-300/40 ring-4 ring-teal-400/20'
+                  }`}>
+                    {viewDetailsMember.name ? viewDetailsMember.name.charAt(0).toUpperCase() : 'U'}
+                  </div>
+
+                  <div className="truncate pr-8">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                        isDetailAdmin 
+                          ? 'bg-indigo-400/20 text-indigo-200 border-indigo-400/30' 
+                          : 'bg-teal-400/20 text-teal-200 border-teal-400/30'
+                      }`}>
+                        {isDetailAdmin ? '👑 Administrator Profile' : '💼 Team Member Profile'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/15 text-white/90 border border-white/20">
+                        {viewDetailsMember.status || 'Active'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-white/15 text-white/90 border border-white/20">
+                        🏢 {firmTag}
+                      </span>
+                    </div>
+
+                    <h2 className="text-xl sm:text-2xl font-black font-outfit text-white tracking-tight truncate">
+                      {viewDetailsMember.name}
+                    </h2>
+
+                    <p className="text-xs text-white/70 truncate mt-0.5 flex items-center gap-2">
+                      <span>{viewDetailsMember.role || 'Member'}</span>
+                      <span>•</span>
+                      <span>Department: {viewDetailsMember.department || 'General'}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 flex-1 overflow-y-auto flex flex-col gap-5 overscroll-contain chat-custom-scrollbar text-xs">
+                
+                {/* SECTION 1: Contact & Communication */}
+                <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 flex flex-col gap-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                    <span className="text-slate-900 font-extrabold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
+                      <Mail className="w-4 h-4 text-indigo-600" />
+                      <span>Contact & Identification</span>
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">ID: {viewDetailsMember.id}</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Email */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Official Email Address</span>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <span className="font-semibold text-slate-900 truncate font-mono select-all">
+                          {viewDetailsMember.email}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(viewDetailsMember.email, 'Email')}
+                          className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-indigo-600 transition-colors shrink-0 cursor-pointer"
+                          title="Copy Email"
+                        >
+                          {copiedDetailField === 'Email' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Phone */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Direct Phone / Mobile</span>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <span className="font-semibold text-slate-900 truncate font-mono select-all">
+                          {viewDetailsMember.phone || 'Not Registered'}
+                        </span>
+                        {viewDetailsMember.phone && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(viewDetailsMember.phone, 'Phone')}
+                            className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-indigo-600 transition-colors shrink-0 cursor-pointer"
+                            title="Copy Phone"
+                          >
+                            {copiedDetailField === 'Phone' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Date Joined */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date of Joining</span>
+                      <span className="font-semibold text-slate-900 mt-0.5">
+                        {viewDetailsMember.date_of_joining ? formatDate(viewDetailsMember.date_of_joining) : 'Active from Inception'}
+                      </span>
+                    </div>
+
+                    {/* Emergency Contact */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Emergency Contact</span>
+                      <span className="font-semibold text-slate-900 mt-0.5 truncate">
+                        {viewDetailsMember.emergency_contact || 'None Recorded'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SECTION 2: Role & System Governance */}
+                <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 flex flex-col gap-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                    <span className="text-slate-900 font-extrabold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-emerald-600" />
+                      <span>Role & System Governance</span>
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                      isDetailAdmin ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      {isDetailAdmin ? 'Executive Level' : 'Operational Staff'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Department Division</span>
+                      <span className="text-xs font-bold text-slate-900 mt-0.5 flex items-center gap-1.5">
+                        <Building className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{viewDetailsMember.department || 'General Practice Pool'}</span>
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Designated Role</span>
+                      <span className="text-xs font-bold text-slate-900 mt-0.5 flex items-center gap-1.5">
+                        <Briefcase className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>{viewDetailsMember.role || 'Employee'}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-indigo-50/60 border border-indigo-100 text-indigo-950 text-[11px] leading-relaxed">
+                    <strong>Authority Scope: </strong>
+                    {isDetailAdmin
+                      ? 'System Administrator with full executive authority over practice accounts, staff management, financial books, client KYC, and firm configurations.'
+                      : 'Team Member authorized for collaborative practice activities, assigned client tax deliverables, task execution, and work logs.'}
+                  </div>
+                </div>
+
+                {/* SECTION 3: Financial & Official Tax Details */}
+                <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 flex flex-col gap-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                    <span className="text-slate-900 font-extrabold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
+                      <IndianRupee className="w-4 h-4 text-teal-600" />
+                      <span>Financial & Tax Credentials</span>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* PAN Card */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">PAN Card Number</span>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <span className="font-mono font-bold text-slate-900 select-all">
+                          {viewDetailsMember.pan || 'PAN Verified on File'}
+                        </span>
+                        {viewDetailsMember.pan && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(viewDetailsMember.pan, 'PAN')}
+                            className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-indigo-600 transition-colors shrink-0 cursor-pointer"
+                            title="Copy PAN"
+                          >
+                            {copiedDetailField === 'PAN' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* UPI ID */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">UPI / VPA ID</span>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <span className="font-mono font-bold text-indigo-700 truncate select-all">
+                          {viewDetailsMember.upi_id || 'Not Registered'}
+                        </span>
+                        {viewDetailsMember.upi_id && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(viewDetailsMember.upi_id, 'UPI ID')}
+                            className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-indigo-600 transition-colors shrink-0 cursor-pointer"
+                            title="Copy UPI"
+                          >
+                            {copiedDetailField === 'UPI ID' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Bank Details */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Bank Account</span>
+                      <span className="font-mono font-semibold text-slate-900 mt-0.5">
+                        {viewDetailsMember.bank_account 
+                          ? `${viewDetailsMember.bank_account} ${viewDetailsMember.ifsc ? `(${viewDetailsMember.ifsc})` : ''}` 
+                          : 'Recorded in Firm Vault'}
+                      </span>
+                    </div>
+
+                    {/* Monthly Salary / CTC */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-1 shadow-2xs">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Compensation / Salary</span>
+                      <span className="font-bold text-emerald-700 mt-0.5">
+                        {canViewSalary 
+                          ? (viewDetailsMember.salary || '₹50,000/mo') 
+                          : '🔒 Confidential (Admin Protected)'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SECTION 4: Live Workload & Task Metrics */}
+                <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 flex flex-col gap-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                    <span className="text-slate-900 font-extrabold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
+                      <CheckSquare className="w-4 h-4 text-indigo-600" />
+                      <span>Assigned Tasks & Deliverables</span>
+                    </span>
+                    <span className="font-mono font-black text-indigo-700 text-xs">
+                      {memberTasks.length} Assigned
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="p-2.5 bg-blue-50 text-blue-700 rounded-xl border border-blue-100 flex flex-col items-center">
+                      <span className="text-base font-black">{inProg}</span>
+                      <span className="text-[10px] font-bold opacity-80">In Progress</span>
+                    </div>
+                    <div className="p-2.5 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 flex flex-col items-center">
+                      <span className="text-base font-black">{comp}</span>
+                      <span className="text-[10px] font-bold opacity-80">Completed</span>
+                    </div>
+                    <div className="p-2.5 bg-amber-50 text-amber-800 rounded-xl border border-amber-100 flex flex-col items-center">
+                      <span className="text-base font-black">{pend}</span>
+                      <span className="text-[10px] font-bold opacity-80">Pending</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 px-6 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={handlePrintProfileDossier}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl border border-slate-300 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs text-xs"
+                >
+                  <Printer className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Print Dossier</span>
+                </button>
+
+                <div className="flex items-center gap-2.5">
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const m = viewDetailsMember;
+                        setViewDetailsMember(null);
+                        setEditingMember({ ...m });
+                      }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs text-xs active:scale-95"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Edit Member</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setViewDetailsMember(null)}
+                    className="px-5 py-2 bg-slate-900 hover:bg-black text-white font-bold rounded-xl cursor-pointer text-xs transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {/* PERMANENT DELETION CONFIRMATION MODAL */}
       {deleteData && (
